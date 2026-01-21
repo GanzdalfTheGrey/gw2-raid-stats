@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GW2 Raid Stats</title>
+    <base href="/" />
+    <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" rel="stylesheet" />
+    <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link href="GW2RaidStats.Client.styles.css" rel="stylesheet" />
+</head>
+
+<body>
+    <div id="app">
+        <div style="display: flex; justify-content: center; align-items: center; height: 100vh; background: #121212;">
+            <div style="text-align: center; color: #fff;">
+                <div style="font-size: 24px; margin-bottom: 16px;">Loading GW2 Raid Stats...</div>
+                <svg class="loading-progress" style="width: 80px; height: 80px;">
+                    <circle r="40%" cx="50%" cy="50%" style="fill: none; stroke: #AA0404; stroke-width: 4px;" />
+                    <circle r="40%" cx="50%" cy="50%" style="fill: none; stroke: #D4AF37; stroke-width: 4px; stroke-dasharray: 251.2; stroke-dashoffset: 0; animation: loading-dash 1.5s ease-in-out infinite;" />
+                </svg>
+            </div>
+        </div>
+        <style>
+            @keyframes loading-dash {
+                0% { stroke-dashoffset: 251.2; }
+                50% { stroke-dashoffset: 62.8; }
+                100% { stroke-dashoffset: 251.2; }
+            }
+        </style>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">X</a>
+    </div>
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script src="_framework/blazor.webassembly.js"></script>
+</body>
+
+</html>

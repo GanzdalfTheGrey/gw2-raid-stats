@@ -1,0 +1,86 @@
+@page "/"
+
+<PageTitle>GW2 Raid Stats - Home</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Dashboard</MudText>
+
+<MudGrid>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total Kills</MudText>
+                <MudText Typo="Typo.h4">--</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Default">All time</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Success Rate</MudText>
+                <MudText Typo="Typo.h4">--%</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Default">All encounters</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Active Raiders</MudText>
+                <MudText Typo="Typo.h4">--</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Default">This month</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Raid Hours</MudText>
+                <MudText Typo="Typo.h4">--</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Default">This year</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+<MudGrid Class="mt-4">
+    <MudItem xs="12" md="8">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Recent Activity</MudText>
+            <MudAlert Severity="Severity.Info" Class="mb-3">
+                No logs imported yet. Go to Admin > Upload Logs to get started.
+            </MudAlert>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">This Week's Highlights</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Default">
+                No data available yet.
+            </MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudGrid Class="mt-4">
+    <MudItem xs="12">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Quick Links</MudText>
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/explorer" StartIcon="@Icons.Material.Filled.Search">
+                    Stats Explorer
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/players" StartIcon="@Icons.Material.Filled.Person">
+                    Players
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/bosses" StartIcon="@Icons.Material.Filled.SmartToy">
+                    Bosses
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/leaderboards" StartIcon="@Icons.Material.Filled.Leaderboard">
+                    Leaderboards
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    </MudItem>
+</MudGrid>

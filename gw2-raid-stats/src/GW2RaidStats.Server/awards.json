@@ -1,0 +1,69 @@
+{
+  "Awards": [
+    {
+      "Id": "dps-champion",
+      "Name": "DPS Champion",
+      "Description": "Highest single DPS pull",
+      "Type": "StatMax",
+      "Stat": "Dps",
+      "Icon": "bolt"
+    },
+    {
+      "Id": "rezzer-mvp",
+      "Name": "Rezzer MVP",
+      "Description": "Most resurrects",
+      "Type": "StatSum",
+      "Stat": "Resurrects",
+      "Icon": "favorite"
+    },
+    {
+      "Id": "floor-inspector",
+      "Name": "Floor Inspector",
+      "Description": "Most time spent dead",
+      "Type": "StatSum",
+      "Stat": "DeathDurationMs",
+      "Icon": "hotel"
+    },
+    {
+      "Id": "oil-connoisseur",
+      "Name": "Oil Connoisseur",
+      "Description": "Most oil puddles stepped in",
+      "Type": "MechanicCount",
+      "Mechanic": "Oil",
+      "BossFilter": "Deimos",
+      "Icon": "local_fire_department"
+    },
+    {
+      "Id": "down-but-not-out",
+      "Name": "Down But Not Out",
+      "Description": "Most times downed",
+      "Type": "StatSum",
+      "Stat": "Downs",
+      "Icon": "trending_down"
+    },
+    {
+      "Id": "iron-will",
+      "Name": "Iron Will",
+      "Description": "Most boss kills",
+      "Type": "StatCount",
+      "Stat": "Kills",
+      "Icon": "emoji_events"
+    },
+    {
+      "Id": "cleanser",
+      "Name": "Cleanser",
+      "Description": "Most conditions cleansed",
+      "Type": "StatSum",
+      "Stat": "CondiCleanse",
+      "Icon": "healing"
+    },
+    {
+      "Id": "tank-mvp",
+      "Name": "Tank MVP",
+      "Description": "Most damage taken",
+      "Type": "StatSum",
+      "Stat": "DamageTaken",
+      "Icon": "shield"
+    }
+  ]
+}

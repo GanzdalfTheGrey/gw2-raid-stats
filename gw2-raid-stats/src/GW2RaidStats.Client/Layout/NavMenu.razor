@@ -1,0 +1,23 @@
+<MudNavMenu>
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
+    <MudNavLink Href="/explorer" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Search">Stats Explorer</MudNavLink>
+
+    <MudNavGroup Title="Stats" Icon="@Icons.Material.Filled.BarChart" Expanded="true">
+        <MudNavLink Href="/guild" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Groups">Guild Overview</MudNavLink>
+        <MudNavLink Href="/players" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Person">Players</MudNavLink>
+        <MudNavLink Href="/bosses" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.SmartToy">Bosses</MudNavLink>
+        <MudNavLink Href="/wings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Map">Wings</MudNavLink>
+        <MudNavLink Href="/classes" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Category">Classes</MudNavLink>
+        <MudNavLink Href="/leaderboards" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Leaderboard">Leaderboards</MudNavLink>
+    </MudNavGroup>
+
+    <MudNavLink Href="/recap" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.EmojiEvents">Yearly Recap</MudNavLink>
+    <MudNavLink Href="/about" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Info">About</MudNavLink>
+
+    <MudDivider Class="my-2" />
+
+    <MudNavGroup Title="Admin" Icon="@Icons.Material.Filled.AdminPanelSettings">
+        <MudNavLink Href="/admin/upload" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Upload">Upload Logs</MudNavLink>
+        <MudNavLink Href="/admin/manage" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings">Manage Data</MudNavLink>
+    </MudNavGroup>
+</MudNavMenu>
