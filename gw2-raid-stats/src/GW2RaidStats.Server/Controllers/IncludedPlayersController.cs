@@ -94,6 +94,28 @@ public class IncludedPlayersController : ControllerBase
         await _settingsService.SetAutoIncludeThresholdAsync(request.Threshold, ct);
         return NoContent();
     }
+
+    /// <summary>
+    /// Get the recap include all bosses setting
+    /// </summary>
+    [HttpGet("recap-include-all-bosses")]
+    public async Task<ActionResult<RecapBossesResponse>> GetRecapIncludeAllBosses(CancellationToken ct)
+    {
+        var includeAll = await _settingsService.GetRecapIncludeAllBossesAsync(ct);
+        return Ok(new RecapBossesResponse(includeAll));
+    }
+
+    /// <summary>
+    /// Update the recap include all bosses setting
+    /// </summary>
+    [HttpPut("recap-include-all-bosses")]
+    public async Task<ActionResult> UpdateRecapIncludeAllBosses(
+        [FromBody] UpdateRecapBossesRequest request,
+        CancellationToken ct)
+    {
+        await _settingsService.SetRecapIncludeAllBossesAsync(request.IncludeAll, ct);
+        return NoContent();
+    }
 }
 
 public record AddIncludedPlayerRequest(
@@ -104,3 +126,7 @@ public record AddIncludedPlayerRequest(
 public record ThresholdResponse(int Threshold);
 
 public record UpdateThresholdRequest(int Threshold);
+
+public record RecapBossesResponse(bool IncludeAll);
+
+public record UpdateRecapBossesRequest(bool IncludeAll);

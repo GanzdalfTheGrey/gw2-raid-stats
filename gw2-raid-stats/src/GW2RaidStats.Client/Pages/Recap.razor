@@ -1,0 +1,726 @@
+@page "/recap"
+@page "/recap/{Year:int}"
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>GW2 Raid Stats - @Year Recap</PageTitle>
+
+<style>
+    .recap-container {
+        min-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .slide {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        animation: fadeInUp 0.8s ease-out;
+        padding: 2rem;
+        max-width: 800px;
+    }
+
+    @@keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(40px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @@keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+    }
+
+    @@keyframes slideInLeft {
+        from {
+            opacity: 0;
+            transform: translateX(-50px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+
+    @@keyframes countUp {
+        from { opacity: 0; transform: scale(0.5); }
+        to { opacity: 1; transform: scale(1); }
+    }
+
+    .big-number {
+        font-size: 5rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: countUp 0.6s ease-out 0.3s both;
+        line-height: 1.1;
+    }
+
+    .big-number-red {
+        font-size: 5rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: countUp 0.6s ease-out 0.3s both;
+        line-height: 1.1;
+    }
+
+    .big-number-orange {
+        font-size: 5rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #f59e0b, #ef4444);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: countUp 0.6s ease-out 0.3s both;
+        line-height: 1.1;
+    }
+
+    .stat-label {
+        font-size: 1.5rem;
+        color: var(--mud-palette-text-secondary);
+        margin-top: 0.5rem;
+        animation: fadeInUp 0.6s ease-out 0.5s both;
+    }
+
+    .highlight-text {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: var(--mud-palette-primary);
+        animation: slideInLeft 0.6s ease-out 0.4s both;
+    }
+
+    .subtitle {
+        font-size: 1.25rem;
+        color: var(--mud-palette-text-secondary);
+        animation: fadeInUp 0.6s ease-out 0.6s both;
+    }
+
+    .year-title {
+        font-size: 4rem;
+        font-weight: 900;
+        background: linear-gradient(135deg, #f59e0b, #ef4444, #ec4899);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: pulse 2s ease-in-out infinite;
+    }
+
+    .fun-fact {
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
+        border-radius: 16px;
+        padding: 1.5rem 2rem;
+        margin-top: 1rem;
+        animation: fadeInUp 0.6s ease-out 0.7s both;
+        border: 1px solid rgba(99, 102, 241, 0.3);
+    }
+
+    .progress-bar {
+        display: flex;
+        gap: 8px;
+        margin-top: 2rem;
+    }
+
+    .progress-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--mud-palette-action-disabled);
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+
+    .progress-dot.active {
+        background: var(--mud-palette-primary);
+        transform: scale(1.3);
+    }
+
+    .progress-dot:hover {
+        background: var(--mud-palette-primary-lighten);
+    }
+
+    .nav-buttons {
+        display: flex;
+        gap: 1rem;
+        margin-top: 2rem;
+    }
+
+    .class-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        width: 100%;
+        max-width: 400px;
+    }
+
+    .class-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1rem;
+        background: var(--mud-palette-surface);
+        border-radius: 8px;
+        animation: slideInLeft 0.5s ease-out both;
+    }
+
+    .class-item:nth-child(1) { animation-delay: 0.3s; }
+    .class-item:nth-child(2) { animation-delay: 0.4s; }
+    .class-item:nth-child(3) { animation-delay: 0.5s; }
+    .class-item:nth-child(4) { animation-delay: 0.6s; }
+    .class-item:nth-child(5) { animation-delay: 0.7s; }
+</style>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+    <MudStack AlignItems="AlignItems.Center" Class="mt-8">
+        <MudText Typo="Typo.h5">Loading your epic year...</MudText>
+    </MudStack>
+}
+else if (_recap == null || _recap.IsEmpty)
+{
+    <MudStack AlignItems="AlignItems.Center" Class="mt-8">
+        <MudIcon Icon="@Icons.Material.Filled.SentimentDissatisfied" Size="Size.Large" Color="Color.Secondary" />
+        <MudText Typo="Typo.h5" Class="mt-4">No data for @Year</MudText>
+        <MudText Color="Color.Secondary">Try selecting a different year</MudText>
+        @if (_availableYears.Count > 0)
+        {
+            <MudSelect T="int" Value="Year" ValueChanged="OnYearChanged" Label="Select Year" Class="mt-4" Style="width: 200px;">
+                @foreach (var y in _availableYears)
+                {
+                    <MudSelectItem Value="y">@y</MudSelectItem>
+                }
+            </MudSelect>
+        }
+    </MudStack>
+}
+else
+{
+    <div class="recap-container">
+        @switch (_currentSlide)
+        {
+            case 0:
+                <div class="slide" @key="_currentSlide">
+                    <MudText Class="year-title">@Year</MudText>
+                    <MudText Typo="Typo.h4" Class="mt-4" Style="animation: fadeInUp 0.8s ease-out 0.3s both;">
+                        Your Year in Raids
+                    </MudText>
+                    <MudText Typo="Typo.subtitle1" Color="Color.Secondary" Style="animation: fadeInUp 0.8s ease-out 0.5s both;">
+                        Let's look back at what you accomplished
+                    </MudText>
+                </div>
+                break;
+
+            case 1:
+                <div class="slide" @key="_currentSlide">
+                    <MudText Typo="Typo.h5" Color="Color.Secondary">This year, you completed</MudText>
+                    <div class="big-number">@_recap.TotalEncounters.ToString("N0")</div>
+                    <div class="stat-label">encounters</div>
+                    <MudDivider Class="my-4" Style="width: 200px; animation: fadeInUp 0.6s ease-out 0.7s both;" />
+                    <MudStack Row="true" Spacing="6" Style="animation: fadeInUp 0.6s ease-out 0.8s both;">
+                        <MudStack AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.h4" Color="Color.Success">@_recap.TotalKills</MudText>
+                            <MudText Color="Color.Secondary">Kills</MudText>
+                        </MudStack>
+                        <MudStack AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.h4" Color="Color.Error">@_recap.TotalWipes</MudText>
+                            <MudText Color="Color.Secondary">Wipes</MudText>
+                        </MudStack>
+                    </MudStack>
+                </div>
+                break;
+
+            case 2:
+                <div class="slide" @key="_currentSlide">
+                    <MudText Typo="Typo.h5" Color="Color.Secondary">You spent</MudText>
+                    <div class="big-number">@_recap.HoursRaided.ToString("F1")</div>
+                    <div class="stat-label">hours actually hitting bosses</div>
+                    @if (_recap.FunFacts?.Count > 0)
+                    {
+                        <div class="fun-fact">
+                            <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Color="Color.Warning" />
+                            <MudText>@_recap.FunFacts.First()</MudText>
+                        </div>
+                    }
+                </div>
+                break;
+
+            case 3:
+                <div class="slide" @key="_currentSlide">
+                    <MudText Typo="Typo.h5" Color="Color.Secondary">Your most killed boss was</MudText>
+                    @if (_recap.MostKilledBoss != null)
+                    {
+                        <div class="highlight-text">@_recap.MostKilledBoss.BossName</div>
+                        <div class="subtitle">
+                            @(_recap.MostKilledBoss.IsCM ? "Challenge Mode" : "Normal Mode")
+                            - @_recap.MostKilledBoss.Kills kills
+                        </div>
+                    }
+                    else
+                    {
+                        <MudText>No kills recorded</MudText>
+                    }
+                </div>
+                break;
+
+            case 4:
+                <div class="slide" @key="_currentSlide">
+                    <MudText Typo="Typo.h5" Color="Color.Secondary">Your nemesis boss was</MudText>
+                    @if (_recap.MostWipedBoss != null)
+                    {
+                        <div class="highlight-text" style="color: var(--mud-palette-error);">@_recap.MostWipedBoss.BossName</div>
+                        <div class="subtitle">
+                            @_recap.MostWipedBoss.Wipes wipes... but you kept trying!
+                        </div>
+                    }
+                    else
+                    {
+                        <MudText Color="Color.Success">No wipes! Perfect run!</MudText>
+                    }
+                </div>
+                break;
+
+            case 5:
+                <div class="slide" @key="_currentSlide">
+                    <MudText Typo="Typo.h5" Color="Color.Secondary">Most attempted bosses</MudText>
+                    @if (_recap.MostAttemptedBosses != null && _recap.MostAttemptedBosses.Count > 0)
+                    {
+                        <div class="class-list mt-4">
+                            @foreach (var boss in _recap.MostAttemptedBosses)
+                            {
+                                <div class="class-item">
+                                    <span>@boss.BossName @(boss.IsCM ? "(CM)" : "")</span>
+                                    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Primary">@boss.Attempts attempts</MudChip>
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Success">@boss.Clears clears</MudChip>
+                                    </MudStack>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <MudText Color="Color.Secondary">No attempt data</MudText>
+                    }
+                </div>
+                break;
+
+            case 6:
+                <div class="slide" @key="_currentSlide">
+                    <MudText Typo="Typo.h5" Color="Color.Secondary">The guild's favorite class was</MudText>
+                    @if (_recap.FavoriteBaseClass != null)
+                    {
+                        <div class="highlight-text">@_recap.FavoriteBaseClass.Profession</div>
+                        <div class="subtitle">Played @_recap.FavoriteBaseClass.Count times</div>
+                        <div class="class-list mt-4">
+                            @if (_recap.TopBaseClasses != null)
+                            {
+                                @foreach (var cls in _recap.TopBaseClasses)
+                                {
+                                    <div class="class-item">
+                                        <span>@cls.Profession</span>
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Primary">@cls.Count</MudChip>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <MudText Color="Color.Secondary">No class data</MudText>
+                    }
+                </div>
+                break;
+
+            case 7:
+                <div class="slide" @key="_currentSlide">
+                    <MudText Typo="Typo.h5" Color="Color.Secondary">The guild's favorite specialization was</MudText>
+                    @if (_recap.FavoriteSubclass != null)
+                    {
+                        <div class="highlight-text">@_recap.FavoriteSubclass.Profession</div>
+                        <div class="subtitle">Played @_recap.FavoriteSubclass.Count times</div>
+                        <div class="class-list mt-4">
+                            @if (_recap.TopSubclasses != null)
+                            {
+                                @foreach (var cls in _recap.TopSubclasses)
+                                {
+                                    <div class="class-item">
+                                        <span>@cls.Profession</span>
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Secondary">@cls.Count</MudChip>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <MudText Color="Color.Secondary">No specialization data</MudText>
+                    }
+                </div>
+                break;
+
+            case 8:
+                <div class="slide" @key="_currentSlide">
+                    <MudText Typo="Typo.h5" Color="Color.Secondary">Top DPS moment</MudText>
+                    @if (_recap.TopDpsPerformance != null)
+                    {
+                        <div class="big-number">@_recap.TopDpsPerformance.Dps.ToString("N0")</div>
+                        <div class="stat-label">DPS</div>
+                        <MudStack Class="mt-4" Style="animation: fadeInUp 0.6s ease-out 0.6s both;">
+                            <MudText Typo="Typo.h6">@_recap.TopDpsPerformance.AccountName</MudText>
+                            <MudText Color="Color.Secondary">
+                                on @_recap.TopDpsPerformance.Profession
+                            </MudText>
+                            <MudText Color="Color.Secondary">
+                                vs @_recap.TopDpsPerformance.BossName @(_recap.TopDpsPerformance.IsCM ? "(CM)" : "")
+                            </MudText>
+                        </MudStack>
+                    }
+                    else
+                    {
+                        <MudText Color="Color.Secondary">No DPS data</MudText>
+                    }
+                </div>
+                break;
+
+            case 9:
+                <div class="slide" @key="_currentSlide">
+                    <MudText Typo="Typo.h5" Color="Color.Secondary">The death counter shows</MudText>
+                    <div class="big-number-red">@_recap.TotalDeaths.ToString("N0")</div>
+                    <div class="stat-label">total deaths</div>
+                    @if (_recap.MostDeathsPlayer != null)
+                    {
+                        <div class="fun-fact">
+                            <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" />
+                            <MudText>
+                                @_recap.MostDeathsPlayer.AccountName led the pack with @_recap.MostDeathsPlayer.Deaths deaths
+                            </MudText>
+                        </div>
+                    }
+                </div>
+                break;
+
+            case 10:
+                <div class="slide" @key="_currentSlide">
+                    <MudText Typo="Typo.h5" Color="Color.Secondary">Total damage dealt</MudText>
+                    <div class="big-number">@FormatDamage(_recap.TotalDamage)</div>
+                    <div class="stat-label">damage to bosses</div>
+                    @if (_recap.TopDamagePlayers != null && _recap.TopDamagePlayers.Count > 0)
+                    {
+                        <MudText Typo="Typo.subtitle1" Class="mt-4" Style="animation: fadeInUp 0.6s ease-out 0.5s both;">
+                            Top Damage Dealers
+                        </MudText>
+                        <div class="class-list mt-2">
+                            @foreach (var player in _recap.TopDamagePlayers)
+                            {
+                                <div class="class-item">
+                                    <span>@player.AccountName</span>
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary">@FormatDamage(player.Damage)</MudChip>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                break;
+
+            case 11:
+                <div class="slide" @key="_currentSlide">
+                    <MudText Typo="Typo.h5" Color="Color.Secondary">Total breakbar damage</MudText>
+                    <div class="big-number">@FormatBreakbar(_recap.TotalBreakbarDamage)</div>
+                    <div class="stat-label">breakbar damage</div>
+                    @if (_recap.TopBreakbarPlayers != null && _recap.TopBreakbarPlayers.Count > 0)
+                    {
+                        <MudText Typo="Typo.subtitle1" Class="mt-4" Style="animation: fadeInUp 0.6s ease-out 0.5s both;">
+                            Top CC Champions
+                        </MudText>
+                        <div class="class-list mt-2">
+                            @foreach (var player in _recap.TopBreakbarPlayers)
+                            {
+                                <div class="class-item">
+                                    <span>@player.AccountName</span>
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Secondary">@FormatBreakbar(player.BreakbarDamage)</MudChip>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                break;
+
+            default:
+                @* Fun stats achievements (slides 12 through 12 + N-1) *@
+                @if (_currentSlide >= 12 && _currentSlide < TotalSlides)
+                {
+                    var funStatIndex = _currentSlide - 12;
+                    if (_recap.FunStatsAchievements != null && funStatIndex < _recap.FunStatsAchievements.Count)
+                    {
+                        var achievement = _recap.FunStatsAchievements[funStatIndex];
+                        <div class="slide" @key="_currentSlide">
+                            <MudText Typo="Typo.h5" Color="Color.Secondary">@(achievement.Title)</MudText>
+                            <div class="highlight-text" style="@(achievement.IsPositive ? "color: var(--mud-palette-success);" : "color: var(--mud-palette-warning);")">
+                                @achievement.WinnerAccountName
+                            </div>
+                            <div class="@(achievement.IsPositive ? "big-number" : "big-number-orange")">
+                                @achievement.Count.ToString("N0")
+                            </div>
+                            <div class="stat-label">times</div>
+                            @if (!string.IsNullOrEmpty(achievement.Description))
+                            {
+                                <div class="fun-fact">
+                                    <MudIcon Icon="@(achievement.IsPositive ? Icons.Material.Filled.EmojiEvents : Icons.Material.Filled.Warning)"
+                                             Color="@(achievement.IsPositive ? Color.Success : Color.Warning)" />
+                                    <MudText>@achievement.Description</MudText>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+                @* Summary slide (last slide) *@
+                else if (_currentSlide == TotalSlides)
+                {
+                    <div class="slide" @key="_currentSlide">
+                        <MudText Class="year-title">@Year</MudText>
+                        <MudText Typo="Typo.h4" Class="mt-4" Style="animation: fadeInUp 0.8s ease-out 0.3s both;">
+                            What a year!
+                        </MudText>
+                        <MudStack Class="mt-4" Style="animation: fadeInUp 0.8s ease-out 0.5s both;">
+                            <MudText Typo="Typo.h6" Color="Color.Secondary">
+                                @_recap.TotalKills kills | @_recap.HoursRaided.ToString("F0") hours | @_recap.UniqueRaiders raiders
+                            </MudText>
+                        </MudStack>
+                        @if (_recap.FunFacts?.Count > 1)
+                        {
+                            <div class="fun-fact">
+                                @foreach (var fact in _recap.FunFacts.Skip(1))
+                                {
+                                    <MudText Class="mb-2">@fact</MudText>
+                                }
+                            </div>
+                        }
+                        <MudText Typo="Typo.subtitle1" Color="Color.Primary" Class="mt-4" Style="animation: fadeInUp 0.8s ease-out 0.7s both;">
+                            See you next year!
+                        </MudText>
+                    </div>
+                }
+                break;
+        }
+
+        <div class="progress-bar">
+            @for (var i = 0; i <= TotalSlides; i++)
+            {
+                var slideIndex = i;
+                <div class="progress-dot @(slideIndex == _currentSlide ? "active" : "")"
+                     @onclick="() => GoToSlide(slideIndex)"></div>
+            }
+        </div>
+
+        <div class="nav-buttons">
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.ArrowBack"
+                       Disabled="_currentSlide == 0"
+                       OnClick="PreviousSlide">
+                Back
+            </MudButton>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       EndIcon="@Icons.Material.Filled.ArrowForward"
+                       Disabled="_currentSlide >= TotalSlides"
+                       OnClick="NextSlide">
+                @(_currentSlide == TotalSlides ? "Done" : "Next")
+            </MudButton>
+        </div>
+
+        <MudStack Row="true" Class="mt-4" AlignItems="AlignItems.Center">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Year:</MudText>
+            <MudSelect T="int" Value="Year" ValueChanged="OnYearChanged" Dense="true" Style="width: 100px;">
+                @foreach (var y in _availableYears)
+                {
+                    <MudSelectItem Value="y">@y</MudSelectItem>
+                }
+            </MudSelect>
+        </MudStack>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Year { get; set; }
+
+    private bool _loading = true;
+    private YearlyRecapDto? _recap;
+    private List<int> _availableYears = new();
+    private int _currentSlide = 0;
+
+    // Base slides: 0=Title, 1=Encounters, 2=Hours, 3=MostKilled, 4=Nemesis, 5=MostAttempted, 6=FavClass, 7=FavSpec, 8=TopDPS, 9=Deaths, 10=Damage, 11=Breakbar
+    // Then fun stats slides (12 through 12+N-1), then summary slide (last)
+    private const int BaseSlideCount = 12;
+    private int FunStatsCount => _recap?.FunStatsAchievements?.Count ?? 0;
+    private int TotalSlides => BaseSlideCount + FunStatsCount; // last slide index
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Year == 0)
+        {
+            Year = DateTime.Now.Year;
+        }
+
+        await LoadAvailableYearsAsync();
+        await LoadRecapAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Year == 0)
+        {
+            Year = DateTime.Now.Year;
+        }
+    }
+
+    private async Task LoadAvailableYearsAsync()
+    {
+        try
+        {
+            _availableYears = await Http.GetFromJsonAsync<List<int>>("api/recap/years") ?? new();
+            if (!_availableYears.Contains(Year) && _availableYears.Count > 0)
+            {
+                Year = _availableYears.First();
+            }
+        }
+        catch
+        {
+            _availableYears = new List<int> { DateTime.Now.Year };
+        }
+    }
+
+    private async Task LoadRecapAsync()
+    {
+        _loading = true;
+        _currentSlide = 0;
+
+        try
+        {
+            _recap = await Http.GetFromJsonAsync<YearlyRecapDto>($"api/recap/{Year}");
+        }
+        catch
+        {
+            _recap = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnYearChanged(int newYear)
+    {
+        Year = newYear;
+        Navigation.NavigateTo($"/recap/{Year}");
+        await LoadRecapAsync();
+    }
+
+    private void NextSlide()
+    {
+        if (_currentSlide < TotalSlides)
+        {
+            _currentSlide++;
+        }
+    }
+
+    private void PreviousSlide()
+    {
+        if (_currentSlide > 0)
+        {
+            _currentSlide--;
+        }
+    }
+
+    private void GoToSlide(int slide)
+    {
+        _currentSlide = slide;
+    }
+
+    private static string FormatDamage(long damage)
+    {
+        if (damage >= 1_000_000_000)
+            return $"{damage / 1_000_000_000.0:F2}B";
+        if (damage >= 1_000_000)
+            return $"{damage / 1_000_000.0:F1}M";
+        if (damage >= 1_000)
+            return $"{damage / 1_000.0:F1}K";
+        return damage.ToString("N0");
+    }
+
+    private static string FormatBreakbar(decimal breakbar)
+    {
+        if (breakbar >= 1_000_000)
+            return $"{breakbar / 1_000_000:F1}M";
+        if (breakbar >= 1_000)
+            return $"{breakbar / 1_000:F1}K";
+        return breakbar.ToString("N0");
+    }
+
+    // DTOs
+    public record YearlyRecapDto(
+        int Year,
+        bool IsEmpty,
+        int TotalEncounters = 0,
+        int TotalKills = 0,
+        int TotalWipes = 0,
+        decimal SuccessRate = 0,
+        double HoursRaided = 0,
+        int UniqueRaiders = 0,
+        int TotalDeaths = 0,
+        long TotalDamage = 0,
+        decimal TotalBreakbarDamage = 0,
+        BossKillStatDto? MostKilledBoss = null,
+        BossWipeStatDto? MostWipedBoss = null,
+        List<BossAttemptStatDto>? MostAttemptedBosses = null,
+        ClassPlayStatDto? FavoriteBaseClass = null,
+        ClassPlayStatDto? FavoriteSubclass = null,
+        TopDpsPerformanceDto? TopDpsPerformance = null,
+        PlayerDeathStatDto? MostDeathsPlayer = null,
+        List<PlayerDamageStatDto>? TopDamagePlayers = null,
+        List<PlayerBreakbarStatDto>? TopBreakbarPlayers = null,
+        EncounterSnapshotDto? FirstEncounter = null,
+        EncounterSnapshotDto? LastEncounter = null,
+        LongestFightStatDto? LongestFight = null,
+        List<ClassPlayStatDto>? TopBaseClasses = null,
+        List<ClassPlayStatDto>? TopSubclasses = null,
+        List<string>? FunFacts = null,
+        List<FunStatAchievementDto>? FunStatsAchievements = null
+    );
+
+    public record BossKillStatDto(string BossName, bool IsCM, int Kills);
+    public record BossWipeStatDto(string BossName, bool IsCM, int Wipes);
+    public record BossAttemptStatDto(string BossName, bool IsCM, int Attempts, int Clears);
+    public record ClassPlayStatDto(string Profession, int Count);
+    public record TopDpsPerformanceDto(string AccountName, string BossName, bool IsCM, int Dps, string Profession, DateTimeOffset EncounterTime);
+    public record PlayerDeathStatDto(string AccountName, int Deaths);
+    public record PlayerDamageStatDto(string AccountName, long Damage);
+    public record PlayerBreakbarStatDto(string AccountName, decimal BreakbarDamage);
+    public record EncounterSnapshotDto(string BossName, bool IsCM, bool Success, DateTimeOffset EncounterTime);
+    public record LongestFightStatDto(string BossName, bool IsCM, double DurationSeconds);
+    public record FunStatAchievementDto(
+        string Title,
+        string? Description,
+        string MechanicName,
+        bool IsPositive,
+        string WinnerAccountName,
+        int Count
+    );
+}

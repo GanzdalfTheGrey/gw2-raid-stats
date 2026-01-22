@@ -15,4 +15,5 @@ public class RaidStatsDb : DataConnection
     public ITable<IgnoredBossEntity> IgnoredBosses => this.GetTable<IgnoredBossEntity>();
     public ITable<IncludedPlayerEntity> IncludedPlayers => this.GetTable<IncludedPlayerEntity>();
     public ITable<SettingsEntity> Settings => this.GetTable<SettingsEntity>();
+    public ITable<RecapFunStatEntity> RecapFunStats => this.GetTable<RecapFunStatEntity>();
 }

@@ -8,7 +8,8 @@
       "Bash(find:*)",
       "Bash(dotnet restore:*)",
       "Bash(dotnet nuget:*)",
-      "Bash(cmd.exe /c \"cd /d C:\\dev\\github\\a-gansemer\\gw2-raid-stats\\gw2-raid-stats && dotnet build\")"
+      "Bash(cmd.exe /c \"cd /d C:\\dev\\github\\a-gansemer\\gw2-raid-stats\\gw2-raid-stats && dotnet build\")",
+      "Bash(cmd.exe /c \"dotnet build\")"
     ],
     "deny": [],
     "ask": []

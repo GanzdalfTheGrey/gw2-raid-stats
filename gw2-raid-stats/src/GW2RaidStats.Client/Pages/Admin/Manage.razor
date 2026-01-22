@@ -134,6 +134,13 @@
                 </MudItem>
             </MudGrid>
 
+            @* Recap Setting *@
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Yearly Recap Settings:</MudText>
+            <MudSwitch T="bool" @bind-Value="_recapIncludeAllBosses"
+                       Color="Color.Primary"
+                       Label="Include all bosses in yearly recap (ignore the ignored bosses list)"
+                       @bind-Value:after="UpdateRecapBossesSetting" />
+
             @* Manually Included Players *@
             @if (_includedPlayers.Count > 0)
             {
@@ -214,6 +221,7 @@
     private AvailableBoss? _selectedBoss;
     private string _reason = "";
     private int _threshold = 300;
+    private bool _recapIncludeAllBosses = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -230,14 +238,16 @@
             var includedTask = Http.GetFromJsonAsync<List<IncludedPlayer>>("api/admin/included-players");
             var availablePlayersTask = Http.GetFromJsonAsync<List<AvailablePlayer>>("api/admin/included-players/available");
             var thresholdTask = Http.GetFromJsonAsync<ThresholdResponse>("api/admin/included-players/threshold");
+            var recapBossesTask = Http.GetFromJsonAsync<RecapBossesResponse>("api/admin/included-players/recap-include-all-bosses");
 
-            await Task.WhenAll(ignoredTask, availableTask, includedTask, availablePlayersTask, thresholdTask);
+            await Task.WhenAll(ignoredTask, availableTask, includedTask, availablePlayersTask, thresholdTask, recapBossesTask);
 
             _ignoredBosses = ignoredTask.Result ?? new();
             _availableBosses = availableTask.Result ?? new();
             _includedPlayers = includedTask.Result ?? new();
             _availablePlayers = availablePlayersTask.Result ?? new();
             _threshold = thresholdTask.Result?.Threshold ?? 300;
+            _recapIncludeAllBosses = recapBossesTask.Result?.IncludeAll ?? false;
         }
         catch (Exception ex)
         {
@@ -331,6 +341,27 @@
         finally
         {
             _updatingThreshold = false;
+        }
+    }
+
+    private async Task UpdateRecapBossesSetting()
+    {
+        try
+        {
+            var request = new UpdateRecapBossesRequest(_recapIncludeAllBosses);
+            var response = await Http.PutAsJsonAsync("api/admin/included-players/recap-include-all-bosses", request);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Recap boss setting updated", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Failed to update recap setting", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
         }
     }
 
@@ -429,4 +460,8 @@
     public record ThresholdResponse(int Threshold);
 
     public record UpdateThresholdRequest(int Threshold);
+
+    public record RecapBossesResponse(bool IncludeAll);
+
+    public record UpdateRecapBossesRequest(bool IncludeAll);
 }

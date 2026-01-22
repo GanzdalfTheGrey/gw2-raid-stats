@@ -11,9 +11,11 @@ public class SettingsService
 
     // Setting keys
     public const string AutoIncludeThresholdKey = "auto_include_threshold";
+    public const string RecapIncludeAllBossesKey = "recap_include_all_bosses";
 
     // Default values
     public const int DefaultAutoIncludeThreshold = 300;
+    public const bool DefaultRecapIncludeAllBosses = false;
 
     public SettingsService(RaidStatsDb db)
     {
@@ -60,6 +62,51 @@ public class SettingsService
             {
                 Key = AutoIncludeThresholdKey,
                 Value = threshold.ToString(),
+                UpdatedAt = DateTimeOffset.UtcNow
+            }, token: ct);
+        }
+    }
+
+    /// <summary>
+    /// Get whether recap should include all bosses (ignoring the ignored bosses list)
+    /// </summary>
+    public async Task<bool> GetRecapIncludeAllBossesAsync(CancellationToken ct = default)
+    {
+        var setting = await _db.Settings
+            .Where(s => s.Key == RecapIncludeAllBossesKey)
+            .FirstOrDefaultAsync(ct);
+
+        if (setting != null && bool.TryParse(setting.Value, out var value))
+        {
+            return value;
+        }
+
+        return DefaultRecapIncludeAllBosses;
+    }
+
+    /// <summary>
+    /// Set whether recap should include all bosses
+    /// </summary>
+    public async Task SetRecapIncludeAllBossesAsync(bool includeAll, CancellationToken ct = default)
+    {
+        var existing = await _db.Settings
+            .Where(s => s.Key == RecapIncludeAllBossesKey)
+            .FirstOrDefaultAsync(ct);
+
+        if (existing != null)
+        {
+            await _db.Settings
+                .Where(s => s.Key == RecapIncludeAllBossesKey)
+                .Set(s => s.Value, includeAll.ToString().ToLower())
+                .Set(s => s.UpdatedAt, DateTimeOffset.UtcNow)
+                .UpdateAsync(ct);
+        }
+        else
+        {
+            await _db.InsertAsync(new SettingsEntity
+            {
+                Key = RecapIncludeAllBossesKey,
+                Value = includeAll.ToString().ToLower(),
                 UpdatedAt = DateTimeOffset.UtcNow
             }, token: ct);
         }

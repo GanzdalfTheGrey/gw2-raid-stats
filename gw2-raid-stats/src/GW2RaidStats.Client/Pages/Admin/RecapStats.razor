@@ -1,0 +1,531 @@
+@page "/admin/recap-stats"
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+
+<PageTitle>GW2 Raid Stats - Configure Recap Fun Stats</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Configure Recap Fun Stats</MudText>
+
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Add fun achievement titles for mechanics in the yearly recap. For example, "Oil Connoisseur" for players who got hit by the most Deimos oils.
+</MudText>
+
+<MudGrid>
+    <MudItem xs="12">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Add" Class="mr-2" />
+                Add New Fun Stat
+            </MudText>
+
+            @if (_loading)
+            {
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+            }
+
+            <MudGrid>
+                <MudItem xs="12" md="4">
+                    <MudAutocomplete T="AvailableMechanic"
+                                     Label="Select Mechanic"
+                                     @bind-Value="_selectedMechanic"
+                                     SearchFunc="SearchMechanics"
+                                     ToStringFunc="@(m => m == null ? "" : $"{m.MechanicName} ({m.Count:N0})")"
+                                     Variant="Variant.Outlined"
+                                     Dense="true"
+                                     ResetValueOnEmptyText="true"
+                                     CoerceText="false"
+                                     CoerceValue="false">
+                        <ItemTemplate Context="mechanic">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body1">@mechanic.MechanicName</MudText>
+                                @if (!string.IsNullOrEmpty(mechanic.MechanicFullName))
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@mechanic.MechanicFullName</MudText>
+                                }
+                                <MudText Typo="Typo.caption" Color="Color.Tertiary">@mechanic.Count.ToString("N0") occurrences</MudText>
+                            </MudStack>
+                        </ItemTemplate>
+                    </MudAutocomplete>
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudTextField @bind-Value="_displayTitle"
+                                  Label="Display Title"
+                                  Placeholder="e.g., Oil Connoisseur"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudTextField @bind-Value="_description"
+                                  Label="Description (optional)"
+                                  Placeholder="e.g., Most times hit by oil"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="2">
+                    <MudStack>
+                        <MudSwitch @bind-Value="_isPositive"
+                                   Label="Positive?"
+                                   Color="Color.Success"
+                                   Size="Size.Small" />
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   Disabled="@(_selectedMechanic == null || string.IsNullOrWhiteSpace(_displayTitle) || _adding)"
+                                   OnClick="AddFunStat"
+                                   StartIcon="@Icons.Material.Filled.Add">
+                            @if (_adding)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            }
+                            Add
+                        </MudButton>
+                    </MudStack>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Class="mr-2" />
+                Configured Fun Stats
+            </MudText>
+
+            @if (_funStats.Count == 0 && !_loading)
+            {
+                <MudAlert Severity="Severity.Info">
+                    No fun stats configured yet. Add some above to make your yearly recap more entertaining!
+                </MudAlert>
+            }
+            else
+            {
+                <MudTable Items="@_funStats" Dense="true" Hover="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Order</MudTh>
+                        <MudTh>Title</MudTh>
+                        <MudTh>Mechanic</MudTh>
+                        <MudTh>Description</MudTh>
+                        <MudTh>Type</MudTh>
+                        <MudTh>Enabled</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Order">
+                            <MudStack Row="true" Spacing="1">
+                                <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward"
+                                               Size="Size.Small"
+                                               Disabled="@(context.DisplayOrder == 0)"
+                                               OnClick="@(() => MoveUp(context))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward"
+                                               Size="Size.Small"
+                                               Disabled="@(context.DisplayOrder == _funStats.Count - 1)"
+                                               OnClick="@(() => MoveDown(context))" />
+                            </MudStack>
+                        </MudTd>
+                        <MudTd DataLabel="Title">
+                            <MudText Typo="Typo.body1"><strong>@context.DisplayTitle</strong></MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Mechanic">
+                            <MudText Typo="Typo.body2">@context.MechanicName</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Description">
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">@(context.Description ?? "-")</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Type">
+                            @if (context.IsPositive)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success">Positive</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Warning">Negative</MudChip>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Enabled">
+                            <MudSwitch T="bool"
+                                       Value="context.IsEnabled"
+                                       ValueChanged="@((bool val) => ToggleEnabled(context, val))"
+                                       Color="Color.Primary"
+                                       Size="Size.Small" />
+                        </MudTd>
+                        <MudTd DataLabel="Actions">
+                            <MudStack Row="true" Spacing="1">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                               Size="Size.Small"
+                                               Color="Color.Primary"
+                                               OnClick="@(() => StartEdit(context))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Size="Size.Small"
+                                               Color="Color.Error"
+                                               OnClick="@(() => DeleteFunStat(context.Id))" />
+                            </MudStack>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Search" Class="mr-2" />
+                Browse All Mechanics
+            </MudText>
+
+            <MudTextField @bind-Value="_mechanicSearch"
+                          Label="Search mechanics"
+                          Placeholder="Type to filter..."
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Class="mb-4" />
+
+            @if (_availableMechanics.Count == 0 && !_loading)
+            {
+                <MudAlert Severity="Severity.Info">No mechanics found. Import some logs first!</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="@FilteredMechanics"
+                          Dense="true"
+                          Hover="true"
+                          FixedHeader="true"
+                          Height="400px">
+                    <HeaderContent>
+                        <MudTh>Mechanic Name</MudTh>
+                        <MudTh>Full Name</MudTh>
+                        <MudTh>Description</MudTh>
+                        <MudTh>Occurrences</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Mechanic Name">@context.MechanicName</MudTd>
+                        <MudTd DataLabel="Full Name">@(context.MechanicFullName ?? "-")</MudTd>
+                        <MudTd DataLabel="Description">@(context.Description ?? "-")</MudTd>
+                        <MudTd DataLabel="Occurrences">@context.Count.ToString("N0")</MudTd>
+                        <MudTd DataLabel="Actions">
+                            @if (!IsAlreadyConfigured(context.MechanicName))
+                            {
+                                <MudButton Variant="Variant.Text"
+                                           Color="Color.Primary"
+                                           Size="Size.Small"
+                                           OnClick="@(() => QuickAdd(context))">
+                                    Add
+                                </MudButton>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success">Configured</MudChip>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@* Edit Dialog *@
+<MudDialog @bind-Visible="_editDialogVisible">
+    <DialogContent>
+        <MudText Typo="Typo.h6" Class="mb-4">Edit Fun Stat</MudText>
+        <MudStack Spacing="3">
+            <MudTextField @bind-Value="_editTitle"
+                          Label="Display Title"
+                          Variant="Variant.Outlined" />
+            <MudTextField @bind-Value="_editDescription"
+                          Label="Description (optional)"
+                          Variant="Variant.Outlined" />
+            <MudSwitch @bind-Value="_editIsPositive"
+                       Label="Positive achievement"
+                       Color="Color.Success" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelEdit">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="SaveEdit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private bool _loading = true;
+    private bool _adding = false;
+    private List<FunStatDto> _funStats = new();
+    private List<AvailableMechanic> _availableMechanics = new();
+    private AvailableMechanic? _selectedMechanic;
+    private string _displayTitle = "";
+    private string _description = "";
+    private bool _isPositive = false;
+    private string _mechanicSearch = "";
+
+    // Edit dialog
+    private bool _editDialogVisible = false;
+    private Guid _editId;
+    private string _editTitle = "";
+    private string _editDescription = "";
+    private bool _editIsPositive = false;
+    private bool _editIsEnabled = true;
+
+    private IEnumerable<AvailableMechanic> FilteredMechanics => string.IsNullOrWhiteSpace(_mechanicSearch)
+        ? _availableMechanics
+        : _availableMechanics.Where(m =>
+            m.MechanicName.Contains(_mechanicSearch, StringComparison.OrdinalIgnoreCase) ||
+            (m.MechanicFullName?.Contains(_mechanicSearch, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (m.Description?.Contains(_mechanicSearch, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            var funStatsTask = Http.GetFromJsonAsync<List<FunStatDto>>("api/admin/recap-fun-stats");
+            var mechanicsTask = Http.GetFromJsonAsync<List<AvailableMechanic>>("api/admin/recap-fun-stats/available-mechanics");
+
+            await Task.WhenAll(funStatsTask, mechanicsTask);
+
+            _funStats = funStatsTask.Result ?? new();
+            _availableMechanics = mechanicsTask.Result ?? new();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading data: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task<IEnumerable<AvailableMechanic>> SearchMechanics(string value, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return _availableMechanics.Take(20);
+
+        return _availableMechanics
+            .Where(m => m.MechanicName.Contains(value, StringComparison.OrdinalIgnoreCase) ||
+                       (m.MechanicFullName?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false))
+            .Take(20);
+    }
+
+    private async Task AddFunStat()
+    {
+        if (_selectedMechanic == null || string.IsNullOrWhiteSpace(_displayTitle)) return;
+
+        _adding = true;
+        try
+        {
+            var request = new AddFunStatRequest(
+                _selectedMechanic.MechanicName,
+                _displayTitle,
+                string.IsNullOrWhiteSpace(_description) ? null : _description,
+                _isPositive
+            );
+
+            var response = await Http.PostAsJsonAsync("api/admin/recap-fun-stats", request);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Added '{_displayTitle}'", Severity.Success);
+                _selectedMechanic = null;
+                _displayTitle = "";
+                _description = "";
+                _isPositive = false;
+                await LoadDataAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to add fun stat", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _adding = false;
+        }
+    }
+
+    private void QuickAdd(AvailableMechanic mechanic)
+    {
+        _selectedMechanic = mechanic;
+        _displayTitle = "";
+        _description = mechanic.MechanicFullName ?? mechanic.Description ?? "";
+    }
+
+    private bool IsAlreadyConfigured(string mechanicName)
+    {
+        return _funStats.Any(f => f.MechanicName == mechanicName);
+    }
+
+    private void StartEdit(FunStatDto stat)
+    {
+        _editId = stat.Id;
+        _editTitle = stat.DisplayTitle;
+        _editDescription = stat.Description ?? "";
+        _editIsPositive = stat.IsPositive;
+        _editIsEnabled = stat.IsEnabled;
+        _editDialogVisible = true;
+    }
+
+    private void CancelEdit()
+    {
+        _editDialogVisible = false;
+    }
+
+    private async Task SaveEdit()
+    {
+        try
+        {
+            var request = new UpdateFunStatRequest(
+                _editTitle,
+                string.IsNullOrWhiteSpace(_editDescription) ? null : _editDescription,
+                _editIsPositive,
+                _editIsEnabled
+            );
+
+            var response = await Http.PutAsJsonAsync($"api/admin/recap-fun-stats/{_editId}", request);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Updated successfully", Severity.Success);
+                _editDialogVisible = false;
+                await LoadDataAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to update", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ToggleEnabled(FunStatDto stat, bool enabled)
+    {
+        try
+        {
+            var request = new UpdateFunStatRequest(
+                stat.DisplayTitle,
+                stat.Description,
+                stat.IsPositive,
+                enabled
+            );
+
+            var response = await Http.PutAsJsonAsync($"api/admin/recap-fun-stats/{stat.Id}", request);
+            if (response.IsSuccessStatusCode)
+            {
+                await LoadDataAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteFunStat(Guid id)
+    {
+        try
+        {
+            var response = await Http.DeleteAsync($"api/admin/recap-fun-stats/{id}");
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Deleted successfully", Severity.Success);
+                await LoadDataAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to delete", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task MoveUp(FunStatDto stat)
+    {
+        var index = _funStats.FindIndex(f => f.Id == stat.Id);
+        if (index <= 0) return;
+
+        // Swap with previous
+        var newOrder = _funStats.Select(f => f.Id).ToList();
+        (newOrder[index], newOrder[index - 1]) = (newOrder[index - 1], newOrder[index]);
+
+        await UpdateOrder(newOrder);
+    }
+
+    private async Task MoveDown(FunStatDto stat)
+    {
+        var index = _funStats.FindIndex(f => f.Id == stat.Id);
+        if (index < 0 || index >= _funStats.Count - 1) return;
+
+        // Swap with next
+        var newOrder = _funStats.Select(f => f.Id).ToList();
+        (newOrder[index], newOrder[index + 1]) = (newOrder[index + 1], newOrder[index]);
+
+        await UpdateOrder(newOrder);
+    }
+
+    private async Task UpdateOrder(List<Guid> orderedIds)
+    {
+        try
+        {
+            var request = new UpdateOrderRequest(orderedIds);
+            var response = await Http.PutAsJsonAsync("api/admin/recap-fun-stats/order", request);
+            if (response.IsSuccessStatusCode)
+            {
+                await LoadDataAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // DTOs
+    public record FunStatDto(
+        Guid Id,
+        string MechanicName,
+        string DisplayTitle,
+        string? Description,
+        bool IsPositive,
+        int DisplayOrder,
+        bool IsEnabled,
+        DateTimeOffset CreatedAt
+    );
+
+    public record AvailableMechanic(
+        string MechanicName,
+        string? MechanicFullName,
+        string? Description,
+        int Count
+    );
+
+    public record AddFunStatRequest(
+        string MechanicName,
+        string DisplayTitle,
+        string? Description,
+        bool IsPositive
+    );
+
+    public record UpdateFunStatRequest(
+        string DisplayTitle,
+        string? Description,
+        bool IsPositive,
+        bool IsEnabled
+    );
+
+    public record UpdateOrderRequest(List<Guid> OrderedIds);
+}
