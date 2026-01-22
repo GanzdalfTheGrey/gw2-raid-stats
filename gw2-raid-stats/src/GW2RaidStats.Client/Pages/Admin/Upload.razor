@@ -20,7 +20,7 @@
 
             <MudFileUpload T="IReadOnlyList<IBrowserFile>"
                            Accept=".json"
-                           MaximumFileCount="100"
+                           MaximumFileCount="500"
                            FilesChanged="OnFilesSelected"
                            Class="mb-4">
                 <ActivatorContent>
@@ -39,10 +39,20 @@
                     @_selectedFiles.Count file(s) selected
                 </MudText>
 
+                <MudSlider @bind-Value="_uploadParallelism"
+                           Min="1"
+                           Max="8"
+                           Step="1"
+                           Color="Color.Primary"
+                           Class="mb-3"
+                           Disabled="@_isUploading">
+                    Parallel uploads: @_uploadParallelism
+                </MudSlider>
+
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Secondary"
                            StartIcon="@Icons.Material.Filled.Upload"
-                           OnClick="UploadFiles"
+                           OnClick="UploadFilesParallel"
                            Disabled="@_isUploading"
                            Class="mb-4">
                     @if (_isUploading)
@@ -128,8 +138,108 @@
     </MudItem>
 </MudGrid>
 
-@* Progress Section *@
-@if (_isImporting || _isUploading)
+@* Upload Progress Section *@
+@if (_isUploading && _fileProgress.Count > 0)
+{
+    <MudPaper Class="pa-4 mt-4" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Class="mr-2" />
+            Upload Progress
+        </MudText>
+
+        <MudGrid Class="mb-4">
+            <MudItem xs="3">
+                <MudText Typo="Typo.body2" Align="Align.Center">
+                    <MudIcon Icon="@Icons.Material.Filled.HourglassEmpty" Size="Size.Small" Class="mr-1" />
+                    Pending: @_fileProgress.Count(f => f.Value.Status == UploadStatus.Pending)
+                </MudText>
+            </MudItem>
+            <MudItem xs="3">
+                <MudText Typo="Typo.body2" Align="Align.Center" Color="Color.Info">
+                    <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Size="Size.Small" Class="mr-1" />
+                    Uploading: @_fileProgress.Count(f => f.Value.Status == UploadStatus.Uploading)
+                </MudText>
+            </MudItem>
+            <MudItem xs="3">
+                <MudText Typo="Typo.body2" Align="Align.Center" Color="Color.Success">
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
+                    Done: @_fileProgress.Count(f => f.Value.Status == UploadStatus.Completed)
+                </MudText>
+            </MudItem>
+            <MudItem xs="3">
+                <MudText Typo="Typo.body2" Align="Align.Center" Color="Color.Error">
+                    <MudIcon Icon="@Icons.Material.Filled.Error" Size="Size.Small" Class="mr-1" />
+                    Failed: @_fileProgress.Count(f => f.Value.Status == UploadStatus.Failed)
+                </MudText>
+            </MudItem>
+        </MudGrid>
+
+        @{
+            var completed = _fileProgress.Count(f => f.Value.Status == UploadStatus.Completed || f.Value.Status == UploadStatus.Failed);
+            var total = _fileProgress.Count;
+            var percent = total > 0 ? (double)completed / total * 100 : 0;
+        }
+        <MudProgressLinear Color="Color.Primary" Value="@percent" Class="mb-2" />
+        <MudText Typo="Typo.body2" Class="mb-4">@completed / @total files processed</MudText>
+
+        <MudExpansionPanels>
+            <MudExpansionPanel Text="File Details" Expanded="false">
+                <div style="max-height: 300px; overflow-y: auto;">
+                    <MudSimpleTable Dense="true" Striped="true">
+                        <thead>
+                            <tr>
+                                <th>File</th>
+                                <th style="width: 120px;">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var kvp in _fileProgress.OrderBy(f => f.Value.Status == UploadStatus.Completed ? 2 : f.Value.Status == UploadStatus.Failed ? 3 : f.Value.Status == UploadStatus.Uploading ? 0 : 1))
+                            {
+                                <tr>
+                                    <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                        @kvp.Key
+                                    </td>
+                                    <td>
+                                        @switch (kvp.Value.Status)
+                                        {
+                                            case UploadStatus.Pending:
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Default">Pending</MudChip>
+                                                break;
+                                            case UploadStatus.Uploading:
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Info">
+                                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Style="width: 14px; height: 14px;" Class="mr-1" />
+                                                    Uploading
+                                                </MudChip>
+                                                break;
+                                            case UploadStatus.Completed:
+                                                @if (kvp.Value.WasDuplicate)
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning">Duplicate</MudChip>
+                                                }
+                                                else
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Success">Imported</MudChip>
+                                                }
+                                                break;
+                                            case UploadStatus.Failed:
+                                                <MudTooltip Text="@kvp.Value.Error">
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Error">Failed</MudChip>
+                                                </MudTooltip>
+                                                break;
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+    </MudPaper>
+}
+
+@* Directory Import Progress Section *@
+@if (_isImporting)
 {
     <MudPaper Class="pa-4 mt-4" Elevation="2">
         <MudText Typo="Typo.h6" Class="mb-3">
@@ -264,6 +374,8 @@
     private bool _isImporting;
     private List<ImportResult> _uploadResults = new();
     private BulkImportResult? _bulkResult;
+    private Dictionary<string, FileUploadProgress> _fileProgress = new();
+    private int _uploadParallelism = 4;
 
     // Directory import fields
     private string _sourceDirectory = string.Empty;
@@ -274,48 +386,94 @@
     private void OnFilesSelected(IReadOnlyList<IBrowserFile> files)
     {
         _selectedFiles = files.ToList();
+        _fileProgress.Clear();
+        _uploadResults.Clear();
     }
 
-    private async Task UploadFiles()
+    private async Task UploadFilesParallel()
     {
         if (_selectedFiles.Count == 0) return;
 
         _isUploading = true;
         _uploadResults.Clear();
+        _fileProgress = _selectedFiles.ToDictionary(
+            f => f.Name,
+            f => new FileUploadProgress { Status = UploadStatus.Pending }
+        );
         StateHasChanged();
 
         try
         {
-            using var content = new MultipartFormDataContent();
-
-            foreach (var file in _selectedFiles)
-            {
-                var stream = file.OpenReadStream(maxAllowedSize: 50_000_000); // 50MB max per file
-                var streamContent = new StreamContent(stream);
-                content.Add(streamContent, "files", file.Name);
-            }
-
-            var response = await Http.PostAsync("api/admin/import/upload", content);
-
-            if (response.IsSuccessStatusCode)
-            {
-                _uploadResults = await response.Content.ReadFromJsonAsync<List<ImportResult>>() ?? new();
-            }
-            else
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                _uploadResults.Add(new ImportResult(false, null, "Upload", null, $"Server error: {error}", false));
-            }
-        }
-        catch (Exception ex)
-        {
-            _uploadResults.Add(new ImportResult(false, null, "Upload", null, $"Error: {ex.Message}", false));
+            using var semaphore = new SemaphoreSlim(_uploadParallelism);
+            var tasks = _selectedFiles.Select(file => UploadSingleFileAsync(file, semaphore)).ToList();
+            await Task.WhenAll(tasks);
         }
         finally
         {
             _isUploading = false;
             _selectedFiles.Clear();
             StateHasChanged();
+        }
+    }
+
+    private async Task UploadSingleFileAsync(IBrowserFile file, SemaphoreSlim semaphore)
+    {
+        await semaphore.WaitAsync();
+
+        try
+        {
+            // Update status to uploading
+            _fileProgress[file.Name] = new FileUploadProgress { Status = UploadStatus.Uploading };
+            await InvokeAsync(StateHasChanged);
+
+            using var content = new MultipartFormDataContent();
+            var stream = file.OpenReadStream(maxAllowedSize: 50_000_000);
+            var streamContent = new StreamContent(stream);
+            content.Add(streamContent, "files", file.Name);
+
+            var response = await Http.PostAsync("api/admin/import/upload", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var results = await response.Content.ReadFromJsonAsync<List<ImportResult>>() ?? new();
+                var result = results.FirstOrDefault();
+
+                if (result != null)
+                {
+                    _fileProgress[file.Name] = new FileUploadProgress
+                    {
+                        Status = result.Success ? UploadStatus.Completed : UploadStatus.Failed,
+                        Error = result.Error,
+                        WasDuplicate = result.WasDuplicate,
+                        BossName = result.BossName
+                    };
+                    _uploadResults.Add(result);
+                }
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                _fileProgress[file.Name] = new FileUploadProgress
+                {
+                    Status = UploadStatus.Failed,
+                    Error = $"Server error: {error}"
+                };
+                _uploadResults.Add(new ImportResult(false, null, file.Name, null, $"Server error: {error}", false));
+            }
+        }
+        catch (Exception ex)
+        {
+            _fileProgress[file.Name] = new FileUploadProgress
+            {
+                Status = UploadStatus.Failed,
+                Error = ex.Message
+            };
+            _uploadResults.Add(new ImportResult(false, null, file.Name, null, $"Error: {ex.Message}", false));
+        }
+        finally
+        {
+            semaphore.Release();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -391,5 +549,21 @@
         public string? CompletedDirectory { get; init; }
         public string? FailedDirectory { get; init; }
         public int MaxParallelism { get; init; } = 8;
+    }
+
+    public enum UploadStatus
+    {
+        Pending,
+        Uploading,
+        Completed,
+        Failed
+    }
+
+    public class FileUploadProgress
+    {
+        public UploadStatus Status { get; set; }
+        public string? Error { get; set; }
+        public bool WasDuplicate { get; set; }
+        public string? BossName { get; set; }
     }
 }
