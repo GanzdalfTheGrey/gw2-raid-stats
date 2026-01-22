@@ -1,5 +1,8 @@
 using GW2RaidStats.Infrastructure;
 
+// Enable legacy timestamp behavior for Npgsql to properly handle DateTimeOffset with timezones
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure Kestrel for long-running imports
