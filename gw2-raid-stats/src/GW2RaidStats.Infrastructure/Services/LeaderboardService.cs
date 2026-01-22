@@ -9,6 +9,7 @@ namespace GW2RaidStats.Infrastructure.Services;
 public class LeaderboardService
 {
     private readonly RaidStatsDb _db;
+    private readonly IncludedPlayerService _includedPlayerService;
 
     // Threshold for considering someone a boon support (generation % to squad)
     private const decimal BoonSupportThreshold = 10m;
@@ -19,9 +20,13 @@ public class LeaderboardService
     // Ignored encounter names (non-boss events)
     private static readonly string[] IgnoredEncounters = ["Spirit Race", "Twisted Castle", "River of Souls", "Statues of Grenth"];
 
-    public LeaderboardService(RaidStatsDb db)
+    // Display name for non-included players (pugs)
+    private const string PugDisplayName = "Pug";
+
+    public LeaderboardService(RaidStatsDb db, IncludedPlayerService includedPlayerService)
     {
         _db = db;
+        _includedPlayerService = includedPlayerService;
     }
 
     /// <summary>
@@ -54,13 +59,25 @@ public class LeaderboardService
         int limit = 10,
         CancellationToken ct = default)
     {
+        // Get included players (guild members) - only they can claim leaderboard spots
+        var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
+        var includedList = includedAccounts.ToList();
+
         // Get top DPS player_encounters for this boss (include SquadGroup for subgroup filtering)
-        var topEntries = await _db.PlayerEncounters
+        var query = _db.PlayerEncounters
             .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
             .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
             .Where(x => x.e.TriggerId == triggerId && x.e.IsCM == isCM && x.e.Success)
             .Where(x => !x.e.BossName.Contains(LateStartFilter)) // Exclude late start
-            .Where(x => !IgnoredEncounters.Any(i => x.e.BossName.Contains(i))) // Exclude non-boss events
+            .Where(x => !IgnoredEncounters.Any(i => x.e.BossName.Contains(i))); // Exclude non-boss events
+
+        // Only included players can claim leaderboard spots
+        if (includedList.Count > 0)
+        {
+            query = query.Where(x => includedList.Contains(x.p.AccountName));
+        }
+
+        var topEntries = await query
             .OrderByDescending(x => x.pe.Dps)
             .Take(limit)
             .Select(x => new
@@ -83,7 +100,7 @@ public class LeaderboardService
         foreach (var entry in topEntries)
         {
             var supports = await GetBoonSupportsForEncounterAsync(
-                entry.EncounterId, entry.SquadGroup ?? 1, ct);
+                entry.EncounterId, entry.SquadGroup ?? 1, includedAccounts, ct);
 
             results.Add(new LeaderboardEntry(
                 entry.Id,
@@ -110,15 +127,27 @@ public class LeaderboardService
         int limit = 10,
         CancellationToken ct = default)
     {
+        // Get included players (guild members) - only they can claim leaderboard spots
+        var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
+        var includedList = includedAccounts.ToList();
+
         // Get top DPS player_encounters where the player was providing boons (include SquadGroup)
-        var topEntries = await _db.PlayerEncounters
+        var query = _db.PlayerEncounters
             .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
             .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
             .Where(x => x.e.TriggerId == triggerId && x.e.IsCM == isCM && x.e.Success)
             .Where(x => !x.e.BossName.Contains(LateStartFilter)) // Exclude late start
             .Where(x => !IgnoredEncounters.Any(i => x.e.BossName.Contains(i))) // Exclude non-boss events
             .Where(x => (x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
-                        (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold)
+                        (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold);
+
+        // Only included players can claim leaderboard spots
+        if (includedList.Count > 0)
+        {
+            query = query.Where(x => includedList.Contains(x.p.AccountName));
+        }
+
+        var topEntries = await query
             .OrderByDescending(x => x.pe.Dps)
             .Take(limit)
             .Select(x => new
@@ -143,7 +172,7 @@ public class LeaderboardService
         foreach (var entry in topEntries)
         {
             var supports = await GetBoonSupportsForEncounterAsync(
-                entry.EncounterId, entry.SquadGroup ?? 1, ct, excludePlayerId: entry.Id);
+                entry.EncounterId, entry.SquadGroup ?? 1, includedAccounts, ct, excludePlayerId: entry.Id);
 
             var boonType = (entry.QuicknessGeneration ?? 0) >= BoonSupportThreshold ? "Quickness" : "Alacrity";
 
@@ -166,10 +195,12 @@ public class LeaderboardService
 
     /// <summary>
     /// Get boon supports (quickness and alacrity providers) for a player's subgroup in an encounter
+    /// Non-included players (pugs) are anonymized as "Pug"
     /// </summary>
     private async Task<List<BoonSupport>> GetBoonSupportsForEncounterAsync(
         Guid encounterId,
         int squadGroup,
+        HashSet<string> includedAccounts,
         CancellationToken ct,
         Guid? excludePlayerId = null)
     {
@@ -186,24 +217,38 @@ public class LeaderboardService
         }
 
         var allSupports = await query
-            .Select(x => new BoonSupport(
+            .Select(x => new
+            {
                 x.p.AccountName,
                 x.pe.CharacterName,
                 x.pe.Profession,
-                x.pe.QuicknessGeneration ?? 0,
-                x.pe.AlacracityGeneration ?? 0
-            ))
+                QuicknessGeneration = x.pe.QuicknessGeneration ?? 0,
+                AlacracityGeneration = x.pe.AlacracityGeneration ?? 0
+            })
             .ToListAsync(ct);
+
+        // Convert to BoonSupport, anonymizing non-included players as "Pug"
+        var supports = allSupports.Select(s =>
+        {
+            var isIncluded = includedAccounts.Contains(s.AccountName);
+            return new BoonSupport(
+                isIncluded ? s.AccountName : PugDisplayName,
+                isIncluded ? s.CharacterName : PugDisplayName,
+                s.Profession,
+                s.QuicknessGeneration,
+                s.AlacracityGeneration
+            );
+        }).ToList();
 
         // Return one quickness and one alacrity provider (the highest of each)
         var result = new List<BoonSupport>();
 
-        var quicknessProvider = allSupports
+        var quicknessProvider = supports
             .Where(s => s.QuicknessGeneration >= BoonSupportThreshold)
             .OrderByDescending(s => s.QuicknessGeneration)
             .FirstOrDefault();
 
-        var alacrityProvider = allSupports
+        var alacrityProvider = supports
             .Where(s => s.AlacracityGeneration >= BoonSupportThreshold)
             .OrderByDescending(s => s.AlacracityGeneration)
             .FirstOrDefault();

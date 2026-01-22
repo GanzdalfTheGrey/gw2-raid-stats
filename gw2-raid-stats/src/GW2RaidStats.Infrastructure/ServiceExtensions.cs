@@ -38,6 +38,8 @@ public static class ServiceExtensions
         services.AddScoped<StatsService>();
         services.AddScoped<LeaderboardService>();
         services.AddScoped<IgnoredBossService>();
+        services.AddScoped<SettingsService>();
+        services.AddScoped<IncludedPlayerService>();
 
         return services;
     }

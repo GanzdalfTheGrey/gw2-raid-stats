@@ -94,15 +94,126 @@
             }
         </MudPaper>
     </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.People" Class="mr-2" />
+                Included Players (Guild Members)
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                Only included players can claim leaderboard spots. Non-included players (pugs) show as "Pug" in boon supports.
+                Players are auto-included if they have at least the threshold number of encounters.
+            </MudText>
+
+            @if (_loading)
+            {
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+            }
+
+            @* Auto-Include Threshold Setting *@
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Auto-Include Threshold:</MudText>
+            <MudGrid Class="mb-4">
+                <MudItem xs="12" md="4">
+                    <MudNumericField T="int" @bind-Value="_threshold" Label="Minimum Encounters"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense"
+                                     Min="0" Max="10000" />
+                </MudItem>
+                <MudItem xs="12" md="2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               Disabled="@_updatingThreshold"
+                               OnClick="UpdateThreshold"
+                               StartIcon="@Icons.Material.Filled.Save"
+                               Class="mt-1">
+                        @if (_updatingThreshold)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        Save
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            @* Manually Included Players *@
+            @if (_includedPlayers.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Manually Included:</MudText>
+                <MudTable Items="@_includedPlayers" Dense="true" Hover="true" Class="mb-4">
+                    <HeaderContent>
+                        <MudTh>Account Name</MudTh>
+                        <MudTh>Reason</MudTh>
+                        <MudTh>Added</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.AccountName</MudTd>
+                        <MudTd>@(context.Reason ?? "-")</MudTd>
+                        <MudTd>@context.CreatedAt.LocalDateTime.ToString("MMM d, yyyy")</MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error"
+                                           Size="Size.Small"
+                                           OnClick="@(() => RemoveIncludedPlayer(context.Id))" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+
+            @* Available Players (sorted by encounter count) *@
+            <MudText Typo="Typo.subtitle2" Class="mb-2">All Players (by encounter count):</MudText>
+            @if (_availablePlayers.Count == 0 && !_loading)
+            {
+                <MudAlert Severity="Severity.Info">No players available. Import some logs first!</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="@_availablePlayers" Dense="true" Hover="true" Class="mb-4" FixedHeader="true" Height="400px">
+                    <HeaderContent>
+                        <MudTh>Account Name</MudTh>
+                        <MudTh>Encounters</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.AccountName</MudTd>
+                        <MudTd>@context.EncounterCount.ToString("N0")</MudTd>
+                        <MudTd>
+                            @if (context.IsAutoIncluded)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success">Auto-Included</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default">Not Included</MudChip>
+                            }
+                        </MudTd>
+                        <MudTd>
+                            @if (!context.IsAutoIncluded)
+                            {
+                                <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
+                                           OnClick="@(() => AddIncludedPlayer(context.AccountName))">
+                                    Include
+                                </MudButton>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    </MudItem>
 </MudGrid>
 
 @code {
     private bool _loading = true;
     private bool _adding = false;
+    private bool _updatingThreshold = false;
     private List<IgnoredBoss> _ignoredBosses = new();
     private List<AvailableBoss> _availableBosses = new();
+    private List<IncludedPlayer> _includedPlayers = new();
+    private List<AvailablePlayer> _availablePlayers = new();
     private AvailableBoss? _selectedBoss;
     private string _reason = "";
+    private int _threshold = 300;
 
     protected override async Task OnInitializedAsync()
     {
@@ -116,11 +227,17 @@
         {
             var ignoredTask = Http.GetFromJsonAsync<List<IgnoredBoss>>("api/admin/ignored-bosses");
             var availableTask = Http.GetFromJsonAsync<List<AvailableBoss>>("api/admin/ignored-bosses/available");
+            var includedTask = Http.GetFromJsonAsync<List<IncludedPlayer>>("api/admin/included-players");
+            var availablePlayersTask = Http.GetFromJsonAsync<List<AvailablePlayer>>("api/admin/included-players/available");
+            var thresholdTask = Http.GetFromJsonAsync<ThresholdResponse>("api/admin/included-players/threshold");
 
-            await Task.WhenAll(ignoredTask, availableTask);
+            await Task.WhenAll(ignoredTask, availableTask, includedTask, availablePlayersTask, thresholdTask);
 
             _ignoredBosses = ignoredTask.Result ?? new();
             _availableBosses = availableTask.Result ?? new();
+            _includedPlayers = includedTask.Result ?? new();
+            _availablePlayers = availablePlayersTask.Result ?? new();
+            _threshold = thresholdTask.Result?.Threshold ?? 300;
         }
         catch (Exception ex)
         {
@@ -190,6 +307,77 @@
         }
     }
 
+    private async Task UpdateThreshold()
+    {
+        _updatingThreshold = true;
+        try
+        {
+            var request = new UpdateThresholdRequest(_threshold);
+            var response = await Http.PutAsJsonAsync("api/admin/included-players/threshold", request);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Auto-include threshold updated to {_threshold}", Severity.Success);
+                await LoadDataAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to update threshold", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _updatingThreshold = false;
+        }
+    }
+
+    private async Task AddIncludedPlayer(string accountName)
+    {
+        try
+        {
+            var request = new AddIncludedPlayerRequest(accountName, "Manually included");
+
+            var response = await Http.PostAsJsonAsync("api/admin/included-players", request);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Added {accountName} to included list", Severity.Success);
+                await LoadDataAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to add player to included list", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RemoveIncludedPlayer(Guid id)
+    {
+        try
+        {
+            var response = await Http.DeleteAsync($"api/admin/included-players/{id}");
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Player removed from included list", Severity.Success);
+                await LoadDataAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to remove player from included list", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
     // DTOs
     public record IgnoredBoss(
         Guid Id,
@@ -217,4 +405,28 @@
         bool IsCM,
         string? Reason
     );
+
+    public record IncludedPlayer(
+        Guid Id,
+        string AccountName,
+        string? Reason,
+        DateTimeOffset CreatedAt
+    );
+
+    public record AvailablePlayer(
+        Guid Id,
+        string AccountName,
+        DateTimeOffset FirstSeen,
+        int EncounterCount,
+        bool IsAutoIncluded
+    );
+
+    public record AddIncludedPlayerRequest(
+        string AccountName,
+        string? Reason
+    );
+
+    public record ThresholdResponse(int Threshold);
+
+    public record UpdateThresholdRequest(int Threshold);
 }
