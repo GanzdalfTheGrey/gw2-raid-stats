@@ -65,6 +65,13 @@ public class PlayerEncounterEntity
     [Column("boon_strips")]
     public int BoonStrips { get; set; }
 
+    // Boon generation (percentage uptime generated for squad, 0-100+)
+    [Column("quickness_generation")]
+    public decimal? QuicknessGeneration { get; set; }
+
+    [Column("alacrity_generation")]
+    public decimal? AlacracityGeneration { get; set; }
+
     [Column("created_at"), NotNull]
     public DateTimeOffset CreatedAt { get; set; }
 

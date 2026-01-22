@@ -1,0 +1,393 @@
+@page "/admin/upload"
+@inject HttpClient Http
+
+<PageTitle>GW2 Raid Stats - Upload Logs</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Upload Logs</MudText>
+
+<MudGrid>
+    @* File Upload Section *@
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Class="mr-2" />
+                Upload Files
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Default" Class="mb-4">
+                Upload Elite Insights JSON log files directly from your browser.
+            </MudText>
+
+            <MudFileUpload T="IReadOnlyList<IBrowserFile>"
+                           Accept=".json"
+                           MaximumFileCount="100"
+                           FilesChanged="OnFilesSelected"
+                           Class="mb-4">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.AttachFile"
+                               Disabled="@_isUploading">
+                        Select Files
+                    </MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+
+            @if (_selectedFiles.Count > 0)
+            {
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    @_selectedFiles.Count file(s) selected
+                </MudText>
+
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Secondary"
+                           StartIcon="@Icons.Material.Filled.Upload"
+                           OnClick="UploadFiles"
+                           Disabled="@_isUploading"
+                           Class="mb-4">
+                    @if (_isUploading)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Uploading...</span>
+                    }
+                    else
+                    {
+                        <span>Upload</span>
+                    }
+                </MudButton>
+            }
+        </MudPaper>
+    </MudItem>
+
+    @* Directory Import Section *@
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Folder" Class="mr-2" />
+                Bulk Import from Directory
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Default" Class="mb-4">
+                Import all JSON files from a directory on the server. Ideal for large batch imports.
+            </MudText>
+
+            <MudTextField @bind-Value="_sourceDirectory"
+                          Label="Source Directory"
+                          Placeholder="/path/to/logs"
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.FolderOpen"
+                          Class="mb-3"
+                          Disabled="@_isImporting" />
+
+            <MudTextField @bind-Value="_completedDirectory"
+                          Label="Completed Directory (optional)"
+                          Placeholder="/path/to/completed"
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.CheckCircle"
+                          HelperText="Successfully imported files will be moved here"
+                          Class="mb-3"
+                          Disabled="@_isImporting" />
+
+            <MudTextField @bind-Value="_failedDirectory"
+                          Label="Failed Directory (optional)"
+                          Placeholder="/path/to/failed"
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Error"
+                          HelperText="Failed files will be moved here"
+                          Class="mb-3"
+                          Disabled="@_isImporting" />
+
+            <MudSlider @bind-Value="_parallelism"
+                       Min="1"
+                       Max="16"
+                       Step="1"
+                       Color="Color.Primary"
+                       Class="mb-3"
+                       Disabled="@_isImporting">
+                Parallelism: @_parallelism threads
+            </MudSlider>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Secondary"
+                       StartIcon="@Icons.Material.Filled.PlayArrow"
+                       OnClick="StartDirectoryImport"
+                       Disabled="@(_isImporting || string.IsNullOrWhiteSpace(_sourceDirectory))">
+                @if (_isImporting)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>Importing...</span>
+                }
+                else
+                {
+                    <span>Start Import</span>
+                }
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@* Progress Section *@
+@if (_isImporting || _isUploading)
+{
+    <MudPaper Class="pa-4 mt-4" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.Sync" Class="mr-2 mud-icon-spin" />
+            Import Progress
+        </MudText>
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-2" />
+        <MudText Typo="Typo.body2">Processing files... Please wait.</MudText>
+    </MudPaper>
+}
+
+@* Results Section *@
+@if (_bulkResult != null)
+{
+    <MudPaper Class="pa-4 mt-4" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.Assessment" Class="mr-2" />
+            Import Results
+        </MudText>
+
+        <MudGrid Class="mb-4">
+            <MudItem xs="6" sm="3">
+                <MudCard Elevation="0" Style="background-color: var(--mud-palette-background-grey);">
+                    <MudCardContent Class="text-center">
+                        <MudText Typo="Typo.h4">@_bulkResult.TotalFiles</MudText>
+                        <MudText Typo="Typo.caption">Total Files</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudCard Elevation="0" Style="background-color: var(--mud-palette-success-lighten);">
+                    <MudCardContent Class="text-center">
+                        <MudText Typo="Typo.h4" Color="Color.Success">@_bulkResult.Imported</MudText>
+                        <MudText Typo="Typo.caption">Imported</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudCard Elevation="0" Style="background-color: var(--mud-palette-warning-lighten);">
+                    <MudCardContent Class="text-center">
+                        <MudText Typo="Typo.h4" Color="Color.Warning">@_bulkResult.Duplicates</MudText>
+                        <MudText Typo="Typo.caption">Duplicates</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudCard Elevation="0" Style="background-color: var(--mud-palette-error-lighten);">
+                    <MudCardContent Class="text-center">
+                        <MudText Typo="Typo.h4" Color="Color.Error">@_bulkResult.Failed</MudText>
+                        <MudText Typo="Typo.caption">Failed</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+
+        <MudText Typo="Typo.body2" Class="mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.Timer" Size="Size.Small" Class="mr-1" />
+            Completed in @_bulkResult.Duration.TotalSeconds.ToString("F1") seconds
+        </MudText>
+
+        @if (_bulkResult.Results.Any(r => !r.Success))
+        {
+            <MudExpansionPanels Class="mt-3">
+                <MudExpansionPanel Text="@($"Failed Files ({_bulkResult.Results.Count(r => !r.Success)})")">
+                    <MudList T="string" Dense="true">
+                        @foreach (var result in _bulkResult.Results.Where(r => !r.Success))
+                        {
+                            <MudListItem Icon="@Icons.Material.Filled.Error" IconColor="Color.Error">
+                                <MudText Typo="Typo.body2">@result.FileName</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Error">@result.Error</MudText>
+                            </MudListItem>
+                        }
+                    </MudList>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+        }
+    </MudPaper>
+}
+
+@if (_uploadResults.Count > 0)
+{
+    <MudPaper Class="pa-4 mt-4" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.CloudDone" Class="mr-2" />
+            Upload Results
+        </MudText>
+
+        <MudSimpleTable Dense="true" Striped="true">
+            <thead>
+                <tr>
+                    <th>File</th>
+                    <th>Boss</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var result in _uploadResults)
+                {
+                    <tr>
+                        <td>@result.FileName</td>
+                        <td>@(result.BossName ?? "-")</td>
+                        <td>
+                            @if (result.Success)
+                            {
+                                if (result.WasDuplicate)
+                                {
+                                    <MudChip T="string" Color="Color.Warning" Size="Size.Small">Duplicate</MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Color="Color.Success" Size="Size.Small">Imported</MudChip>
+                                }
+                            }
+                            else
+                            {
+                                <MudTooltip Text="@result.Error">
+                                    <MudChip T="string" Color="Color.Error" Size="Size.Small">Failed</MudChip>
+                                </MudTooltip>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+@code {
+    private List<IBrowserFile> _selectedFiles = new();
+    private bool _isUploading;
+    private bool _isImporting;
+    private List<ImportResult> _uploadResults = new();
+    private BulkImportResult? _bulkResult;
+
+    // Directory import fields
+    private string _sourceDirectory = string.Empty;
+    private string? _completedDirectory;
+    private string? _failedDirectory;
+    private int _parallelism = 8;
+
+    private void OnFilesSelected(IReadOnlyList<IBrowserFile> files)
+    {
+        _selectedFiles = files.ToList();
+    }
+
+    private async Task UploadFiles()
+    {
+        if (_selectedFiles.Count == 0) return;
+
+        _isUploading = true;
+        _uploadResults.Clear();
+        StateHasChanged();
+
+        try
+        {
+            using var content = new MultipartFormDataContent();
+
+            foreach (var file in _selectedFiles)
+            {
+                var stream = file.OpenReadStream(maxAllowedSize: 50_000_000); // 50MB max per file
+                var streamContent = new StreamContent(stream);
+                content.Add(streamContent, "files", file.Name);
+            }
+
+            var response = await Http.PostAsync("api/admin/import/upload", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                _uploadResults = await response.Content.ReadFromJsonAsync<List<ImportResult>>() ?? new();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                _uploadResults.Add(new ImportResult(false, null, "Upload", null, $"Server error: {error}", false));
+            }
+        }
+        catch (Exception ex)
+        {
+            _uploadResults.Add(new ImportResult(false, null, "Upload", null, $"Error: {ex.Message}", false));
+        }
+        finally
+        {
+            _isUploading = false;
+            _selectedFiles.Clear();
+            StateHasChanged();
+        }
+    }
+
+    private async Task StartDirectoryImport()
+    {
+        if (string.IsNullOrWhiteSpace(_sourceDirectory)) return;
+
+        _isImporting = true;
+        _bulkResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var request = new DirectoryImportRequest
+            {
+                SourceDirectory = _sourceDirectory,
+                CompletedDirectory = string.IsNullOrWhiteSpace(_completedDirectory) ? null : _completedDirectory,
+                FailedDirectory = string.IsNullOrWhiteSpace(_failedDirectory) ? null : _failedDirectory,
+                MaxParallelism = _parallelism
+            };
+
+            var response = await Http.PostAsJsonAsync("api/admin/import/directory", request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                _bulkResult = await response.Content.ReadFromJsonAsync<BulkImportResult>();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                _bulkResult = new BulkImportResult(0, 0, 0, 1, TimeSpan.Zero, new List<ImportResult>
+                {
+                    new ImportResult(false, null, "Directory Import", null, $"Server error: {error}", false)
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _bulkResult = new BulkImportResult(0, 0, 0, 1, TimeSpan.Zero, new List<ImportResult>
+            {
+                new ImportResult(false, null, "Directory Import", null, $"Error: {ex.Message}", false)
+            });
+        }
+        finally
+        {
+            _isImporting = false;
+            StateHasChanged();
+        }
+    }
+
+    // DTOs matching the server models
+    public record ImportResult(
+        bool Success,
+        Guid? EncounterId,
+        string FileName,
+        string? BossName,
+        string? Error,
+        bool WasDuplicate
+    );
+
+    public record BulkImportResult(
+        int TotalFiles,
+        int Imported,
+        int Duplicates,
+        int Failed,
+        TimeSpan Duration,
+        List<ImportResult> Results
+    );
+
+    public record DirectoryImportRequest
+    {
+        public required string SourceDirectory { get; init; }
+        public string? CompletedDirectory { get; init; }
+        public string? FailedDirectory { get; init; }
+        public int MaxParallelism { get; init; } = 8;
+    }
+}

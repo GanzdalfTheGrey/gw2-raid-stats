@@ -2,6 +2,28 @@ namespace GW2RaidStats.Core;
 
 public static class WingMapping
 {
+    /// <summary>
+    /// Encounters that should be ignored (not real boss fights)
+    /// </summary>
+    private static readonly HashSet<string> IgnoredEncounters = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Spirit Race",
+        "Twisted Castle",
+        "River of Souls",  // This is an event, not a boss
+        "Statues of Grenth" // Wing 5 event (Broken King, Eater of Souls, Eyes)
+    };
+
+    /// <summary>
+    /// Check if an encounter should be ignored based on boss name
+    /// </summary>
+    public static bool IsIgnoredEncounter(string bossName)
+    {
+        return IgnoredEncounters.Any(ignored => bossName.Contains(ignored, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Get wing number for a trigger ID. Returns null for non-raid content.
+    /// </summary>
     public static int? GetWing(int triggerId) => triggerId switch
     {
         // Wing 1 - Spirit Vale
@@ -11,13 +33,13 @@ public static class WingMapping
 
         // Wing 2 - Salvation Pass
         16123 => 2,  // Slothasor
-        16088 => 2,  // Bandit Trio
-        16137 => 2,  // Matthias
+        16088 => 2,  // Bandit Trio (Berg)
+        16137 or 16115 => 2,  // Matthias Gabrel (both possible IDs)
 
         // Wing 3 - Stronghold of the Faithful
         16235 => 3,  // Escort
         16246 => 3,  // Keep Construct
-        16286 => 3,  // Twisted Castle
+        16286 => 3,  // Twisted Castle (event)
         16253 => 3,  // Xera
 
         // Wing 4 - Bastion of the Penitent
@@ -27,14 +49,14 @@ public static class WingMapping
         17154 => 4,  // Deimos
 
         // Wing 5 - Hall of Chains
-        19767 => 5,  // Soulless Horror
-        19828 => 5,  // River of Souls
-        19536 => 5,  // Statues of Grenth
+        19767 => 5,  // Soulless Horror (Desmina)
+        // 19828 => 5,  // River of Souls (ignored - event)
+        // 19536 => 5,  // Statues of Grenth (ignored - event)
         19450 => 5,  // Dhuum
 
         // Wing 6 - Mythwright Gambit
-        21105 => 6,  // Conjured Amalgamate
-        21089 => 6,  // Twin Largos
+        43974 or 21105 => 6,  // Conjured Amalgamate (43974 is common ID)
+        21089 or 21177 => 6,  // Twin Largos (Nikare/Kenut)
         20934 => 6,  // Qadim
 
         // Wing 7 - The Key of Ahdashim
@@ -42,12 +64,77 @@ public static class WingMapping
         21964 => 7,  // Cardinal Sabir
         22000 => 7,  // Qadim the Peerless
 
-        // Wing 8 - Mount Balrior
-        26725 => 8,  // Greer
-        26774 => 8,  // Decima
-        26712 => 8,  // Ura
+        // Wing 8 - Mount Balrior (NM and CM trigger IDs)
+        26725 or 26957 => 8,  // Greer / Massive Greer (CM)
+        26774 or 26956 => 8,  // Decima / Godsquall Decima (CM)
+        26712 or 26952 => 8,  // Ura / Ura the Adorned (CM)
 
         _ => null    // Strikes, fractals, etc.
+    };
+
+    /// <summary>
+    /// Get wing by boss name (fallback when trigger ID is unknown)
+    /// </summary>
+    public static int? GetWingByBossName(string bossName)
+    {
+        // Wing 8 CM variants
+        if (bossName.Contains("Greer", StringComparison.OrdinalIgnoreCase)) return 8;
+        if (bossName.Contains("Decima", StringComparison.OrdinalIgnoreCase)) return 8;
+        if (bossName.Contains("Ura", StringComparison.OrdinalIgnoreCase) &&
+            !bossName.Contains("Drakkar", StringComparison.OrdinalIgnoreCase)) return 8;
+
+        // Add more fallbacks as needed
+        return null;
+    }
+
+    /// <summary>
+    /// Get encounter order within wing for sorting (1-based)
+    /// </summary>
+    public static int GetEncounterOrder(int triggerId) => triggerId switch
+    {
+        // Wing 1
+        15438 => 1,  // Vale Guardian
+        15429 => 2,  // Gorseval
+        15375 => 3,  // Sabetha
+
+        // Wing 2
+        16123 => 1,  // Slothasor
+        16088 => 2,  // Bandit Trio
+        16137 or 16115 => 3,  // Matthias
+
+        // Wing 3
+        16235 => 1,  // Escort
+        16246 => 2,  // Keep Construct
+        16286 => 3,  // Twisted Castle
+        16253 => 4,  // Xera
+
+        // Wing 4
+        17194 => 1,  // Cairn
+        17172 => 2,  // Mursaat Overseer
+        17188 => 3,  // Samarog
+        17154 => 4,  // Deimos
+
+        // Wing 5
+        19767 => 1,  // Soulless Horror
+        // 19828, 19536 are ignored events
+        19450 => 2,  // Dhuum
+
+        // Wing 6
+        43974 or 21105 => 1,  // Conjured Amalgamate
+        21089 or 21177 => 2,  // Twin Largos
+        20934 => 3,  // Qadim
+
+        // Wing 7
+        22006 => 1,  // Cardinal Adina
+        21964 => 2,  // Cardinal Sabir
+        22000 => 3,  // Qadim the Peerless
+
+        // Wing 8 (NM and CM)
+        26725 or 26957 => 1,  // Greer / Massive Greer
+        26774 or 26956 => 2,  // Decima / Godsquall Decima
+        26712 or 26952 => 3,  // Ura / Ura the Adorned
+
+        _ => 999     // Unknown encounters sort last
     };
 
     public static string GetWingName(int wing) => wing switch

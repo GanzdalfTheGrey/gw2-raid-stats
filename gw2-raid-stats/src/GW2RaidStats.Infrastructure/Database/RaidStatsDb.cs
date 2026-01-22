@@ -12,4 +12,5 @@ public class RaidStatsDb : DataConnection
     public ITable<EncounterEntity> Encounters => this.GetTable<EncounterEntity>();
     public ITable<PlayerEncounterEntity> PlayerEncounters => this.GetTable<PlayerEncounterEntity>();
     public ITable<MechanicEventEntity> MechanicEvents => this.GetTable<MechanicEventEntity>();
+    public ITable<IgnoredBossEntity> IgnoredBosses => this.GetTable<IgnoredBossEntity>();
 }

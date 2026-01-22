@@ -1,0 +1,220 @@
+@page "/admin/manage"
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+
+<PageTitle>GW2 Raid Stats - Manage Data</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Manage Data</MudText>
+
+<MudGrid>
+    <MudItem xs="12">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.VisibilityOff" Class="mr-2" />
+                Ignored Bosses
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                Ignored bosses are excluded from the home page stats (encounters, kills, success rate).
+                Use this to filter out prog sessions that inflate failure rates.
+            </MudText>
+
+            @if (_loading)
+            {
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+            }
+
+            @* Currently Ignored Bosses *@
+            @if (_ignoredBosses.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Currently Ignored:</MudText>
+                <MudTable Items="@_ignoredBosses" Dense="true" Hover="true" Class="mb-4">
+                    <HeaderContent>
+                        <MudTh>Boss</MudTh>
+                        <MudTh>Mode</MudTh>
+                        <MudTh>Reason</MudTh>
+                        <MudTh>Added</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.BossName</MudTd>
+                        <MudTd>
+                            <MudChip T="string" Size="Size.Small" Color="@(context.IsCM ? Color.Warning : Color.Default)">
+                                @(context.IsCM ? "CM" : "NM")
+                            </MudChip>
+                        </MudTd>
+                        <MudTd>@(context.Reason ?? "-")</MudTd>
+                        <MudTd>@context.CreatedAt.LocalDateTime.ToString("MMM d, yyyy")</MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error"
+                                           Size="Size.Small"
+                                           OnClick="@(() => RemoveIgnoredBoss(context.Id))" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+
+            @* Add New Ignored Boss *@
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Add Boss to Ignore List:</MudText>
+            @if (_availableBosses.Count == 0 && !_loading)
+            {
+                <MudAlert Severity="Severity.Info">No bosses available to ignore. Import some logs first!</MudAlert>
+            }
+            else
+            {
+                <MudGrid>
+                    <MudItem xs="12" md="5">
+                        <MudSelect T="AvailableBoss" @bind-Value="_selectedBoss" Label="Select Boss" Variant="Variant.Outlined" Dense="true">
+                            @foreach (var boss in _availableBosses)
+                            {
+                                <MudSelectItem Value="@boss">
+                                    @boss.BossName (@(boss.IsCM ? "CM" : "NM")) - @boss.SuccessCount/@boss.TotalCount kills (@boss.SuccessRate.ToString("F1")%)
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="5">
+                        <MudTextField @bind-Value="_reason" Label="Reason (optional)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Placeholder="e.g., Prog session" />
+                    </MudItem>
+                    <MudItem xs="12" md="2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   Disabled="@(_selectedBoss == null || _adding)"
+                                   OnClick="AddIgnoredBoss"
+                                   StartIcon="@Icons.Material.Filled.Add"
+                                   Class="mt-1">
+                            @if (_adding)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            }
+                            Ignore
+                        </MudButton>
+                    </MudItem>
+                </MudGrid>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private bool _loading = true;
+    private bool _adding = false;
+    private List<IgnoredBoss> _ignoredBosses = new();
+    private List<AvailableBoss> _availableBosses = new();
+    private AvailableBoss? _selectedBoss;
+    private string _reason = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            var ignoredTask = Http.GetFromJsonAsync<List<IgnoredBoss>>("api/admin/ignored-bosses");
+            var availableTask = Http.GetFromJsonAsync<List<AvailableBoss>>("api/admin/ignored-bosses/available");
+
+            await Task.WhenAll(ignoredTask, availableTask);
+
+            _ignoredBosses = ignoredTask.Result ?? new();
+            _availableBosses = availableTask.Result ?? new();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading data: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task AddIgnoredBoss()
+    {
+        if (_selectedBoss == null) return;
+
+        _adding = true;
+        try
+        {
+            var request = new AddIgnoredBossRequest(
+                _selectedBoss.TriggerId,
+                _selectedBoss.BossName,
+                _selectedBoss.IsCM,
+                string.IsNullOrWhiteSpace(_reason) ? null : _reason
+            );
+
+            var response = await Http.PostAsJsonAsync("api/admin/ignored-bosses", request);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Added {_selectedBoss.BossName} to ignored list", Severity.Success);
+                _selectedBoss = null;
+                _reason = "";
+                await LoadDataAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to add boss to ignored list", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _adding = false;
+        }
+    }
+
+    private async Task RemoveIgnoredBoss(Guid id)
+    {
+        try
+        {
+            var response = await Http.DeleteAsync($"api/admin/ignored-bosses/{id}");
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Boss removed from ignored list", Severity.Success);
+                await LoadDataAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to remove boss from ignored list", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // DTOs
+    public record IgnoredBoss(
+        Guid Id,
+        int TriggerId,
+        string BossName,
+        bool IsCM,
+        string? Reason,
+        DateTimeOffset CreatedAt
+    );
+
+    public record AvailableBoss(
+        int TriggerId,
+        string BossName,
+        bool IsCM,
+        int TotalCount,
+        int SuccessCount
+    )
+    {
+        public decimal SuccessRate => TotalCount > 0 ? (decimal)SuccessCount / TotalCount * 100 : 0;
+    }
+
+    public record AddIgnoredBossRequest(
+        int TriggerId,
+        string BossName,
+        bool IsCM,
+        string? Reason
+    );
+}

@@ -1,16 +1,22 @@
 @page "/"
+@inject HttpClient Http
 
 <PageTitle>GW2 Raid Stats - Home</PageTitle>
 
 <MudText Typo="Typo.h4" Class="mb-4">Dashboard</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
 
 <MudGrid>
     <MudItem xs="12" sm="6" md="3">
         <MudCard Elevation="2">
             <MudCardContent>
                 <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total Kills</MudText>
-                <MudText Typo="Typo.h4">--</MudText>
-                <MudText Typo="Typo.caption" Color="Color.Default">All time</MudText>
+                <MudText Typo="Typo.h4">@(_stats?.TotalKills.ToString("N0") ?? "--")</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Default">of @(_stats?.TotalEncounters.ToString("N0") ?? "--") encounters</MudText>
             </MudCardContent>
         </MudCard>
     </MudItem>
@@ -18,7 +24,7 @@
         <MudCard Elevation="2">
             <MudCardContent>
                 <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Success Rate</MudText>
-                <MudText Typo="Typo.h4">--%</MudText>
+                <MudText Typo="Typo.h4">@(_stats?.SuccessRate.ToString("F1") ?? "--")%</MudText>
                 <MudText Typo="Typo.caption" Color="Color.Default">All encounters</MudText>
             </MudCardContent>
         </MudCard>
@@ -27,7 +33,7 @@
         <MudCard Elevation="2">
             <MudCardContent>
                 <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Active Raiders</MudText>
-                <MudText Typo="Typo.h4">--</MudText>
+                <MudText Typo="Typo.h4">@(_stats?.ActiveRaidersThisMonth.ToString("N0") ?? "--")</MudText>
                 <MudText Typo="Typo.caption" Color="Color.Default">This month</MudText>
             </MudCardContent>
         </MudCard>
@@ -36,7 +42,7 @@
         <MudCard Elevation="2">
             <MudCardContent>
                 <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Raid Hours</MudText>
-                <MudText Typo="Typo.h4">--</MudText>
+                <MudText Typo="Typo.h4">@(_stats?.RaidHoursThisYear.ToString("F1") ?? "--")</MudText>
                 <MudText Typo="Typo.caption" Color="Color.Default">This year</MudText>
             </MudCardContent>
         </MudCard>
@@ -47,18 +53,94 @@
     <MudItem xs="12" md="8">
         <MudPaper Class="pa-4" Elevation="2">
             <MudText Typo="Typo.h6" Class="mb-3">Recent Activity</MudText>
-            <MudAlert Severity="Severity.Info" Class="mb-3">
-                No logs imported yet. Go to Admin > Upload Logs to get started.
-            </MudAlert>
+            @if (_recentEncounters == null || _recentEncounters.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Class="mb-3">
+                    No logs imported yet. Go to Admin > Upload Logs to get started.
+                </MudAlert>
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Striped="true" Hover="true">
+                    <thead>
+                        <tr>
+                            <th>Boss</th>
+                            <th>Result</th>
+                            <th>Duration</th>
+                            <th>When</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var encounter in _recentEncounters)
+                        {
+                            <tr>
+                                <td>
+                                    @encounter.BossName
+                                    @if (encounter.IsCM)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1">CM</MudChip>
+                                    }
+                                </td>
+                                <td>
+                                    @if (encounter.Success)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Success">Kill</MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Error">Wipe</MudChip>
+                                    }
+                                </td>
+                                <td>@FormatDuration(encounter.DurationMs)</td>
+                                <td>@FormatTimeAgo(encounter.EncounterTime)</td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(encounter.LogUrl))
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                       Size="Size.Small"
+                                                       Href="@encounter.LogUrl"
+                                                       Target="_blank" />
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
         </MudPaper>
     </MudItem>
 
     <MudItem xs="12" md="4">
         <MudPaper Class="pa-4" Elevation="2">
             <MudText Typo="Typo.h6" Class="mb-3">This Week's Highlights</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Default">
-                No data available yet.
-            </MudText>
+            @if (_highlights == null || _highlights.Encounters == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Default">
+                    No data available for this week.
+                </MudText>
+            }
+            else
+            {
+                <MudList T="string" Dense="true">
+                    <MudListItem Icon="@Icons.Material.Filled.EmojiEvents">
+                        <MudText Typo="Typo.body2">
+                            <strong>@_highlights.Kills</strong> kills out of <strong>@_highlights.Encounters</strong> encounters
+                        </MudText>
+                    </MudListItem>
+                    @if (_highlights.TopDps != null)
+                    {
+                        <MudListItem Icon="@Icons.Material.Filled.Whatshot">
+                            <MudText Typo="Typo.body2">
+                                Top DPS: <strong>@_highlights.TopDps.Value.ToString("N0")</strong>
+                            </MudText>
+                            <MudText Typo="Typo.caption">
+                                @_highlights.TopDps.CharacterName (@_highlights.TopDps.Profession) on @_highlights.TopDps.BossName
+                            </MudText>
+                        </MudListItem>
+                    }
+                </MudList>
+            }
         </MudPaper>
     </MudItem>
 </MudGrid>
@@ -84,3 +166,96 @@
         </MudPaper>
     </MudItem>
 </MudGrid>
+
+@code {
+    private bool _loading = true;
+    private DashboardStats? _stats;
+    private List<RecentEncounter>? _recentEncounters;
+    private WeeklyHighlights? _highlights;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            var statsTask = Http.GetFromJsonAsync<DashboardStats>("api/stats/dashboard");
+            var recentTask = Http.GetFromJsonAsync<List<RecentEncounter>>("api/stats/recent?count=10");
+            var highlightsTask = Http.GetFromJsonAsync<WeeklyHighlights>("api/stats/weekly-highlights");
+
+            await Task.WhenAll(statsTask, recentTask, highlightsTask);
+
+            _stats = await statsTask;
+            _recentEncounters = await recentTask;
+            _highlights = await highlightsTask;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading dashboard data: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string FormatDuration(int durationMs)
+    {
+        var ts = TimeSpan.FromMilliseconds(durationMs);
+        return ts.TotalMinutes >= 1
+            ? $"{(int)ts.TotalMinutes}:{ts.Seconds:D2}"
+            : $"{ts.Seconds}s";
+    }
+
+    private static string FormatTimeAgo(DateTimeOffset time)
+    {
+        var diff = DateTimeOffset.UtcNow - time;
+
+        if (diff.TotalMinutes < 60)
+            return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalHours < 24)
+            return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 7)
+            return $"{(int)diff.TotalDays}d ago";
+
+        return time.LocalDateTime.ToString("MMM d");
+    }
+
+    // DTOs matching the server models
+    public record DashboardStats(
+        int TotalEncounters,
+        int TotalKills,
+        double SuccessRate,
+        int ActiveRaidersThisMonth,
+        double RaidHoursThisYear,
+        int TotalPlayers
+    );
+
+    public record RecentEncounter(
+        Guid Id,
+        string BossName,
+        bool Success,
+        bool IsCM,
+        DateTimeOffset EncounterTime,
+        int DurationMs,
+        string? LogUrl
+    );
+
+    public record WeeklyHighlights(
+        int Encounters,
+        int Kills,
+        TopPerformer? TopDps
+    );
+
+    public record TopPerformer(
+        string AccountName,
+        string CharacterName,
+        string Profession,
+        int Value,
+        string BossName
+    );
+}

@@ -1,0 +1,219 @@
+@page "/leaderboards"
+@inject HttpClient Http
+
+<PageTitle>GW2 Raid Stats - Leaderboards</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Leaderboards</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+
+<MudPaper Class="pa-4" Elevation="2">
+    <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-3">
+        <MudTabPanel Text="Raids" Icon="@Icons.Material.Filled.Shield">
+            @RenderBossTable(FilteredRaids)
+        </MudTabPanel>
+        <MudTabPanel Text="Strikes" Icon="@Icons.Material.Filled.Bolt">
+            @RenderBossTable(FilteredStrikes)
+        </MudTabPanel>
+    </MudTabs>
+</MudPaper>
+
+@code {
+    private RenderFragment RenderBossTable(IEnumerable<BossRecord> bosses) => __builder =>
+    {
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+            <MudText Typo="Typo.h6">Boss Records</MudText>
+            <MudStack Row="true" Spacing="2">
+                <MudTextField @bind-Value="_searchString"
+                              Placeholder="Search boss..."
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              IconSize="Size.Medium"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Immediate="true"
+                              Class="mt-0" />
+                <MudToggleGroup T="string" @bind-Value="_modeFilter" Color="Color.Primary" CheckMark="true">
+                    <MudToggleItem Value="@("all")" Text="All" />
+                    <MudToggleItem Value="@("nm")" Text="NM" />
+                    <MudToggleItem Value="@("cm")" Text="CM" />
+                </MudToggleGroup>
+            </MudStack>
+        </MudStack>
+
+        @if (!bosses.Any())
+        {
+            <MudAlert Severity="Severity.Info">No boss kills found. Import some logs first!</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@bosses"
+                  Dense="true"
+                  Hover="true"
+                  Striped="true"
+                  Loading="@_loading"
+                  LoadingProgressColor="Color.Primary">
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortBy="new Func<BossRecord, object>(x => x.BossName)">Boss</MudTableSortLabel></MudTh>
+                <MudTh>Mode</MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<BossRecord, object>(x => x.KillCount)">Kills</MudTableSortLabel></MudTh>
+                <MudTh>Top DPS</MudTh>
+                <MudTh>Top Boon DPS</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Boss">
+                    <MudText Typo="Typo.body2"><strong>@context.BossName</strong></MudText>
+                </MudTd>
+                <MudTd DataLabel="Mode">
+                    @if (context.IsCM)
+                    {
+                        <MudChip T="string" Color="Color.Warning" Size="Size.Small">CM</MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Color="Color.Default" Size="Size.Small">NM</MudChip>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Kills">@context.KillCount</MudTd>
+                <MudTd DataLabel="Top DPS">
+                    @if (context.TopDps != null)
+                    {
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body2" Color="Color.Error"><strong>@context.TopDps.Dps.ToString("N0")</strong></MudText>
+                            <MudText Typo="Typo.caption">@context.TopDps.CharacterName (@context.TopDps.Profession)</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@context.TopDps.AccountName</MudText>
+                            <MudText Typo="Typo.caption">@context.TopDps.EncounterTime.LocalDateTime.ToString("MMM d, yyyy")</MudText>
+                            @if (context.TopDps.BoonSupports.Count > 0)
+                            {
+                                <MudStack Row="true" Spacing="1" Class="mt-1">
+                                    @foreach (var support in context.TopDps.BoonSupports.Take(2))
+                                    {
+                                        <MudTooltip Text="@($"{support.CharacterName} ({support.Profession})")">
+                                            <MudChip T="string" Size="Size.Small"
+                                                     Color="@(support.BoonType == "Quickness" ? Color.Info : Color.Success)">
+                                                @support.BoonType[0]: @support.CharacterName
+                                            </MudChip>
+                                        </MudTooltip>
+                                    }
+                                </MudStack>
+                            }
+                        </MudStack>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Default">-</MudText>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Top Boon DPS">
+                    @if (context.TopBoonDps != null)
+                    {
+                        <MudStack Spacing="0">
+                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                <MudText Typo="Typo.body2" Color="Color.Info"><strong>@context.TopBoonDps.Dps.ToString("N0")</strong></MudText>
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(context.TopBoonDps.BoonType == "Quickness" ? Color.Info : Color.Success)">
+                                    @context.TopBoonDps.BoonType
+                                </MudChip>
+                            </MudStack>
+                            <MudText Typo="Typo.caption">@context.TopBoonDps.CharacterName (@context.TopBoonDps.Profession)</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@context.TopBoonDps.AccountName</MudText>
+                            <MudText Typo="Typo.caption">@context.TopBoonDps.EncounterTime.LocalDateTime.ToString("MMM d, yyyy")</MudText>
+                        </MudStack>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Default">-</MudText>
+                    }
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+            </PagerContent>
+        </MudTable>
+        }
+    };
+}
+
+@code {
+    private bool _loading = true;
+    private string _searchString = "";
+    private string _modeFilter = "all";
+    private List<BossRecord>? _bosses;
+
+    private IEnumerable<BossRecord> ApplyFilters(IEnumerable<BossRecord> bosses) => bosses
+        .Where(b => string.IsNullOrEmpty(_searchString) ||
+                    b.BossName.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+        .Where(b => _modeFilter == "all" ||
+                    (_modeFilter == "cm" && b.IsCM) ||
+                    (_modeFilter == "nm" && !b.IsCM));
+
+    private IEnumerable<BossRecord> FilteredRaids => _bosses != null
+        ? ApplyFilters(_bosses.Where(b => b.IsRaid))
+        : Enumerable.Empty<BossRecord>();
+
+    private IEnumerable<BossRecord> FilteredStrikes => _bosses != null
+        ? ApplyFilters(_bosses.Where(b => !b.IsRaid))
+        : Enumerable.Empty<BossRecord>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            _bosses = await Http.GetFromJsonAsync<List<BossRecord>>("api/leaderboard/all");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading leaderboards: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // DTOs
+    public record BossRecord(
+        int TriggerId,
+        string BossName,
+        bool IsCM,
+        int KillCount,
+        LeaderboardEntry? TopDps,
+        LeaderboardEntry? TopBoonDps,
+        bool IsRaid,
+        int? Wing = null,
+        int EncounterOrder = 999
+    );
+
+    public record LeaderboardEntry(
+        Guid Id,
+        string AccountName,
+        string CharacterName,
+        string Profession,
+        int Dps,
+        DateTimeOffset EncounterTime,
+        string BossName,
+        string? LogUrl,
+        List<BoonSupport> BoonSupports,
+        string? BoonType = null
+    );
+
+    public record BoonSupport(
+        string AccountName,
+        string CharacterName,
+        string Profession,
+        decimal QuicknessGeneration,
+        decimal AlacracityGeneration
+    )
+    {
+        public string BoonType => QuicknessGeneration >= 10 ? "Quickness" : "Alacrity";
+    }
+}
