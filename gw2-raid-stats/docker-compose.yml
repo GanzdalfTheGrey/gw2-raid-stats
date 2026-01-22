@@ -1,24 +1,27 @@
-version: '3.8'
-
 services:
   app:
     image: ghcr.io/a-gansemer/gw2-raid-stats:latest
     container_name: gw2-raid-stats
     restart: unless-stopped
-    ports:
-      - "8080:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__DefaultConnection=Host=postgres;Database=raidstats;Username=app;Password=${DB_PASSWORD}
+      - Admin__Password=${ADMIN_PASSWORD}
       - Guild__Name=${GUILD_NAME:-My Guild}
       - Guild__Tag=${GUILD_TAG:-TAG}
     volumes:
-      - ./config/appsettings.Production.json:/app/appsettings.Production.json:ro
-      - ./config/awards.json:/app/awards.json:ro
-      - ./images:/app/wwwroot/images/custom:ro
+      - ./data/logs:/app/logs
+    networks:
+      - internal
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   postgres:
     image: postgres:16-alpine
@@ -29,9 +32,10 @@ services:
       - POSTGRES_USER=app
       - POSTGRES_PASSWORD=${DB_PASSWORD}
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5432:5432"
+      - postgres_data:/var/lib/postgresql/data
+      - ./data/backups:/backups
+    networks:
+      - internal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app -d raidstats"]
       interval: 10s
@@ -43,5 +47,15 @@ services:
     container_name: gw2-raid-stats-tunnel
     restart: unless-stopped
     command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    networks:
+      - internal
     depends_on:
-      - app
+      app:
+        condition: service_healthy
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
