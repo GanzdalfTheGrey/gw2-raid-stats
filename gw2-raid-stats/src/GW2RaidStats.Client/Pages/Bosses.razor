@@ -1,0 +1,220 @@
+@page "/bosses"
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>GW2 Raid Stats - Bosses</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Bosses</MudText>
+
+<MudPaper Class="pa-4" Elevation="2">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+        <MudText Typo="Typo.h6">All Bosses</MudText>
+        <MudStack Row="true" Spacing="2">
+            <MudSwitch Value="_showIgnored" ValueChanged="OnShowIgnoredChanged" T="bool" Color="Color.Primary" Label="Show Ignored" />
+            <MudTextField @bind-Value="_searchString"
+                          Placeholder="Search by boss name..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="Size.Medium"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Immediate="true"
+                          Class="mt-0"
+                          Style="max-width: 300px;" />
+        </MudStack>
+    </MudStack>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+    }
+
+    @if (_filteredBosses.Count == 0 && !_loading)
+    {
+        <MudAlert Severity="Severity.Info">No bosses found. Import some logs first!</MudAlert>
+    }
+    else
+    {
+        <MudTable Items="@_filteredBosses"
+                  Dense="true"
+                  Hover="true"
+                  Striped="true"
+                  Loading="@_loading"
+                  LoadingProgressColor="Color.Primary"
+                  OnRowClick="@(args => NavigateToBoss(args.Item))"
+                  T="BossSummary"
+                  RowClass="cursor-pointer"
+                  GroupBy="@_groupDefinition"
+                  GroupHeaderStyle="background-color:var(--mud-palette-background-grey)">
+            <HeaderContent>
+                <MudTh Style="width: 50px;"></MudTh>
+                <MudTh>Boss Name</MudTh>
+                <MudTh>Encounters</MudTh>
+                <MudTh>Kills</MudTh>
+                <MudTh>Wipes</MudTh>
+                <MudTh>Success Rate</MudTh>
+                <MudTh>Fastest Kill</MudTh>
+                <MudTh>Avg Kill</MudTh>
+                <MudTh>Last Seen</MudTh>
+            </HeaderContent>
+            <GroupHeaderTemplate>
+                <MudTh colspan="9" Class="mud-table-cell-custom-group">
+                    <MudText Typo="Typo.h6" Class="pa-2">
+                        @(context.Key != null ? $"Wing {context.Key}" : "Other Encounters")
+                    </MudText>
+                </MudTh>
+            </GroupHeaderTemplate>
+            <RowTemplate>
+                <MudTd DataLabel="">
+                    @if (!string.IsNullOrEmpty(context.IconUrl))
+                    {
+                        <MudAvatar Size="Size.Small">
+                            <MudImage Src="@context.IconUrl" Alt="@context.BossName" />
+                        </MudAvatar>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Boss Name">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudText>@context.BossName</MudText>
+                        @if (context.IsCM)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">CM</MudChip>
+                        }
+                        @if (context.IsIgnored)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">Ignored</MudChip>
+                        }
+                    </MudStack>
+                </MudTd>
+                <MudTd DataLabel="Encounters">@context.TotalEncounters.ToString("N0")</MudTd>
+                <MudTd DataLabel="Kills">
+                    <MudText Color="Color.Success">@context.Kills.ToString("N0")</MudText>
+                </MudTd>
+                <MudTd DataLabel="Wipes">
+                    <MudText Color="Color.Error">@context.Wipes.ToString("N0")</MudText>
+                </MudTd>
+                <MudTd DataLabel="Success Rate">
+                    <MudText Color="@GetSuccessRateColor(context.SuccessRate)">
+                        @context.SuccessRate.ToString("F1")%
+                    </MudText>
+                </MudTd>
+                <MudTd DataLabel="Fastest Kill">
+                    @if (context.FastestKillSeconds.HasValue)
+                    {
+                        @FormatDuration(context.FastestKillSeconds.Value)
+                    }
+                    else
+                    {
+                        <MudText Color="Color.Default">-</MudText>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Avg Kill">
+                    @if (context.AverageKillSeconds.HasValue)
+                    {
+                        @FormatDuration(context.AverageKillSeconds.Value)
+                    }
+                    else
+                    {
+                        <MudText Color="Color.Default">-</MudText>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Last Seen">@context.LastEncounter.LocalDateTime.ToString("MMM d, yyyy")</MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudPaper>
+
+<style>
+    .cursor-pointer {
+        cursor: pointer;
+    }
+</style>
+
+@code {
+    private bool _loading = true;
+    private List<BossSummary> _bosses = new();
+    private string _searchString = "";
+    private bool _showIgnored = false;
+
+    private TableGroupDefinition<BossSummary> _groupDefinition = new()
+    {
+        GroupName = "Wing",
+        Indentation = false,
+        Expandable = true,
+        IsInitiallyExpanded = true,
+        Selector = (b) => b.Wing
+    };
+
+    private List<BossSummary> _filteredBosses => _bosses
+        .Where(b => string.IsNullOrWhiteSpace(_searchString) ||
+                    b.BossName.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBossesAsync();
+    }
+
+    private async Task OnShowIgnoredChanged(bool value)
+    {
+        _showIgnored = value;
+        await LoadBossesAsync();
+    }
+
+    private async Task LoadBossesAsync()
+    {
+        _loading = true;
+        try
+        {
+            _bosses = await Http.GetFromJsonAsync<List<BossSummary>>(
+                $"api/bosses?includeIgnored={_showIgnored}") ?? new();
+        }
+        catch (Exception)
+        {
+            _bosses = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void NavigateToBoss(BossSummary boss)
+    {
+        Navigation.NavigateTo($"/bosses/{boss.TriggerId}?isCM={boss.IsCM}");
+    }
+
+    private Color GetSuccessRateColor(decimal rate)
+    {
+        return rate switch
+        {
+            >= 80 => Color.Success,
+            >= 50 => Color.Warning,
+            _ => Color.Error
+        };
+    }
+
+    private string FormatDuration(double seconds)
+    {
+        var ts = TimeSpan.FromSeconds(seconds);
+        return ts.TotalMinutes >= 1
+            ? $"{(int)ts.TotalMinutes}:{ts.Seconds:D2}"
+            : $"{ts.Seconds}s";
+    }
+
+    public record BossSummary(
+        int TriggerId,
+        string BossName,
+        bool IsCM,
+        int? Wing,
+        int TotalEncounters,
+        int Kills,
+        int Wipes,
+        decimal SuccessRate,
+        double? FastestKillSeconds,
+        double? AverageKillSeconds,
+        DateTimeOffset LastEncounter,
+        string? IconUrl,
+        bool IsIgnored
+    );
+}

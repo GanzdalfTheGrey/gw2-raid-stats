@@ -38,6 +38,29 @@
         <a class="dismiss">X</a>
     </div>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script>
+        window.recapKeyboardHandler = {
+            dotNetRef: null,
+            handler: null,
+            init: function (dotNetRef) {
+                this.dotNetRef = dotNetRef;
+                this.handler = (e) => {
+                    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === ' ') {
+                        e.preventDefault();
+                        this.dotNetRef.invokeMethodAsync('HandleKeyDown', e.key === ' ' ? 'Space' : e.key);
+                    }
+                };
+                document.addEventListener('keydown', this.handler);
+            },
+            dispose: function () {
+                if (this.handler) {
+                    document.removeEventListener('keydown', this.handler);
+                    this.handler = null;
+                }
+                this.dotNetRef = null;
+            }
+        };
+    </script>
     <script src="_framework/blazor.webassembly.js"></script>
 </body>
 

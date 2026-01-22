@@ -1,0 +1,295 @@
+@page "/bosses/{TriggerId:int}"
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>GW2 Raid Stats - @(_boss?.BossName ?? "Boss")</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else if (_boss == null)
+{
+    <MudAlert Severity="Severity.Error">Boss not found.</MudAlert>
+}
+else
+{
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+            @if (!string.IsNullOrEmpty(_boss.IconUrl))
+            {
+                <MudAvatar Size="Size.Large">
+                    <MudImage Src="@_boss.IconUrl" Alt="@_boss.BossName" />
+                </MudAvatar>
+            }
+            <MudStack Spacing="0">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudText Typo="Typo.h4">@_boss.BossName</MudText>
+                    @if (_boss.IsCM)
+                    {
+                        <MudChip T="string" Size="Size.Medium" Color="Color.Warning" Variant="Variant.Filled">CM</MudChip>
+                    }
+                </MudStack>
+                @if (_boss.Wing.HasValue)
+                {
+                    <MudText Typo="Typo.subtitle1" Color="Color.Secondary">Wing @_boss.Wing</MudText>
+                }
+            </MudStack>
+        </MudStack>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack" OnClick="GoBack">
+            Back to Bosses
+        </MudButton>
+    </MudStack>
+
+    <MudGrid>
+        @* Overview Card *@
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+                <MudText Typo="Typo.h6" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.Analytics" Class="mr-2" />
+                    Overview
+                </MudText>
+                <MudStack Spacing="2">
+                    <MudStack Row="true" Justify="Justify.SpaceBetween">
+                        <MudText Color="Color.Secondary">Total Encounters</MudText>
+                        <MudText><strong>@_boss.TotalEncounters.ToString("N0")</strong></MudText>
+                    </MudStack>
+                    <MudStack Row="true" Justify="Justify.SpaceBetween">
+                        <MudText Color="Color.Secondary">Kills</MudText>
+                        <MudText Color="Color.Success"><strong>@_boss.Kills.ToString("N0")</strong></MudText>
+                    </MudStack>
+                    <MudStack Row="true" Justify="Justify.SpaceBetween">
+                        <MudText Color="Color.Secondary">Wipes</MudText>
+                        <MudText Color="Color.Error"><strong>@_boss.Wipes.ToString("N0")</strong></MudText>
+                    </MudStack>
+                    <MudStack Row="true" Justify="Justify.SpaceBetween">
+                        <MudText Color="Color.Secondary">Success Rate</MudText>
+                        <MudText Color="@(GetSuccessRateColor(_boss.SuccessRate))">
+                            <strong>@_boss.SuccessRate.ToString("F1")%</strong>
+                        </MudText>
+                    </MudStack>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        @* Times Card *@
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+                <MudText Typo="Typo.h6" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.Timer" Class="mr-2" />
+                    Kill Times
+                </MudText>
+                <MudStack Spacing="2">
+                    <MudStack Row="true" Justify="Justify.SpaceBetween">
+                        <MudText Color="Color.Secondary">Fastest Kill</MudText>
+                        @if (_boss.FastestKillSeconds.HasValue)
+                        {
+                            <MudText Color="Color.Success"><strong>@FormatDuration(_boss.FastestKillSeconds.Value)</strong></MudText>
+                        }
+                        else
+                        {
+                            <MudText Color="Color.Default">-</MudText>
+                        }
+                    </MudStack>
+                    <MudStack Row="true" Justify="Justify.SpaceBetween">
+                        <MudText Color="Color.Secondary">Average Kill</MudText>
+                        @if (_boss.AverageKillSeconds.HasValue)
+                        {
+                            <MudText><strong>@FormatDuration(_boss.AverageKillSeconds.Value)</strong></MudText>
+                        }
+                        else
+                        {
+                            <MudText Color="Color.Default">-</MudText>
+                        }
+                    </MudStack>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        @* Top DPS Card *@
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+                <MudText Typo="Typo.h6" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Class="mr-2" />
+                    Top DPS
+                </MudText>
+                @if (_boss.TopDps.Count == 0)
+                {
+                    <MudText Color="Color.Secondary">No kills recorded yet.</MudText>
+                }
+                else
+                {
+                    <MudStack Spacing="2">
+                        @foreach (var (player, index) in _boss.TopDps.Select((p, i) => (p, i)))
+                        {
+                            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                    <MudText Color="@GetRankColor(index)"><strong>@(index + 1).</strong></MudText>
+                                    <MudLink Href="@($"/players/{Uri.EscapeDataString(player.AccountName)}")">
+                                        @player.AccountName
+                                    </MudLink>
+                                </MudStack>
+                                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@player.Profession</MudText>
+                                    <MudText Color="Color.Error"><strong>@player.Dps.ToString("N0")</strong></MudText>
+                                </MudStack>
+                            </MudStack>
+                        }
+                    </MudStack>
+                }
+            </MudPaper>
+        </MudItem>
+
+        @* Recent Encounters *@
+        <MudItem xs="12">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.History" Class="mr-2" />
+                    Recent Encounters
+                </MudText>
+                @if (_boss.RecentEncounters.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">No encounters recorded.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="@_boss.RecentEncounters"
+                              Dense="true"
+                              Hover="true"
+                              Striped="true">
+                        <HeaderContent>
+                            <MudTh>Result</MudTh>
+                            <MudTh>Duration</MudTh>
+                            <MudTh>Date</MudTh>
+                            <MudTh>Recorded By</MudTh>
+                            <MudTh>Log</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Result">
+                                @if (context.Success)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Success">Kill</MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Error">Wipe</MudChip>
+                                }
+                            </MudTd>
+                            <MudTd DataLabel="Duration">@FormatDuration(context.DurationSeconds)</MudTd>
+                            <MudTd DataLabel="Date">@context.EncounterTime.LocalDateTime.ToString("MMM d, yyyy HH:mm")</MudTd>
+                            <MudTd DataLabel="Recorded By">@(context.RecordedBy ?? "-")</MudTd>
+                            <MudTd DataLabel="Log">
+                                @if (!string.IsNullOrEmpty(context.LogUrl))
+                                {
+                                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                   Size="Size.Small"
+                                                   Href="@context.LogUrl"
+                                                   Target="_blank" />
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter]
+    public int TriggerId { get; set; }
+
+    [SupplyParameterFromQuery]
+    public bool IsCM { get; set; } = false;
+
+    private bool _loading = true;
+    private BossDetailDto? _boss;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadBossAsync();
+    }
+
+    private async Task LoadBossAsync()
+    {
+        _loading = true;
+        try
+        {
+            _boss = await Http.GetFromJsonAsync<BossDetailDto>(
+                $"api/bosses/{TriggerId}?isCM={IsCM}");
+        }
+        catch (Exception)
+        {
+            _boss = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/bosses");
+    }
+
+    private Color GetSuccessRateColor(decimal rate)
+    {
+        return rate switch
+        {
+            >= 80 => Color.Success,
+            >= 50 => Color.Warning,
+            _ => Color.Error
+        };
+    }
+
+    private Color GetRankColor(int index)
+    {
+        return index switch
+        {
+            0 => Color.Warning,
+            1 => Color.Default,
+            2 => Color.Info,
+            _ => Color.Default
+        };
+    }
+
+    private string FormatDuration(double seconds)
+    {
+        var ts = TimeSpan.FromSeconds(seconds);
+        return ts.TotalMinutes >= 1
+            ? $"{(int)ts.TotalMinutes}:{ts.Seconds:D2}"
+            : $"{ts.Seconds}s";
+    }
+
+    public record BossDetailDto(
+        int TriggerId,
+        string BossName,
+        bool IsCM,
+        int? Wing,
+        string? IconUrl,
+        int TotalEncounters,
+        int Kills,
+        int Wipes,
+        decimal SuccessRate,
+        double? FastestKillSeconds,
+        double? AverageKillSeconds,
+        List<BossEncounterDto> RecentEncounters,
+        List<BossTopDpsDto> TopDps
+    );
+
+    public record BossEncounterDto(
+        Guid Id,
+        bool Success,
+        double DurationSeconds,
+        DateTimeOffset EncounterTime,
+        string? RecordedBy,
+        string? LogUrl
+    );
+
+    public record BossTopDpsDto(
+        string AccountName,
+        int Dps,
+        string Profession
+    );
+}

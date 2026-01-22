@@ -2,6 +2,8 @@
 @page "/recap/{Year:int}"
 @inject HttpClient Http
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <PageTitle>GW2 Raid Stats - @Year Recap</PageTitle>
 
@@ -462,11 +464,55 @@ else
                 </div>
                 break;
 
+            case 12:
+                <div class="slide" @key="_currentSlide">
+                    <MudText Typo="Typo.h5" Color="Color.Secondary">Clutch Saves</MudText>
+                    <div class="big-number" style="background: linear-gradient(135deg, #10b981, #059669); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+                        @_recap.TotalResurrects.ToString("N0")
+                    </div>
+                    <div class="stat-label">total resurrects</div>
+                    @if (_recap.ClutchSavesPlayer != null && _recap.ClutchSavesPlayer.Resurrects > 0)
+                    {
+                        <div class="fun-fact">
+                            <MudIcon Icon="@Icons.Material.Filled.Healing" Color="Color.Success" />
+                            <MudText>
+                                <strong>@_recap.ClutchSavesPlayer.AccountName</strong> was the top medic with @_recap.ClutchSavesPlayer.Resurrects resurrects!
+                            </MudText>
+                        </div>
+                    }
+                </div>
+                break;
+
+            case 13:
+                <div class="slide" @key="_currentSlide">
+                    <MudText Typo="Typo.h5" Color="Color.Secondary">Most Diverse Player</MudText>
+                    @if (_recap.MostDiversePlayer != null)
+                    {
+                        <div class="highlight-text">@_recap.MostDiversePlayer.AccountName</div>
+                        <div class="big-number">@_recap.MostDiversePlayer.UniqueSpecs</div>
+                        <div class="stat-label">different specializations played</div>
+                        @if (_recap.MostDiversePlayer.Specs != null && _recap.MostDiversePlayer.Specs.Count > 0)
+                        {
+                            <div class="fun-fact">
+                                <MudIcon Icon="@Icons.Material.Filled.Diversity3" Color="Color.Primary" />
+                                <MudText>
+                                    @string.Join(", ", _recap.MostDiversePlayer.Specs.Take(8))@(_recap.MostDiversePlayer.Specs.Count > 8 ? "..." : "")
+                                </MudText>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <MudText Color="Color.Secondary">No diversity data</MudText>
+                    }
+                </div>
+                break;
+
             default:
-                @* Fun stats achievements (slides 12 through 12 + N-1) *@
-                @if (_currentSlide >= 12 && _currentSlide < TotalSlides)
+                @* Fun stats achievements (slides 14 through 14 + N-1) *@
+                @if (_currentSlide >= 14 && _currentSlide < TotalSlides)
                 {
-                    var funStatIndex = _currentSlide - 12;
+                    var funStatIndex = _currentSlide - 14;
                     if (_recap.FunStatsAchievements != null && funStatIndex < _recap.FunStatsAchievements.Count)
                     {
                         var achievement = _recap.FunStatsAchievements[funStatIndex];
@@ -545,6 +591,17 @@ else
             </MudButton>
         </div>
 
+        <MudStack Row="true" Class="mt-3" AlignItems="AlignItems.Center" Justify="Justify.Center" Spacing="4">
+            <MudTooltip Text="Auto-advance slides every 5 seconds">
+                <MudSwitch T="bool" @bind-Value="_autoAdvance" Color="Color.Primary" Label="Auto-play"
+                           @bind-Value:after="OnAutoAdvanceChanged" />
+            </MudTooltip>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                <MudIcon Icon="@Icons.Material.Filled.Keyboard" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                Use arrow keys to navigate
+            </MudText>
+        </MudStack>
+
         <MudStack Row="true" Class="mt-4" AlignItems="AlignItems.Center">
             <MudText Typo="Typo.caption" Color="Color.Secondary">Year:</MudText>
             <MudSelect T="int" Value="Year" ValueChanged="OnYearChanged" Dense="true" Style="width: 100px;">
@@ -565,10 +622,13 @@ else
     private YearlyRecapDto? _recap;
     private List<int> _availableYears = new();
     private int _currentSlide = 0;
+    private bool _autoAdvance = false;
+    private System.Timers.Timer? _autoAdvanceTimer;
+    private DotNetObjectReference<Recap>? _dotNetRef;
 
-    // Base slides: 0=Title, 1=Encounters, 2=Hours, 3=MostKilled, 4=Nemesis, 5=MostAttempted, 6=FavClass, 7=FavSpec, 8=TopDPS, 9=Deaths, 10=Damage, 11=Breakbar
-    // Then fun stats slides (12 through 12+N-1), then summary slide (last)
-    private const int BaseSlideCount = 12;
+    // Base slides: 0=Title, 1=Encounters, 2=Hours, 3=MostKilled, 4=Nemesis, 5=MostAttempted, 6=FavClass, 7=FavSpec, 8=TopDPS, 9=Deaths, 10=Damage, 11=Breakbar, 12=ClutchSaves, 13=MostDiverse
+    // Then fun stats slides (14 through 14+N-1), then summary slide (last)
+    private const int BaseSlideCount = 14;
     private int FunStatsCount => _recap?.FunStatsAchievements?.Count ?? 0;
     private int TotalSlides => BaseSlideCount + FunStatsCount; // last slide index
 
@@ -583,11 +643,105 @@ else
         await LoadRecapAsync();
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("recapKeyboardHandler.init", _dotNetRef);
+        }
+    }
+
     protected override async Task OnParametersSetAsync()
     {
         if (Year == 0)
         {
             Year = DateTime.Now.Year;
+        }
+    }
+
+    [JSInvokable]
+    public void HandleKeyDown(string key)
+    {
+        if (key == "ArrowRight" || key == "Space")
+        {
+            if (_currentSlide < TotalSlides)
+            {
+                _currentSlide++;
+                ResetAutoAdvanceTimer();
+                StateHasChanged();
+            }
+        }
+        else if (key == "ArrowLeft")
+        {
+            if (_currentSlide > 0)
+            {
+                _currentSlide--;
+                ResetAutoAdvanceTimer();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private void OnAutoAdvanceChanged()
+    {
+        if (_autoAdvance)
+        {
+            StartAutoAdvanceTimer();
+        }
+        else
+        {
+            StopAutoAdvanceTimer();
+        }
+    }
+
+    private void StartAutoAdvanceTimer()
+    {
+        _autoAdvanceTimer?.Dispose();
+        _autoAdvanceTimer = new System.Timers.Timer(5000); // 5 seconds
+        _autoAdvanceTimer.Elapsed += async (sender, e) =>
+        {
+            await InvokeAsync(() =>
+            {
+                if (_currentSlide < TotalSlides)
+                {
+                    _currentSlide++;
+                    StateHasChanged();
+                }
+                else
+                {
+                    _autoAdvance = false;
+                    StopAutoAdvanceTimer();
+                    StateHasChanged();
+                }
+            });
+        };
+        _autoAdvanceTimer.Start();
+    }
+
+    private void StopAutoAdvanceTimer()
+    {
+        _autoAdvanceTimer?.Stop();
+        _autoAdvanceTimer?.Dispose();
+        _autoAdvanceTimer = null;
+    }
+
+    private void ResetAutoAdvanceTimer()
+    {
+        if (_autoAdvance && _autoAdvanceTimer != null)
+        {
+            _autoAdvanceTimer.Stop();
+            _autoAdvanceTimer.Start();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        StopAutoAdvanceTimer();
+        if (_dotNetRef != null)
+        {
+            await JS.InvokeVoidAsync("recapKeyboardHandler.dispose");
+            _dotNetRef.Dispose();
         }
     }
 
@@ -696,6 +850,9 @@ else
         PlayerDeathStatDto? MostDeathsPlayer = null,
         List<PlayerDamageStatDto>? TopDamagePlayers = null,
         List<PlayerBreakbarStatDto>? TopBreakbarPlayers = null,
+        int TotalResurrects = 0,
+        PlayerResurrectStatDto? ClutchSavesPlayer = null,
+        PlayerDiversityStatDto? MostDiversePlayer = null,
         EncounterSnapshotDto? FirstEncounter = null,
         EncounterSnapshotDto? LastEncounter = null,
         LongestFightStatDto? LongestFight = null,
@@ -713,6 +870,8 @@ else
     public record PlayerDeathStatDto(string AccountName, int Deaths);
     public record PlayerDamageStatDto(string AccountName, long Damage);
     public record PlayerBreakbarStatDto(string AccountName, decimal BreakbarDamage);
+    public record PlayerResurrectStatDto(string AccountName, int Resurrects);
+    public record PlayerDiversityStatDto(string AccountName, int UniqueSpecs, List<string> Specs);
     public record EncounterSnapshotDto(string BossName, bool IsCM, bool Success, DateTimeOffset EncounterTime);
     public record LongestFightStatDto(string BossName, bool IsCM, double DurationSeconds);
     public record FunStatAchievementDto(

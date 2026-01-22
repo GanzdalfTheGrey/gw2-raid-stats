@@ -132,6 +132,7 @@ public class RecapService
                 x.pe.Deaths,
                 x.pe.Damage,
                 x.pe.BreakbarDamage,
+                x.pe.Resurrects,
                 x.e.BossName,
                 x.e.TriggerId,
                 x.e.IsCM,
@@ -246,6 +247,24 @@ public class RecapService
             .Take(5)
             .ToList();
 
+        // Clutch saves (most resurrects)
+        var totalResurrects = playerEncounters.Sum(pe => pe.Resurrects);
+        var clutchSavesPlayer = playerEncounters
+            .GroupBy(pe => pe.AccountName)
+            .Select(g => new PlayerResurrectStat(g.Key, g.Sum(pe => pe.Resurrects)))
+            .OrderByDescending(p => p.Resurrects)
+            .FirstOrDefault();
+
+        // Most diverse player (played most different specs)
+        var mostDiversePlayer = playerEncounters
+            .GroupBy(pe => pe.AccountName)
+            .Select(g => new PlayerDiversityStat(
+                g.Key,
+                g.Select(pe => pe.Profession).Distinct().Count(),
+                g.Select(pe => pe.Profession).Distinct().ToList()))
+            .OrderByDescending(p => p.UniqueSpecs)
+            .FirstOrDefault();
+
         // Unique players that participated
         var uniquePlayers = playerEncounters.Select(pe => pe.AccountName).Distinct().Count();
 
@@ -289,6 +308,9 @@ public class RecapService
             MostDeathsPlayer: mostDeathsPlayer,
             TopDamagePlayers: topDamagePlayers,
             TopBreakbarPlayers: topBreakbarPlayers,
+            TotalResurrects: totalResurrects,
+            ClutchSavesPlayer: clutchSavesPlayer,
+            MostDiversePlayer: mostDiversePlayer,
             FirstEncounter: firstEncounter != null ? new EncounterSnapshot(firstEncounter.BossName, firstEncounter.IsCM, firstEncounter.Success, firstEncounter.EncounterTime) : null,
             LastEncounter: lastEncounter != null ? new EncounterSnapshot(lastEncounter.BossName, lastEncounter.IsCM, lastEncounter.Success, lastEncounter.EncounterTime) : null,
             LongestFight: longestFight != null ? new LongestFightStat(longestFight.BossName, longestFight.IsCM, longestFight.DurationMs / 1000.0) : null,
@@ -431,6 +453,9 @@ public record YearlyRecap(
     PlayerDeathStat? MostDeathsPlayer = null,
     List<PlayerDamageStat>? TopDamagePlayers = null,
     List<PlayerBreakbarStat>? TopBreakbarPlayers = null,
+    int TotalResurrects = 0,
+    PlayerResurrectStat? ClutchSavesPlayer = null,
+    PlayerDiversityStat? MostDiversePlayer = null,
     EncounterSnapshot? FirstEncounter = null,
     EncounterSnapshot? LastEncounter = null,
     LongestFightStat? LongestFight = null,
@@ -458,3 +483,5 @@ public record FunStatAchievement(
 public record PlayerDamageStat(string AccountName, long Damage);
 public record PlayerBreakbarStat(string AccountName, decimal BreakbarDamage);
 public record BossAttemptStat(string BossName, bool IsCM, int Attempts, int Clears);
+public record PlayerResurrectStat(string AccountName, int Resurrects);
+public record PlayerDiversityStat(string AccountName, int UniqueSpecs, List<string> Specs);

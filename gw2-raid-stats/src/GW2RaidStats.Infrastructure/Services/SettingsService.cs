@@ -12,10 +12,12 @@ public class SettingsService
     // Setting keys
     public const string AutoIncludeThresholdKey = "auto_include_threshold";
     public const string RecapIncludeAllBossesKey = "recap_include_all_bosses";
+    public const string GuildNameKey = "guild_name";
 
     // Default values
     public const int DefaultAutoIncludeThreshold = 300;
     public const bool DefaultRecapIncludeAllBosses = false;
+    public const string DefaultGuildName = "GW2 Raid Stats";
 
     public SettingsService(RaidStatsDb db)
     {
@@ -107,6 +109,46 @@ public class SettingsService
             {
                 Key = RecapIncludeAllBossesKey,
                 Value = includeAll.ToString().ToLower(),
+                UpdatedAt = DateTimeOffset.UtcNow
+            }, token: ct);
+        }
+    }
+
+    /// <summary>
+    /// Get the guild name
+    /// </summary>
+    public async Task<string> GetGuildNameAsync(CancellationToken ct = default)
+    {
+        var setting = await _db.Settings
+            .Where(s => s.Key == GuildNameKey)
+            .FirstOrDefaultAsync(ct);
+
+        return setting?.Value ?? DefaultGuildName;
+    }
+
+    /// <summary>
+    /// Set the guild name
+    /// </summary>
+    public async Task SetGuildNameAsync(string guildName, CancellationToken ct = default)
+    {
+        var existing = await _db.Settings
+            .Where(s => s.Key == GuildNameKey)
+            .FirstOrDefaultAsync(ct);
+
+        if (existing != null)
+        {
+            await _db.Settings
+                .Where(s => s.Key == GuildNameKey)
+                .Set(s => s.Value, guildName)
+                .Set(s => s.UpdatedAt, DateTimeOffset.UtcNow)
+                .UpdateAsync(ct);
+        }
+        else
+        {
+            await _db.InsertAsync(new SettingsEntity
+            {
+                Key = GuildNameKey,
+                Value = guildName,
                 UpdatedAt = DateTimeOffset.UtcNow
             }, token: ct);
         }
