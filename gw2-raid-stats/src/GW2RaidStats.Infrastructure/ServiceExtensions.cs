@@ -40,6 +40,7 @@ public static class ServiceExtensions
         services.AddScoped<IgnoredBossService>();
         services.AddScoped<SettingsService>();
         services.AddScoped<IncludedPlayerService>();
+        services.AddScoped<PlayerProfileService>();
 
         return services;
     }

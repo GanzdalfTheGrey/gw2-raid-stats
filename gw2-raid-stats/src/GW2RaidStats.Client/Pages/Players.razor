@@ -1,0 +1,135 @@
+@page "/players"
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>GW2 Raid Stats - Players</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Players</MudText>
+
+<MudPaper Class="pa-4" Elevation="2">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+        <MudText Typo="Typo.h6">All Players</MudText>
+        <MudTextField @bind-Value="_searchString"
+                      Placeholder="Search by account name..."
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="Size.Medium"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Immediate="true"
+                      DebounceInterval="300"
+                      OnDebounceIntervalElapsed="SearchPlayers"
+                      Class="mt-0"
+                      Style="max-width: 300px;" />
+    </MudStack>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+    }
+
+    @if (_players.Count == 0 && !_loading)
+    {
+        <MudAlert Severity="Severity.Info">No players found. Import some logs first!</MudAlert>
+    }
+    else
+    {
+        <MudTable Items="@_players"
+                  Dense="true"
+                  Hover="true"
+                  Striped="true"
+                  Loading="@_loading"
+                  LoadingProgressColor="Color.Primary"
+                  OnRowClick="@(args => NavigateToPlayer(args.Item.AccountName))"
+                  T="PlayerSearchResult"
+                  RowClass="cursor-pointer">
+            <HeaderContent>
+                <MudTh Style="width: 50px;">#</MudTh>
+                <MudTh>Account Name</MudTh>
+                <MudTh>Encounters</MudTh>
+                <MudTh>First Seen</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="#">@(_players?.IndexOf(context) + 1 ?? 0)</MudTd>
+                <MudTd DataLabel="Account Name">
+                    <MudLink Href="@($"/players/{Uri.EscapeDataString(context.AccountName)}")">
+                        @context.AccountName
+                    </MudLink>
+                </MudTd>
+                <MudTd DataLabel="Encounters">@context.EncounterCount.ToString("N0")</MudTd>
+                <MudTd DataLabel="First Seen">@context.FirstSeen.LocalDateTime.ToString("MMM d, yyyy")</MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudPaper>
+
+<style>
+    .cursor-pointer {
+        cursor: pointer;
+    }
+</style>
+
+@code {
+    private bool _loading = true;
+    private List<PlayerSearchResult> _players = new();
+    private string _searchString = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPlayersAsync();
+    }
+
+    private async Task LoadPlayersAsync()
+    {
+        _loading = true;
+        try
+        {
+            _players = await Http.GetFromJsonAsync<List<PlayerSearchResult>>("api/players?limit=200") ?? new();
+        }
+        catch (Exception)
+        {
+            _players = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SearchPlayers()
+    {
+        _loading = true;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_searchString))
+            {
+                await LoadPlayersAsync();
+            }
+            else
+            {
+                _players = await Http.GetFromJsonAsync<List<PlayerSearchResult>>(
+                    $"api/players/search?q={Uri.EscapeDataString(_searchString)}&limit=100") ?? new();
+            }
+        }
+        catch (Exception)
+        {
+            _players = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void NavigateToPlayer(string accountName)
+    {
+        Navigation.NavigateTo($"/players/{Uri.EscapeDataString(accountName)}");
+    }
+
+    public record PlayerSearchResult(
+        Guid Id,
+        string AccountName,
+        DateTimeOffset FirstSeen,
+        int EncounterCount
+    );
+}

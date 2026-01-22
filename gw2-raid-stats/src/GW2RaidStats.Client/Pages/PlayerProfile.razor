@@ -1,0 +1,339 @@
+@page "/players/{AccountName}"
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>GW2 Raid Stats - @(_profile?.AccountName ?? "Player")</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else if (_profile == null)
+{
+    <MudAlert Severity="Severity.Error">Player not found.</MudAlert>
+}
+else
+{
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h4">@_profile.AccountName</MudText>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack" OnClick="GoBack">
+            Back to Players
+        </MudButton>
+    </MudStack>
+
+    <MudGrid>
+        @* Overview Card *@
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.Person" Class="mr-2" />
+                    Overview
+                </MudText>
+                <MudStack Spacing="2">
+                    <MudStack Row="true" Justify="Justify.SpaceBetween">
+                        <MudText Color="Color.Secondary">First Seen</MudText>
+                        <MudText>@_profile.FirstSeen.LocalDateTime.ToString("MMM d, yyyy")</MudText>
+                    </MudStack>
+                    <MudStack Row="true" Justify="Justify.SpaceBetween">
+                        <MudText Color="Color.Secondary">Total Encounters</MudText>
+                        <MudText><strong>@_profile.TotalEncounters.ToString("N0")</strong></MudText>
+                    </MudStack>
+                    <MudStack Row="true" Justify="Justify.SpaceBetween">
+                        <MudText Color="Color.Secondary">Total Kills</MudText>
+                        <MudText Color="Color.Success"><strong>@_profile.TotalKills.ToString("N0")</strong></MudText>
+                    </MudStack>
+                    <MudStack Row="true" Justify="Justify.SpaceBetween">
+                        <MudText Color="Color.Secondary">Success Rate</MudText>
+                        <MudText Color="@(GetSuccessRateColor(_profile.SuccessRate))">
+                            <strong>@_profile.SuccessRate.ToString("F1")%</strong>
+                        </MudText>
+                    </MudStack>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        @* Favorite Class Card *@
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.Star" Class="mr-2" />
+                    Favorite Class
+                </MudText>
+                @if (_profile.FavoriteClass != null)
+                {
+                    <MudStack Spacing="2">
+                        <MudText Typo="Typo.h5" Color="Color.Primary">@_profile.FavoriteClass</MudText>
+                        @foreach (var cls in _profile.ClassBreakdown.Take(5))
+                        {
+                            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                                <MudText Typo="Typo.body2">@cls.Profession</MudText>
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                    <MudText Typo="Typo.body2">@cls.Count</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">(@cls.Percentage.ToString("F0")%)</MudText>
+                                </MudStack>
+                            </MudStack>
+                        }
+                    </MudStack>
+                }
+                else
+                {
+                    <MudText Color="Color.Secondary">No data</MudText>
+                }
+            </MudPaper>
+        </MudItem>
+
+        @* Favorite Role Card *@
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.WorkspacePremium" Class="mr-2" />
+                    Favorite Role
+                </MudText>
+                @if (_profile.FavoriteRole != null)
+                {
+                    <MudStack Spacing="2">
+                        <MudChip T="string" Color="@GetRoleColor(_profile.FavoriteRole)" Size="Size.Large">
+                            @_profile.FavoriteRole
+                        </MudChip>
+                        @foreach (var role in _profile.RoleBreakdown)
+                        {
+                            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                                <MudChip T="string" Size="Size.Small" Color="@GetRoleColor(role.Role)">@role.Role</MudChip>
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                    <MudText Typo="Typo.body2">@role.Count</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">(@role.Percentage.ToString("F0")%)</MudText>
+                                </MudStack>
+                            </MudStack>
+                        }
+                    </MudStack>
+                }
+                else
+                {
+                    <MudText Color="Color.Secondary">No data</MudText>
+                }
+            </MudPaper>
+        </MudItem>
+
+        @* Personal Bests *@
+        <MudItem xs="12">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Class="mr-2" />
+                    Personal Bests
+                </MudText>
+                @if (_profile.PersonalBests.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">No kills recorded yet.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="@_profile.PersonalBests.Take(20)"
+                              Dense="true"
+                              Hover="true"
+                              Striped="true">
+                        <HeaderContent>
+                            <MudTh>Boss</MudTh>
+                            <MudTh>Mode</MudTh>
+                            <MudTh>DPS</MudTh>
+                            <MudTh>Class</MudTh>
+                            <MudTh>Character</MudTh>
+                            <MudTh>Kills</MudTh>
+                            <MudTh>Date</MudTh>
+                            <MudTh>Log</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Boss">@context.BossName</MudTd>
+                            <MudTd DataLabel="Mode">
+                                <MudChip T="string" Size="Size.Small" Color="@(context.IsCM ? Color.Warning : Color.Default)">
+                                    @(context.IsCM ? "CM" : "NM")
+                                </MudChip>
+                            </MudTd>
+                            <MudTd DataLabel="DPS">
+                                <MudText Color="Color.Error"><strong>@context.Dps.ToString("N0")</strong></MudText>
+                            </MudTd>
+                            <MudTd DataLabel="Class">@context.Profession</MudTd>
+                            <MudTd DataLabel="Character">@context.CharacterName</MudTd>
+                            <MudTd DataLabel="Kills">@context.KillCount</MudTd>
+                            <MudTd DataLabel="Date">@context.EncounterTime.LocalDateTime.ToString("MMM d, yyyy")</MudTd>
+                            <MudTd DataLabel="Log">
+                                @if (!string.IsNullOrEmpty(context.LogUrl))
+                                {
+                                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                   Size="Size.Small"
+                                                   Href="@context.LogUrl"
+                                                   Target="_blank" />
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+
+        @* Recent Activity *@
+        <MudItem xs="12">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.History" Class="mr-2" />
+                    Recent Activity
+                </MudText>
+                @if (_profile.RecentActivity.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">No recent activity.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="@_profile.RecentActivity"
+                              Dense="true"
+                              Hover="true"
+                              Striped="true">
+                        <HeaderContent>
+                            <MudTh>Boss</MudTh>
+                            <MudTh>Mode</MudTh>
+                            <MudTh>Result</MudTh>
+                            <MudTh>DPS</MudTh>
+                            <MudTh>Class</MudTh>
+                            <MudTh>Role</MudTh>
+                            <MudTh>Date</MudTh>
+                            <MudTh>Log</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Boss">@context.BossName</MudTd>
+                            <MudTd DataLabel="Mode">
+                                <MudChip T="string" Size="Size.Small" Color="@(context.IsCM ? Color.Warning : Color.Default)">
+                                    @(context.IsCM ? "CM" : "NM")
+                                </MudChip>
+                            </MudTd>
+                            <MudTd DataLabel="Result">
+                                @if (context.Success)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Success">Kill</MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Error">Wipe</MudChip>
+                                }
+                            </MudTd>
+                            <MudTd DataLabel="DPS">@context.Dps.ToString("N0")</MudTd>
+                            <MudTd DataLabel="Class">@context.Profession</MudTd>
+                            <MudTd DataLabel="Role">
+                                <MudChip T="string" Size="Size.Small" Color="@GetRoleColor(context.Role)">@context.Role</MudChip>
+                            </MudTd>
+                            <MudTd DataLabel="Date">@context.EncounterTime.LocalDateTime.ToString("MMM d, yyyy HH:mm")</MudTd>
+                            <MudTd DataLabel="Log">
+                                @if (!string.IsNullOrEmpty(context.LogUrl))
+                                {
+                                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                   Size="Size.Small"
+                                                   Href="@context.LogUrl"
+                                                   Target="_blank" />
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter]
+    public string AccountName { get; set; } = "";
+
+    private bool _loading = true;
+    private PlayerProfileDto? _profile;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadProfileAsync();
+    }
+
+    private async Task LoadProfileAsync()
+    {
+        _loading = true;
+        try
+        {
+            _profile = await Http.GetFromJsonAsync<PlayerProfileDto>(
+                $"api/players/{Uri.EscapeDataString(AccountName)}");
+        }
+        catch (Exception)
+        {
+            _profile = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/players");
+    }
+
+    private Color GetSuccessRateColor(decimal rate)
+    {
+        return rate switch
+        {
+            >= 80 => Color.Success,
+            >= 50 => Color.Warning,
+            _ => Color.Error
+        };
+    }
+
+    private Color GetRoleColor(string role)
+    {
+        return role switch
+        {
+            "DPS" => Color.Error,
+            "Boon DPS" => Color.Info,
+            "Heal Boon" => Color.Success,
+            _ => Color.Default
+        };
+    }
+
+    // DTOs
+    public record PlayerProfileDto(
+        Guid Id,
+        string AccountName,
+        DateTimeOffset FirstSeen,
+        int TotalEncounters,
+        int TotalKills,
+        decimal SuccessRate,
+        string? FavoriteClass,
+        string? FavoriteRole,
+        List<ClassStats> ClassBreakdown,
+        List<RoleStats> RoleBreakdown,
+        List<PersonalBest> PersonalBests,
+        List<RecentEncounter> RecentActivity
+    );
+
+    public record ClassStats(string Profession, int Count, decimal Percentage);
+
+    public record RoleStats(string Role, int Count, decimal Percentage);
+
+    public record PersonalBest(
+        int TriggerId,
+        string BossName,
+        bool IsCM,
+        int Dps,
+        string Profession,
+        string CharacterName,
+        DateTimeOffset EncounterTime,
+        string? LogUrl,
+        int KillCount
+    );
+
+    public record RecentEncounter(
+        string BossName,
+        bool IsCM,
+        bool Success,
+        int Dps,
+        string Profession,
+        string CharacterName,
+        string Role,
+        DateTimeOffset EncounterTime,
+        string? LogUrl
+    );
+}

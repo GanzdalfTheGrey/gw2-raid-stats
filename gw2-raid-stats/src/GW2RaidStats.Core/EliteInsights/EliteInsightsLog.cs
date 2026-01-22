@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace GW2RaidStats.Core.EliteInsights;
@@ -99,6 +100,9 @@ public class EIPlayer
 
     [JsonPropertyName("groupBuffs")]
     public List<EISquadBuff>? GroupBuffs { get; set; }
+
+    [JsonPropertyName("extHealingStats")]
+    public JsonElement? ExtHealingStats { get; set; }
 }
 
 public class EIDpsStats

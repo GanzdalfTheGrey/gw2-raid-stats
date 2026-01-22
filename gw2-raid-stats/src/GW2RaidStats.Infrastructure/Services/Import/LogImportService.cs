@@ -128,6 +128,9 @@ public class LogImportService
             // Get boon generation stats
             var (quicknessGen, alacrityGen) = GetBoonGeneration(eiPlayer);
 
+            // Get healing stats (parse from dynamic JSON structure)
+            var (healingTotal, healingPower, hps) = GetHealingStats(eiPlayer);
+
             var playerEncounter = new PlayerEncounterEntity
             {
                 Id = Guid.NewGuid(),
@@ -159,6 +162,11 @@ public class LogImportService
                 // Boon generation
                 QuicknessGeneration = quicknessGen,
                 AlacracityGeneration = alacrityGen,
+
+                // Healing stats
+                Healing = healingTotal,
+                HealingPowerHealing = healingPower,
+                Hps = hps,
 
                 CreatedAt = DateTimeOffset.UtcNow
             };
@@ -271,6 +279,50 @@ public class LogImportService
         }
 
         return (quicknessGen, alacrityGen);
+    }
+
+    private static (int healing, int healingPower, int hps) GetHealingStats(EIPlayer player)
+    {
+        try
+        {
+            if (player.ExtHealingStats == null || player.ExtHealingStats.Value.ValueKind != System.Text.Json.JsonValueKind.Array)
+                return (0, 0, 0);
+
+            var statsArray = player.ExtHealingStats.Value;
+            if (statsArray.GetArrayLength() == 0)
+                return (0, 0, 0);
+
+            // Get first phase stats
+            var firstPhase = statsArray[0];
+
+            // Try to get outgoingHealing array
+            if (!firstPhase.TryGetProperty("outgoingHealing", out var outgoingHealing))
+                return (0, 0, 0);
+
+            if (outgoingHealing.ValueKind != System.Text.Json.JsonValueKind.Array || outgoingHealing.GetArrayLength() == 0)
+                return (0, 0, 0);
+
+            // Get first target's healing (usually "all" or total)
+            var firstTarget = outgoingHealing[0];
+
+            int healing = 0;
+            int healingPower = 0;
+            int hps = 0;
+
+            if (firstTarget.TryGetProperty("healing", out var healingProp))
+                healing = healingProp.GetInt32();
+            if (firstTarget.TryGetProperty("healingPowerHealing", out var hpHealingProp))
+                healingPower = hpHealingProp.GetInt32();
+            if (firstTarget.TryGetProperty("hps", out var hpsProp))
+                hps = hpsProp.GetInt32();
+
+            return (healing, healingPower, hps);
+        }
+        catch
+        {
+            // If parsing fails for any reason, return zeros
+            return (0, 0, 0);
+        }
     }
 
     private static DateTimeOffset ParseEncounterTime(EliteInsightsLog log)

@@ -72,6 +72,16 @@ public class PlayerEncounterEntity
     [Column("alacrity_generation")]
     public decimal? AlacracityGeneration { get; set; }
 
+    // Healing stats
+    [Column("healing")]
+    public int Healing { get; set; }
+
+    [Column("healing_power_healing")]
+    public int HealingPowerHealing { get; set; }
+
+    [Column("hps")]
+    public int Hps { get; set; }
+
     [Column("created_at"), NotNull]
     public DateTimeOffset CreatedAt { get; set; }
 
