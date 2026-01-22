@@ -8,11 +8,16 @@ public class StatsService
 {
     private readonly RaidStatsDb _db;
     private readonly IgnoredBossService _ignoredBossService;
+    private readonly IncludedPlayerService _includedPlayerService;
 
-    public StatsService(RaidStatsDb db, IgnoredBossService ignoredBossService)
+    // Match LeaderboardService threshold
+    private const decimal BoonSupportThreshold = 10m;
+
+    public StatsService(RaidStatsDb db, IgnoredBossService ignoredBossService, IncludedPlayerService includedPlayerService)
     {
         _db = db;
         _ignoredBossService = ignoredBossService;
+        _includedPlayerService = includedPlayerService;
     }
 
     public async Task<DashboardStats> GetDashboardStatsAsync(CancellationToken ct = default)
@@ -148,6 +153,237 @@ public class StatsService
             TopDps: topDps
         );
     }
+
+    public async Task<PreviousSession?> GetPreviousSessionAsync(CancellationToken ct = default)
+    {
+        // Find the most recent encounter by encounter time (actual raid date, not upload date)
+        var latestEncounter = await _db.Encounters
+            .OrderByDescending(e => e.EncounterTime)
+            .FirstOrDefaultAsync(ct);
+
+        if (latestEncounter == null) return null;
+
+        // Get all encounters from that same calendar date (preserving timezone)
+        var sessionDate = latestEncounter.EncounterTime.Date;
+        var encounterOffset = latestEncounter.EncounterTime.Offset;
+        var sessionStart = new DateTimeOffset(sessionDate, encounterOffset);
+        var sessionEnd = sessionStart.AddDays(1);
+
+        var sessionEncounters = await _db.Encounters
+            .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd)
+            .OrderBy(e => e.EncounterTime)
+            .ToListAsync(ct);
+
+        if (sessionEncounters.Count == 0) return null;
+
+        var encounters = sessionEncounters.Select(e => new SessionEncounter(
+            e.Id,
+            e.BossName,
+            e.Success,
+            e.IsCM,
+            e.EncounterTime,
+            e.DurationMs,
+            e.LogUrl
+        )).ToList();
+
+        var totalAttempts = sessionEncounters.Count;
+        var totalKills = sessionEncounters.Count(e => e.Success);
+        var totalTimeMs = sessionEncounters.Sum(e => e.DurationMs);
+
+        return new PreviousSession(
+            SessionDate: sessionDate,
+            Encounters: encounters,
+            TotalAttempts: totalAttempts,
+            TotalKills: totalKills,
+            TotalTimeSeconds: totalTimeMs / 1000.0
+        );
+    }
+
+    public async Task<SessionHighlights> GetSessionHighlightsAsync(CancellationToken ct = default)
+    {
+        var records = new List<RecordBroken>();
+        var milestones = new List<Milestone>();
+
+        // Find the most recent session date
+        var latestEncounter = await _db.Encounters
+            .OrderByDescending(e => e.EncounterTime)
+            .FirstOrDefaultAsync(ct);
+
+        if (latestEncounter == null)
+        {
+            return new SessionHighlights(records, milestones);
+        }
+
+        // Get all encounters from that same calendar date (preserving timezone)
+        var sessionDate = latestEncounter.EncounterTime.Date;
+        var encounterOffset = latestEncounter.EncounterTime.Offset;
+        var sessionStart = new DateTimeOffset(sessionDate, encounterOffset);
+        var sessionEnd = sessionStart.AddDays(1);
+
+        // Get included players (guild members) - to match leaderboard logic
+        var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
+        var includedList = includedAccounts.ToList();
+
+        // Get successful encounters from this session
+        var sessionKills = await _db.Encounters
+            .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd && e.Success)
+            .ToListAsync(ct);
+
+        // Check for kill time records
+        foreach (var kill in sessionKills)
+        {
+            // Get the previous best kill time for this boss (before this session)
+            var previousBest = await _db.Encounters
+                .Where(e => e.TriggerId == kill.TriggerId
+                         && e.IsCM == kill.IsCM
+                         && e.Success
+                         && e.EncounterTime < sessionStart)
+                .OrderBy(e => e.DurationMs)
+                .FirstOrDefaultAsync(ct);
+
+            if (previousBest == null || kill.DurationMs < previousBest.DurationMs)
+            {
+                records.Add(new RecordBroken(
+                    RecordType: "Kill Time",
+                    BossName: kill.BossName,
+                    IsCM: kill.IsCM,
+                    PlayerName: null,
+                    NewValue: kill.DurationMs / 1000.0,
+                    PreviousValue: previousBest?.DurationMs / 1000.0,
+                    Profession: null
+                ));
+            }
+        }
+
+        // Check for DPS records from this session
+        var sessionEncounterIds = sessionKills.Select(e => e.Id).ToList();
+        if (sessionEncounterIds.Count > 0)
+        {
+            // Build query for session player encounters, filtering to included players only
+            var sessionQuery = _db.PlayerEncounters
+                .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+                .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
+                .Where(x => sessionEncounterIds.Contains(x.e.Id));
+
+            if (includedList.Count > 0)
+            {
+                sessionQuery = sessionQuery.Where(x => includedList.Contains(x.p.AccountName));
+            }
+
+            var sessionPlayerEncounters = await sessionQuery.ToListAsync(ct);
+
+            // Group by boss and check for DPS records
+            var bossDpsRecords = sessionPlayerEncounters
+                .GroupBy(x => new { x.e.TriggerId, x.e.IsCM, x.e.BossName })
+                .ToList();
+
+            foreach (var bossGroup in bossDpsRecords)
+            {
+                var topSessionDps = bossGroup.OrderByDescending(x => x.pe.Dps).FirstOrDefault();
+                if (topSessionDps == null) continue;
+
+                // Get previous best DPS for this boss (included players only)
+                var previousQuery = _db.PlayerEncounters
+                    .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+                    .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
+                    .Where(x => x.e.TriggerId == bossGroup.Key.TriggerId
+                             && x.e.IsCM == bossGroup.Key.IsCM
+                             && x.e.Success
+                             && x.e.EncounterTime < sessionStart);
+
+                if (includedList.Count > 0)
+                {
+                    previousQuery = previousQuery.Where(x => includedList.Contains(x.p.AccountName));
+                }
+
+                var previousBestDps = await previousQuery
+                    .OrderByDescending(x => x.pe.Dps)
+                    .FirstOrDefaultAsync(ct);
+
+                if (previousBestDps == null || topSessionDps.pe.Dps > previousBestDps.pe.Dps)
+                {
+                    records.Add(new RecordBroken(
+                        RecordType: "DPS",
+                        BossName: bossGroup.Key.BossName,
+                        IsCM: bossGroup.Key.IsCM,
+                        PlayerName: topSessionDps.p.AccountName,
+                        NewValue: topSessionDps.pe.Dps,
+                        PreviousValue: previousBestDps?.pe.Dps,
+                        Profession: topSessionDps.pe.Profession
+                    ));
+                }
+
+                // Check for Boon DPS records (quickness or alacrity providers >= 10% threshold)
+                var boonDpsPlayers = bossGroup
+                    .Where(x => (x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
+                                (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold)
+                    .OrderByDescending(x => x.pe.Dps)
+                    .FirstOrDefault();
+
+                if (boonDpsPlayers != null)
+                {
+                    var previousBoonQuery = _db.PlayerEncounters
+                        .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+                        .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
+                        .Where(x => x.e.TriggerId == bossGroup.Key.TriggerId
+                                 && x.e.IsCM == bossGroup.Key.IsCM
+                                 && x.e.Success
+                                 && x.e.EncounterTime < sessionStart
+                                 && ((x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
+                                     (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold));
+
+                    if (includedList.Count > 0)
+                    {
+                        previousBoonQuery = previousBoonQuery.Where(x => includedList.Contains(x.p.AccountName));
+                    }
+
+                    var previousBestBoonDps = await previousBoonQuery
+                        .OrderByDescending(x => x.pe.Dps)
+                        .FirstOrDefaultAsync(ct);
+
+                    if (previousBestBoonDps == null || boonDpsPlayers.pe.Dps > previousBestBoonDps.pe.Dps)
+                    {
+                        records.Add(new RecordBroken(
+                            RecordType: "Boon DPS",
+                            BossName: bossGroup.Key.BossName,
+                            IsCM: bossGroup.Key.IsCM,
+                            PlayerName: boonDpsPlayers.p.AccountName,
+                            NewValue: boonDpsPlayers.pe.Dps,
+                            PreviousValue: previousBestBoonDps?.pe.Dps,
+                            Profession: boonDpsPlayers.pe.Profession
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Check for kill milestones (every 50 kills)
+        var totalKillsNow = await _db.Encounters.CountAsync(e => e.Success, ct);
+        var totalKillsBefore = await _db.Encounters
+            .CountAsync(e => e.Success && e.EncounterTime < sessionStart, ct);
+
+        // Check which 50-kill milestones were crossed
+        var milestoneBefore = (totalKillsBefore / 50) * 50;
+        var milestoneNow = (totalKillsNow / 50) * 50;
+
+        for (var m = milestoneBefore + 50; m <= milestoneNow; m += 50)
+        {
+            milestones.Add(new Milestone(
+                Type: "Total Kills",
+                Value: m,
+                Description: $"Reached {m} total boss kills!"
+            ));
+        }
+
+        // Deduplicate records (keep only new records, not first-time records for clarity)
+        var newRecords = records
+            .Where(r => r.PreviousValue.HasValue)
+            .OrderByDescending(r => r.RecordType == "Kill Time" ? (r.PreviousValue!.Value - r.NewValue) / r.PreviousValue!.Value : (r.NewValue - r.PreviousValue!.Value) / r.PreviousValue!.Value)
+            .Take(5)
+            .ToList();
+
+        return new SessionHighlights(newRecords, milestones);
+    }
 }
 
 public record DashboardStats(
@@ -181,4 +417,43 @@ public record TopPerformer(
     string Profession,
     int Value,
     string BossName
+);
+
+public record PreviousSession(
+    DateTime SessionDate,
+    List<SessionEncounter> Encounters,
+    int TotalAttempts,
+    int TotalKills,
+    double TotalTimeSeconds
+);
+
+public record SessionEncounter(
+    Guid Id,
+    string BossName,
+    bool Success,
+    bool IsCM,
+    DateTimeOffset EncounterTime,
+    int DurationMs,
+    string? LogUrl
+);
+
+public record SessionHighlights(
+    List<RecordBroken> Records,
+    List<Milestone> Milestones
+);
+
+public record RecordBroken(
+    string RecordType,
+    string BossName,
+    bool IsCM,
+    string? PlayerName,
+    double NewValue,
+    double? PreviousValue,
+    string? Profession
+);
+
+public record Milestone(
+    string Type,
+    int Value,
+    string Description
 );

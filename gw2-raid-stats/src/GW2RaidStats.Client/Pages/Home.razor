@@ -52,8 +52,32 @@
 <MudGrid Class="mt-4">
     <MudItem xs="12" md="8">
         <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-3">Recent Activity</MudText>
-            @if (_recentEncounters == null || _recentEncounters.Count == 0)
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+                <MudText Typo="Typo.h6">
+                    Previous Session
+                    @if (_previousSession != null)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">
+                            @_previousSession.SessionDate.ToString("dddd, MMMM d, yyyy")
+                        </MudText>
+                    }
+                </MudText>
+                @if (_previousSession != null)
+                {
+                    <MudStack Row="true" Spacing="3">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
+                            @_previousSession.TotalAttempts attempts
+                        </MudChip>
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">
+                            @_previousSession.TotalKills kills
+                        </MudChip>
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">
+                            @FormatSessionTime(_previousSession.TotalTimeSeconds)
+                        </MudChip>
+                    </MudStack>
+                }
+            </MudStack>
+            @if (_previousSession == null || _previousSession.Encounters.Count == 0)
             {
                 <MudAlert Severity="Severity.Info" Class="mb-3">
                     No logs imported yet. Go to Admin > Upload Logs to get started.
@@ -67,12 +91,12 @@
                             <th>Boss</th>
                             <th>Result</th>
                             <th>Duration</th>
-                            <th>When</th>
+                            <th>Time</th>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var encounter in _recentEncounters)
+                        @foreach (var encounter in _previousSession.Encounters)
                         {
                             <tr>
                                 <td>
@@ -93,7 +117,7 @@
                                     }
                                 </td>
                                 <td>@FormatDuration(encounter.DurationMs)</td>
-                                <td>@FormatTimeAgo(encounter.EncounterTime)</td>
+                                <td>@encounter.EncounterTime.LocalDateTime.ToString("h:mm tt")</td>
                                 <td>
                                     @if (!string.IsNullOrEmpty(encounter.LogUrl))
                                     {
@@ -113,33 +137,71 @@
 
     <MudItem xs="12" md="4">
         <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-3">This Week's Highlights</MudText>
-            @if (_highlights == null || _highlights.Encounters == 0)
+            <MudText Typo="Typo.h6" Class="mb-3">Session Highlights</MudText>
+            @if (_sessionHighlights == null || (_sessionHighlights.Records.Count == 0 && _sessionHighlights.Milestones.Count == 0))
             {
                 <MudText Typo="Typo.body2" Color="Color.Default">
-                    No data available for this week.
+                    No new records or milestones from this session.
                 </MudText>
             }
             else
             {
-                <MudList T="string" Dense="true">
-                    <MudListItem Icon="@Icons.Material.Filled.EmojiEvents">
-                        <MudText Typo="Typo.body2">
-                            <strong>@_highlights.Kills</strong> kills out of <strong>@_highlights.Encounters</strong> encounters
-                        </MudText>
-                    </MudListItem>
-                    @if (_highlights.TopDps != null)
+                <MudStack Spacing="2">
+                    @foreach (var milestone in _sessionHighlights.Milestones)
                     {
-                        <MudListItem Icon="@Icons.Material.Filled.Whatshot">
-                            <MudText Typo="Typo.body2">
-                                Top DPS: <strong>@_highlights.TopDps.Value.ToString("N0")</strong>
-                            </MudText>
-                            <MudText Typo="Typo.caption">
-                                @_highlights.TopDps.CharacterName (@_highlights.TopDps.Profession) on @_highlights.TopDps.BossName
-                            </MudText>
-                        </MudListItem>
+                        <MudAlert Severity="Severity.Success" Dense="true" Icon="@Icons.Material.Filled.Celebration">
+                            @milestone.Description
+                        </MudAlert>
                     }
-                </MudList>
+                    @foreach (var record in _sessionHighlights.Records)
+                    {
+                        <MudPaper Class="pa-2" Elevation="0" Style="background: var(--mud-palette-background-grey);">
+                            <MudStack Spacing="0">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                    <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Size="Size.Small" Color="Color.Warning" />
+                                    <MudText Typo="Typo.body2">
+                                        <strong>New @record.RecordType Record!</strong>
+                                    </MudText>
+                                </MudStack>
+                                <MudText Typo="Typo.body2">
+                                    @record.BossName@(record.IsCM ? " (CM)" : "")
+                                </MudText>
+                                @if (record.RecordType == "Kill Time")
+                                {
+                                    <MudText Typo="Typo.body2" Color="Color.Success">
+                                        @FormatDurationSeconds(record.NewValue)
+                                        @if (record.PreviousValue.HasValue)
+                                        {
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-1">
+                                                (was @FormatDurationSeconds(record.PreviousValue.Value))
+                                            </MudText>
+                                        }
+                                    </MudText>
+                                }
+                                else
+                                {
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                        <MudText Typo="Typo.body2" Color="Color.Error">
+                                            @(((int)record.NewValue).ToString("N0")) DPS
+                                        </MudText>
+                                        @if (!string.IsNullOrEmpty(record.PlayerName))
+                                        {
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                by @record.PlayerName (@record.Profession)
+                                            </MudText>
+                                        }
+                                    </MudStack>
+                                    @if (record.PreviousValue.HasValue)
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                            Previous: @(((int)record.PreviousValue.Value).ToString("N0"))
+                                        </MudText>
+                                    }
+                                }
+                            </MudStack>
+                        </MudPaper>
+                    }
+                </MudStack>
             }
         </MudPaper>
     </MudItem>
@@ -170,8 +232,8 @@
 @code {
     private bool _loading = true;
     private DashboardStats? _stats;
-    private List<RecentEncounter>? _recentEncounters;
-    private WeeklyHighlights? _highlights;
+    private PreviousSession? _previousSession;
+    private SessionHighlights? _sessionHighlights;
 
     protected override async Task OnInitializedAsync()
     {
@@ -184,14 +246,14 @@
         try
         {
             var statsTask = Http.GetFromJsonAsync<DashboardStats>("api/stats/dashboard");
-            var recentTask = Http.GetFromJsonAsync<List<RecentEncounter>>("api/stats/recent?count=10");
-            var highlightsTask = Http.GetFromJsonAsync<WeeklyHighlights>("api/stats/weekly-highlights");
+            var sessionTask = Http.GetFromJsonAsync<PreviousSession>("api/stats/previous-session");
+            var highlightsTask = Http.GetFromJsonAsync<SessionHighlights>("api/stats/session-highlights");
 
-            await Task.WhenAll(statsTask, recentTask, highlightsTask);
+            await Task.WhenAll(statsTask, sessionTask, highlightsTask);
 
             _stats = await statsTask;
-            _recentEncounters = await recentTask;
-            _highlights = await highlightsTask;
+            _previousSession = await sessionTask;
+            _sessionHighlights = await highlightsTask;
         }
         catch (Exception ex)
         {
@@ -211,18 +273,20 @@
             : $"{ts.Seconds}s";
     }
 
-    private static string FormatTimeAgo(DateTimeOffset time)
+    private static string FormatDurationSeconds(double seconds)
     {
-        var diff = DateTimeOffset.UtcNow - time;
+        var ts = TimeSpan.FromSeconds(seconds);
+        return ts.TotalMinutes >= 1
+            ? $"{(int)ts.TotalMinutes}:{ts.Seconds:D2}"
+            : $"{ts.Seconds}s";
+    }
 
-        if (diff.TotalMinutes < 60)
-            return $"{(int)diff.TotalMinutes}m ago";
-        if (diff.TotalHours < 24)
-            return $"{(int)diff.TotalHours}h ago";
-        if (diff.TotalDays < 7)
-            return $"{(int)diff.TotalDays}d ago";
-
-        return time.LocalDateTime.ToString("MMM d");
+    private static string FormatSessionTime(double totalSeconds)
+    {
+        var ts = TimeSpan.FromSeconds(totalSeconds);
+        if (ts.TotalHours >= 1)
+            return $"{(int)ts.TotalHours}h {ts.Minutes}m";
+        return $"{ts.Minutes}m";
     }
 
     // DTOs matching the server models
@@ -235,7 +299,15 @@
         int TotalPlayers
     );
 
-    public record RecentEncounter(
+    public record PreviousSession(
+        DateTime SessionDate,
+        List<SessionEncounter> Encounters,
+        int TotalAttempts,
+        int TotalKills,
+        double TotalTimeSeconds
+    );
+
+    public record SessionEncounter(
         Guid Id,
         string BossName,
         bool Success,
@@ -245,17 +317,24 @@
         string? LogUrl
     );
 
-    public record WeeklyHighlights(
-        int Encounters,
-        int Kills,
-        TopPerformer? TopDps
+    public record SessionHighlights(
+        List<RecordBroken> Records,
+        List<Milestone> Milestones
     );
 
-    public record TopPerformer(
-        string AccountName,
-        string CharacterName,
-        string Profession,
+    public record RecordBroken(
+        string RecordType,
+        string BossName,
+        bool IsCM,
+        string? PlayerName,
+        double NewValue,
+        double? PreviousValue,
+        string? Profession
+    );
+
+    public record Milestone(
+        string Type,
         int Value,
-        string BossName
+        string Description
     );
 }

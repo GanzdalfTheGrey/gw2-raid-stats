@@ -36,4 +36,18 @@ public class StatsController : ControllerBase
         var highlights = await _statsService.GetWeeklyHighlightsAsync(ct);
         return Ok(highlights);
     }
+
+    [HttpGet("previous-session")]
+    public async Task<ActionResult<PreviousSession?>> GetPreviousSession(CancellationToken ct)
+    {
+        var session = await _statsService.GetPreviousSessionAsync(ct);
+        return Ok(session);
+    }
+
+    [HttpGet("session-highlights")]
+    public async Task<ActionResult<SessionHighlights>> GetSessionHighlights(CancellationToken ct)
+    {
+        var highlights = await _statsService.GetSessionHighlightsAsync(ct);
+        return Ok(highlights);
+    }
 }

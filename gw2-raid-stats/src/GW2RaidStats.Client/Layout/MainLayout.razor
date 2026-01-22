@@ -1,5 +1,6 @@
 @inherits LayoutComponentBase
 @inject HttpClient Http
+@inject IJSRuntime JS
 
 <MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="_theme" />
 <MudPopoverProvider />
@@ -40,6 +41,9 @@
     {
         try
         {
+            // Load dark mode preference from localStorage
+            _isDarkMode = await JS.InvokeAsync<bool>("darkModeStorage.get");
+
             var response = await Http.GetFromJsonAsync<GuildNameResponse>("api/settings/guild-name");
             if (response != null && !string.IsNullOrEmpty(response.GuildName))
             {
@@ -48,7 +52,7 @@
         }
         catch
         {
-            // Use default if API fails
+            // Use defaults if anything fails
         }
     }
 
@@ -80,7 +84,12 @@
     };
 
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
-    private void ToggleDarkMode() => _isDarkMode = !_isDarkMode;
+
+    private async Task ToggleDarkMode()
+    {
+        _isDarkMode = !_isDarkMode;
+        await JS.InvokeVoidAsync("darkModeStorage.set", _isDarkMode);
+    }
 
     private record GuildNameResponse(string GuildName);
 }

@@ -1,0 +1,170 @@
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+}
+else if (!_authRequired || _authenticated)
+{
+    @ChildContent
+}
+else
+{
+    <MudContainer MaxWidth="MaxWidth.Small" Class="mt-8">
+        <MudPaper Class="pa-6" Elevation="3">
+            <MudStack Spacing="4" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Large" Color="Color.Primary" />
+                <MudText Typo="Typo.h5">Admin Access Required</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Align="Align.Center">
+                    Enter the admin password to access this section.
+                </MudText>
+
+                <MudForm @ref="_form" Class="mt-4" Style="width: 100%;">
+                    <MudTextField @bind-Value="_password"
+                                  Label="Password"
+                                  Variant="Variant.Outlined"
+                                  InputType="InputType.Password"
+                                  Required="true"
+                                  RequiredError="Password is required"
+                                  OnKeyDown="HandleKeyDown"
+                                  Immediate="true"
+                                  Error="@_hasError"
+                                  ErrorText="@_errorMessage" />
+                </MudForm>
+
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           OnClick="VerifyPassword"
+                           Disabled="_verifying"
+                           FullWidth="true"
+                           Class="mt-2">
+                    @if (_verifying)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Verifying...</span>
+                    }
+                    else
+                    {
+                        <span>Unlock</span>
+                    }
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    </MudContainer>
+}
+
+@code {
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    private MudForm? _form;
+    private bool _loading = true;
+    private bool _authRequired = false;
+    private bool _authenticated = false;
+    private bool _verifying = false;
+    private string _password = "";
+    private bool _hasError = false;
+    private string _errorMessage = "";
+
+    private const string SessionKey = "adminAuth";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CheckAuthStateAsync();
+    }
+
+    private async Task CheckAuthStateAsync()
+    {
+        _loading = true;
+        try
+        {
+            // Check if auth is required
+            var response = await Http.GetFromJsonAsync<AuthRequiredResponse>("api/admin/auth-required");
+            _authRequired = response?.Required ?? false;
+
+            if (_authRequired)
+            {
+                // Check if already authenticated in this session
+                var storedAuth = await JS.InvokeAsync<string?>("sessionStorage.getItem", SessionKey);
+                if (!string.IsNullOrEmpty(storedAuth))
+                {
+                    // Verify the stored password is still valid
+                    var verifyResponse = await Http.PostAsJsonAsync("api/admin/verify", new VerifyRequest(storedAuth));
+                    _authenticated = verifyResponse.IsSuccessStatusCode;
+
+                    if (!_authenticated)
+                    {
+                        // Clear invalid stored auth
+                        await JS.InvokeVoidAsync("sessionStorage.removeItem", SessionKey);
+                    }
+                }
+            }
+            else
+            {
+                _authenticated = true; // No auth required
+            }
+        }
+        catch
+        {
+            // If we can't check, assume no auth required
+            _authenticated = true;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await VerifyPassword();
+        }
+    }
+
+    private async Task VerifyPassword()
+    {
+        _hasError = false;
+        _errorMessage = "";
+
+        if (string.IsNullOrWhiteSpace(_password))
+        {
+            _hasError = true;
+            _errorMessage = "Password is required";
+            return;
+        }
+
+        _verifying = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/admin/verify", new VerifyRequest(_password));
+
+            if (response.IsSuccessStatusCode)
+            {
+                // Store in session
+                await JS.InvokeVoidAsync("sessionStorage.setItem", SessionKey, _password);
+                _authenticated = true;
+            }
+            else
+            {
+                _hasError = true;
+                _errorMessage = "Incorrect password";
+                _password = "";
+            }
+        }
+        catch
+        {
+            _hasError = true;
+            _errorMessage = "Unable to verify password. Please try again.";
+        }
+        finally
+        {
+            _verifying = false;
+        }
+    }
+
+    private record AuthRequiredResponse(bool Required);
+    private record VerifyRequest(string Password);
+}

@@ -39,6 +39,16 @@
     </div>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
     <script>
+        window.darkModeStorage = {
+            get: function () {
+                const stored = localStorage.getItem('darkMode');
+                return stored === null ? true : stored === 'true';
+            },
+            set: function (value) {
+                localStorage.setItem('darkMode', value.toString());
+            }
+        };
+
         window.recapKeyboardHandler = {
             dotNetRef: null,
             handler: null,
