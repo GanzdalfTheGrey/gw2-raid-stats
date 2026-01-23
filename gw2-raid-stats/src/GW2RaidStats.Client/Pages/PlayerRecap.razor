@@ -1,0 +1,522 @@
+@page "/player/{PlayerId:guid}/recap"
+@page "/player/{PlayerId:guid}/recap/{Year:int}"
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>GW2 Raid Stats - Player Recap</PageTitle>
+
+<style>
+    .recap-header {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+
+    .year-title {
+        font-size: 3rem;
+        font-weight: 900;
+        background: linear-gradient(135deg, #f59e0b, #ef4444, #ec4899);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .big-stat {
+        font-size: 3rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #6366f1, #a855f7);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .big-stat-green {
+        font-size: 3rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #10b981, #059669);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .big-stat-red {
+        font-size: 3rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .stat-card {
+        text-align: center;
+        padding: 1.5rem;
+    }
+
+    .stat-label {
+        color: var(--mud-palette-text-secondary);
+        font-size: 0.9rem;
+        margin-top: 0.5rem;
+    }
+
+    .section-title {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .profession-bar {
+        height: 24px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        padding-left: 8px;
+        color: white;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+</style>
+
+@if (_loading)
+{
+    <MudContainer MaxWidth="MaxWidth.Large" Class="py-8">
+        <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="100px" Class="mb-4" />
+        <MudGrid>
+            @for (int i = 0; i < 4; i++)
+            {
+                <MudItem xs="12" md="6">
+                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="300px" />
+                </MudItem>
+            }
+        </MudGrid>
+    </MudContainer>
+}
+else if (_recap == null)
+{
+    <MudContainer MaxWidth="MaxWidth.Medium" Class="py-8 text-center">
+        <MudText Typo="Typo.h4">No recap data available</MudText>
+        <MudText Color="Color.Secondary">This player has no recorded encounters for the selected year.</MudText>
+    </MudContainer>
+}
+else
+{
+    <MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+        @* Header *@
+        <div class="recap-header">
+            <MudText Typo="Typo.h5" Color="Color.Secondary">@_recap.AccountName</MudText>
+            <div class="year-title">@_recap.Year Recap</div>
+
+            <MudStack Row="true" Justify="Justify.Center" AlignItems="AlignItems.Center" Spacing="4" Class="my-3">
+                @if (_availableYears.Count > 1)
+                {
+                    <MudSelect T="int" Value="Year" ValueChanged="OnYearChanged" Label="Year" Variant="Variant.Outlined"
+                               Style="max-width: 150px;">
+                        @foreach (var y in _availableYears)
+                        {
+                            <MudSelectItem Value="y">@y</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+                <MudSwitch T="bool" Value="_includeIgnoredBosses" ValueChanged="OnIncludeIgnoredChanged"
+                           Label="Include ignored bosses" Color="Color.Primary" />
+            </MudStack>
+
+        </div>
+
+        <MudGrid Spacing="4">
+            @* Performance Stats *@
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <div class="section-title">
+                        <MudIcon Icon="@Icons.Material.Filled.Speed" Color="Color.Primary" />
+                        <MudText Typo="Typo.h6">Performance</MudText>
+                    </div>
+
+                    <MudGrid>
+                        <MudItem xs="4">
+                            <div class="stat-card">
+                                <div class="big-stat">@_recap.Performance.TotalEncounters</div>
+                                <div class="stat-label">Encounters</div>
+                            </div>
+                        </MudItem>
+                        <MudItem xs="4">
+                            <div class="stat-card">
+                                <div class="big-stat-green">@_recap.Performance.Kills</div>
+                                <div class="stat-label">Kills</div>
+                            </div>
+                        </MudItem>
+                        <MudItem xs="4">
+                            <div class="stat-card">
+                                <div class="big-stat-red">@_recap.Performance.Wipes</div>
+                                <div class="stat-label">Wipes</div>
+                            </div>
+                        </MudItem>
+                    </MudGrid>
+
+                    <MudDivider Class="my-3" />
+
+                    <MudGrid>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Total Raid Time</MudText>
+                            <MudText Typo="Typo.h6">@FormatTimeSpan(_recap.Performance.TotalRaidTime)</MudText>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Average DPS</MudText>
+                            <MudText Typo="Typo.h6">@_recap.Performance.AverageDps.ToString("N0")</MudText>
+                        </MudItem>
+                    </MudGrid>
+
+                    @if (_recap.Performance.PersonalBest != null)
+                    {
+                        <MudDivider Class="my-3" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Personal Best DPS</MudText>
+                        <MudText Typo="Typo.h5" Color="Color.Primary">
+                            @_recap.Performance.PersonalBest.Dps.ToString("N0")
+                        </MudText>
+                        <MudText Typo="Typo.body2">
+                            @_recap.Performance.PersonalBest.BossName@(_recap.Performance.PersonalBest.IsCM ? " CM" : "")
+                            as @_recap.Performance.PersonalBest.Profession
+                        </MudText>
+                    }
+
+                    @if (_recap.Performance.TimesTopDps > 0)
+                    {
+                        <MudDivider Class="my-3" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Times #1 DPS</MudText>
+                        <MudText Typo="Typo.h5">@_recap.Performance.TimesTopDps</MudText>
+                    }
+
+                    @if (_recap.Performance.DpsImprovement != 0)
+                    {
+                        <MudDivider Class="my-3" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">DPS Change (First vs Last Month)</MudText>
+                        <MudText Typo="Typo.h5" Color="@(_recap.Performance.DpsImprovement > 0 ? Color.Success : Color.Error)">
+                            @(_recap.Performance.DpsImprovement > 0 ? "+" : "")@_recap.Performance.DpsImprovement.ToString("N0")
+                        </MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            @* Profession Stats *@
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <div class="section-title">
+                        <MudIcon Icon="@Icons.Material.Filled.Person" Color="Color.Secondary" />
+                        <MudText Typo="Typo.h6">Professions</MudText>
+                    </div>
+
+                    <MudGrid>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Most Played Spec</MudText>
+                            <MudText Typo="Typo.h6">@_recap.Professions.MostPlayedProfession</MudText>
+                            <MudText Typo="Typo.caption">@_recap.Professions.MostPlayedCount encounters</MudText>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Favorite Character</MudText>
+                            <MudText Typo="Typo.h6">@_recap.Professions.MostPlayedCharacter</MudText>
+                            <MudText Typo="Typo.caption">@_recap.Professions.CharacterEncounterCount encounters</MudText>
+                        </MudItem>
+                    </MudGrid>
+
+                    <MudDivider Class="my-3" />
+
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">Class Breakdown</MudText>
+                    @foreach (var prof in _recap.Professions.Breakdown)
+                    {
+                        <div class="mb-2">
+                            <div class="d-flex justify-space-between mb-1">
+                                <MudText Typo="Typo.body2">@prof.Profession</MudText>
+                                <MudText Typo="Typo.body2">@prof.Count (@prof.Percentage.ToString("F0")%)</MudText>
+                            </div>
+                            <MudProgressLinear Value="@prof.Percentage" Color="@GetProfessionColor(prof.Profession)" Rounded="true" />
+                        </div>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            @* Boss Stats *@
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <div class="section-title">
+                        <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Color="Color.Warning" />
+                        <MudText Typo="Typo.h6">Bosses</MudText>
+                    </div>
+
+                    @if (_recap.Bosses.MostKilledBoss != null)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Most Killed Boss</MudText>
+                        <MudText Typo="Typo.h5">
+                            @_recap.Bosses.MostKilledBoss.BossName@(_recap.Bosses.MostKilledBoss.IsCM ? " CM" : "")
+                        </MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Success" Class="mb-3">
+                            @_recap.Bosses.MostKilledBoss.Kills kills
+                        </MudText>
+                    }
+
+                    @if (_recap.Bosses.FavoriteWing.HasValue)
+                    {
+                        <MudDivider Class="my-3" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Favorite Wing</MudText>
+                        <MudText Typo="Typo.h5">Wing @_recap.Bosses.FavoriteWing</MudText>
+                    }
+
+                    @if (_recap.Bosses.MostWipedBoss != null)
+                    {
+                        <MudDivider Class="my-3" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Nemesis (Most Wipes)</MudText>
+                        <MudText Typo="Typo.h5" Color="Color.Error">
+                            @_recap.Bosses.MostWipedBoss.BossName@(_recap.Bosses.MostWipedBoss.IsCM ? " CM" : "")
+                        </MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Error">
+                            @_recap.Bosses.MostWipedBoss.Kills wipes
+                        </MudText>
+                    }
+
+                    @if (_recap.Bosses.TopBosses.Count > 0)
+                    {
+                        <MudDivider Class="my-3" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">Top Kills</MudText>
+                        <MudSimpleTable Dense="true" Striped="true">
+                            <tbody>
+                                @foreach (var boss in _recap.Bosses.TopBosses.Take(5))
+                                {
+                                    <tr>
+                                        <td>@boss.BossName@(boss.IsCM ? " CM" : "")</td>
+                                        <td style="text-align: right;">@boss.Kills</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            @* Support Stats *@
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <div class="section-title">
+                        <MudIcon Icon="@Icons.Material.Filled.Healing" Color="Color.Info" />
+                        <MudText Typo="Typo.h6">Support</MudText>
+                    </div>
+
+                    <MudGrid>
+                        <MudItem xs="4">
+                            <div class="stat-card">
+                                <MudText Typo="Typo.h4" Color="Color.Success">@_recap.Support.TotalResurrects</MudText>
+                                <div class="stat-label">Resurrects</div>
+                            </div>
+                        </MudItem>
+                        <MudItem xs="4">
+                            <div class="stat-card">
+                                <MudText Typo="Typo.h4" Color="Color.Info">@_recap.Support.TotalCondiCleanse</MudText>
+                                <div class="stat-label">Cleanses</div>
+                            </div>
+                        </MudItem>
+                        <MudItem xs="4">
+                            <div class="stat-card">
+                                <MudText Typo="Typo.h4" Color="Color.Warning">@_recap.Support.TotalBoonStrips</MudText>
+                                <div class="stat-label">Strips</div>
+                            </div>
+                        </MudItem>
+                    </MudGrid>
+
+                    @if (_recap.Support.TotalHealing.HasValue)
+                    {
+                        <MudDivider Class="my-3" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Total Healing</MudText>
+                        <MudText Typo="Typo.h5" Color="Color.Success">@FormatLargeNumber(_recap.Support.TotalHealing.Value)</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <div class="text-center mt-4">
+            <MudButton Variant="Variant.Text" Color="Color.Primary"
+                       Href="@($"/player/{PlayerId}")">
+                Back to Player Profile
+            </MudButton>
+        </div>
+    </MudContainer>
+}
+
+@code {
+    [Parameter] public Guid PlayerId { get; set; }
+    [Parameter] public int Year { get; set; }
+
+    private PlayerYearlyRecapDto? _recap;
+    private List<int> _availableYears = new();
+    private bool _loading = true;
+    private bool _includeIgnoredBosses = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAvailableYears();
+
+        if (Year == 0 && _availableYears.Count > 0)
+        {
+            Year = _availableYears.First();
+        }
+
+        await LoadRecap();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Year > 0 && _recap?.Year != Year)
+        {
+            await LoadRecap();
+        }
+    }
+
+    private async Task LoadAvailableYears()
+    {
+        try
+        {
+            _availableYears = await Http.GetFromJsonAsync<List<int>>($"api/player-recap/{PlayerId}/years") ?? new();
+
+            if (_availableYears.Count == 0)
+            {
+                _availableYears = new List<int> { DateTime.Now.Year };
+            }
+        }
+        catch
+        {
+            _availableYears = new List<int> { DateTime.Now.Year };
+        }
+    }
+
+    private async Task LoadRecap()
+    {
+        if (Year == 0) return;
+
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            var url = $"api/player-recap/{PlayerId}/{Year}?includeIgnoredBosses={_includeIgnoredBosses}";
+            _recap = await Http.GetFromJsonAsync<PlayerYearlyRecapDto>(url);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            _recap = null;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnYearChanged(int newYear)
+    {
+        Year = newYear;
+        Navigation.NavigateTo($"/player/{PlayerId}/recap/{Year}");
+        await LoadRecap();
+    }
+
+    private async Task OnIncludeIgnoredChanged(bool value)
+    {
+        _includeIgnoredBosses = value;
+        await LoadRecap();
+    }
+
+    private static string FormatTimeSpan(TimeSpan time)
+    {
+        if (time.TotalHours >= 1)
+            return $"{(int)time.TotalHours}h {time.Minutes}m";
+        return $"{time.Minutes}m {time.Seconds}s";
+    }
+
+    private static string FormatLargeNumber(long number)
+    {
+        if (number >= 1_000_000_000)
+            return $"{number / 1_000_000_000.0:F1}B";
+        if (number >= 1_000_000)
+            return $"{number / 1_000_000.0:F1}M";
+        if (number >= 1_000)
+            return $"{number / 1_000.0:F1}K";
+        return number.ToString("N0");
+    }
+
+    private static Color GetProfessionColor(string profession)
+    {
+        return profession switch
+        {
+            "Guardian" => Color.Info,
+            "Warrior" => Color.Warning,
+            "Revenant" => Color.Error,
+            "Ranger" => Color.Success,
+            "Thief" => Color.Dark,
+            "Engineer" => Color.Warning,
+            "Necromancer" => Color.Success,
+            "Elementalist" => Color.Error,
+            "Mesmer" => Color.Secondary,
+            _ => Color.Primary
+        };
+    }
+
+    // DTOs
+    public record PlayerYearlyRecapDto(
+        Guid PlayerId,
+        string AccountName,
+        int Year,
+        PerformanceStatsDto Performance,
+        ProfessionStatsDto Professions,
+        BossStatsDto Bosses,
+        SupportStatsDto Support
+    );
+
+    public record PerformanceStatsDto(
+        int TotalEncounters,
+        int Kills,
+        int Wipes,
+        TimeSpan TotalRaidTime,
+        PersonalBestDpsDto? PersonalBest,
+        int AverageDps,
+        int TimesTopDps,
+        int DpsImprovement
+    );
+
+    public record PersonalBestDpsDto(
+        int Dps,
+        string BossName,
+        bool IsCM,
+        string Profession,
+        DateTimeOffset EncounterTime
+    );
+
+    public record ProfessionStatsDto(
+        string MostPlayedProfession,
+        int MostPlayedCount,
+        string MostPlayedCharacter,
+        int CharacterEncounterCount,
+        List<ProfessionBreakdownDto> Breakdown
+    );
+
+    public record ProfessionBreakdownDto(
+        string Profession,
+        int Count,
+        double Percentage
+    );
+
+    public record BossStatsDto(
+        BossKillCountDto? MostKilledBoss,
+        int? FavoriteWing,
+        BossKillCountDto? MostWipedBoss,
+        List<BossKillCountDto> TopBosses
+    );
+
+    public record BossKillCountDto(
+        string BossName,
+        bool IsCM,
+        int Kills
+    );
+
+    public record SupportStatsDto(
+        int TotalResurrects,
+        int TotalCondiCleanse,
+        int TotalBoonStrips,
+        long? TotalHealing
+    );
+}

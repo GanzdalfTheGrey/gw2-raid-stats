@@ -256,6 +256,9 @@ public class EIBuffData
 
     [JsonPropertyName("extended")]
     public decimal Extended { get; set; }
+
+    [JsonPropertyName("uptime")]
+    public decimal Uptime { get; set; }
 }
 
 /// <summary>
