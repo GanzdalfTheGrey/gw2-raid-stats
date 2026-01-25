@@ -20,6 +20,9 @@ public class LeaderboardService
     // Ignored encounter names (non-boss events)
     private static readonly string[] IgnoredEncounters = ["Spirit Race", "Twisted Castle", "River of Souls", "Statues of Grenth", "Bandit Trio"];
 
+    // Encounters that should ALWAYS be shown (never filtered) - for multi-target fights
+    private static readonly string[] AlwaysAllowedEncounters = ["Nikare", "Kenut"];
+
     // Display name for non-included players (pugs)
     private const string PugDisplayName = "Pug";
 
@@ -37,7 +40,7 @@ public class LeaderboardService
         var bosses = await _db.Encounters
             .Where(e => e.Success) // Only successful encounters
             .Where(e => !e.BossName.Contains(LateStartFilter)) // Exclude late start
-            .Where(e => !IgnoredEncounters.Any(i => e.BossName.Contains(i))) // Exclude non-boss events
+            .Where(e => AlwaysAllowedEncounters.Any(a => e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => e.BossName.Contains(i))) // Exclude non-boss events, but always allow Twin Largos etc.
             .GroupBy(e => new { e.TriggerId, e.BossName })
             .Select(g => new BossInfo(
                 g.Key.TriggerId,
@@ -69,7 +72,7 @@ public class LeaderboardService
             .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
             .Where(x => x.e.TriggerId == triggerId && x.e.IsCM == isCM && x.e.Success)
             .Where(x => !x.e.BossName.Contains(LateStartFilter)) // Exclude late start
-            .Where(x => !IgnoredEncounters.Any(i => x.e.BossName.Contains(i))); // Exclude non-boss events
+            .Where(x => AlwaysAllowedEncounters.Any(a => x.e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => x.e.BossName.Contains(i))); // Exclude non-boss events, but always allow Twin Largos etc.
 
         // Only included players can claim leaderboard spots
         if (includedList.Count > 0)
@@ -137,7 +140,7 @@ public class LeaderboardService
             .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
             .Where(x => x.e.TriggerId == triggerId && x.e.IsCM == isCM && x.e.Success)
             .Where(x => !x.e.BossName.Contains(LateStartFilter)) // Exclude late start
-            .Where(x => !IgnoredEncounters.Any(i => x.e.BossName.Contains(i))) // Exclude non-boss events
+            .Where(x => AlwaysAllowedEncounters.Any(a => x.e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => x.e.BossName.Contains(i))) // Exclude non-boss events, but always allow Twin Largos etc.
             .Where(x => (x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
                         (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold);
 
@@ -271,7 +274,7 @@ public class LeaderboardService
         var bossGroups = await _db.Encounters
             .Where(e => e.Success)
             .Where(e => !e.BossName.Contains(LateStartFilter))
-            .Where(e => !IgnoredEncounters.Any(i => e.BossName.Contains(i)))
+            .Where(e => AlwaysAllowedEncounters.Any(a => e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => e.BossName.Contains(i)))
             .GroupBy(e => new { e.TriggerId, e.BossName, e.IsCM })
             .Select(g => new
             {
@@ -324,7 +327,7 @@ public class LeaderboardService
         var triggerIds = await _db.Encounters
             .Where(e => e.Success)
             .Where(e => !e.BossName.Contains(LateStartFilter))
-            .Where(e => !IgnoredEncounters.Any(i => e.BossName.Contains(i)))
+            .Where(e => AlwaysAllowedEncounters.Any(a => e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => e.BossName.Contains(i)))
             .GroupBy(e => new { e.TriggerId, e.BossName, e.Wing })
             .Select(g => new TriggerIdInfo(
                 g.Key.TriggerId,

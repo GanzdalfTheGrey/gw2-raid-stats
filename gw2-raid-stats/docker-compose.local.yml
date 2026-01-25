@@ -52,6 +52,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./src/GW2RaidStats.Infrastructure/Migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
     networks:
       - internal
     healthcheck:

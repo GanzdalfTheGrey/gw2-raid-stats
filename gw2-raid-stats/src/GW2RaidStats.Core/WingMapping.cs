@@ -15,10 +15,26 @@ public static class WingMapping
     };
 
     /// <summary>
+    /// Encounters that should ALWAYS be allowed (never filtered out)
+    /// Used for multi-target fights where each target needs to be tracked separately
+    /// </summary>
+    private static readonly HashSet<string> AlwaysAllowedEncounters = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Nikare",   // Twin Largos - first twin
+        "Kenut"     // Twin Largos - second twin
+    };
+
+    /// <summary>
     /// Check if an encounter should be ignored based on boss name
     /// </summary>
     public static bool IsIgnoredEncounter(string bossName)
     {
+        // Never ignore explicitly allowed encounters (like Twin Largos twins)
+        if (AlwaysAllowedEncounters.Any(allowed => bossName.Contains(allowed, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
         return IgnoredEncounters.Any(ignored => bossName.Contains(ignored, StringComparison.OrdinalIgnoreCase));
     }
 
