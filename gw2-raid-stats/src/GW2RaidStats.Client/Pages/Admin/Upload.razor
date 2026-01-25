@@ -6,13 +6,218 @@
 <AdminAuth>
 <MudText Typo="Typo.h4" Class="mb-4">Upload Logs</MudText>
 
+@* Raw Log Upload Section (Primary) *@
+<MudPaper Class="pa-4 mb-4" Elevation="2">
+    <MudText Typo="Typo.h6" Class="mb-3">
+        <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Class="mr-2" />
+        Upload Raw Logs (.zevtc / .evtc)
+    </MudText>
+    <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4">
+        <MudTabPanel Text="Browser Upload" Icon="@Icons.Material.Filled.CloudUpload">
+            <MudText Typo="Typo.body2" Color="Color.Default" Class="mb-4">
+                Upload raw ArcDPS log files from your browser. Files are uploaded in batches to avoid memory issues.
+            </MudText>
+
+            <MudStack Row="true" Spacing="2" Class="mb-4">
+                <MudFileUpload T="IReadOnlyList<IBrowserFile>"
+                               Accept=".zevtc,.evtc"
+                               MaximumFileCount="100"
+                               FilesChanged="OnRawFilesSelected">
+                    <ActivatorContent>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.AttachFile"
+                                   Disabled="@_isUploadingRaw">
+                            Select Files (max 100)
+                        </MudButton>
+                    </ActivatorContent>
+                </MudFileUpload>
+            </MudStack>
+
+            @if (_selectedRawFiles.Count > 0)
+            {
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    @_selectedRawFiles.Count file(s) selected (@FormatFileSize(_selectedRawFiles.Sum(f => f.Size)))
+                </MudText>
+
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Secondary"
+                           StartIcon="@Icons.Material.Filled.Upload"
+                           OnClick="UploadRawFilesBatched"
+                           Disabled="@_isUploadingRaw"
+                           Class="mb-4">
+                    @if (_isUploadingRaw)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Uploading...</span>
+                    }
+                    else
+                    {
+                        <span>Upload for Processing</span>
+                    }
+                </MudButton>
+            }
+
+            @if (_rawUploadProgress != null && _isUploadingRaw)
+            {
+                <MudPaper Class="pa-3 mb-3" Elevation="0" Style="background-color: var(--mud-palette-background-grey);">
+                    <MudText Typo="Typo.body2" Class="mb-2">
+                        Uploading batch @_rawUploadProgress.CurrentBatch of @_rawUploadProgress.TotalBatches
+                    </MudText>
+                    <MudProgressLinear Color="Color.Primary" Value="@_rawUploadProgress.PercentComplete" Class="mb-2" />
+                    <MudText Typo="Typo.caption">
+                        @_rawUploadProgress.FilesUploaded / @_rawUploadProgress.TotalFiles files uploaded
+                    </MudText>
+                </MudPaper>
+            }
+
+            @if (_rawUploadResult != null)
+            {
+                <MudAlert Severity="@(_rawUploadResult.Rejected > 0 ? Severity.Warning : Severity.Success)" Class="mt-3">
+                    @_rawUploadResult.Accepted files queued for processing.
+                    @if (_rawUploadResult.Rejected > 0)
+                    {
+                        <span> @_rawUploadResult.Rejected files rejected.</span>
+                    }
+                </MudAlert>
+                @if (_rawUploadResult.Errors.Count > 0 && _rawUploadResult.Errors.Count <= 20)
+                {
+                    <MudList T="string" Dense="true" Class="mt-2">
+                        @foreach (var error in _rawUploadResult.Errors)
+                        {
+                            <MudListItem Icon="@Icons.Material.Filled.Error" IconColor="Color.Error">
+                                <MudText Typo="Typo.caption">@error</MudText>
+                            </MudListItem>
+                        }
+                    </MudList>
+                }
+                else if (_rawUploadResult.Errors.Count > 20)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Error" Class="mt-2">
+                        @_rawUploadResult.Errors.Count errors (showing first 20)
+                    </MudText>
+                }
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Server Directory Scan" Icon="@Icons.Material.Filled.FolderOpen">
+            <MudText Typo="Typo.body2" Color="Color.Default" Class="mb-4">
+                Scan a directory on the server for log files. Ideal for large imports - just copy your logs folder to the server
+                and provide the path. Files will be copied to the processing queue.
+            </MudText>
+
+            <MudTextField @bind-Value="_rawSourceDirectory"
+                          Label="Source Directory Path"
+                          Placeholder="/path/to/your/arcdps/logs"
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.FolderOpen"
+                          HelperText="Path on the server where your .zevtc files are located"
+                          Class="mb-3"
+                          Disabled="@_isScanningDirectory" />
+
+            <MudCheckBox @bind-Value="_scanRecursively" Label="Include subfolders" Class="mb-3" Disabled="@_isScanningDirectory" />
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Secondary"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       OnClick="ScanServerDirectory"
+                       Disabled="@(_isScanningDirectory || string.IsNullOrWhiteSpace(_rawSourceDirectory))"
+                       Class="mb-4">
+                @if (_isScanningDirectory)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>Scanning...</span>
+                }
+                else
+                {
+                    <span>Scan & Queue Files</span>
+                }
+            </MudButton>
+
+            @if (_directoryScanResult != null)
+            {
+                <MudAlert Severity="@(_directoryScanResult.Failed > 0 ? Severity.Warning : Severity.Success)" Class="mt-3">
+                    Found @_directoryScanResult.Found files. @_directoryScanResult.Queued queued for processing.
+                    @if (_directoryScanResult.Skipped > 0)
+                    {
+                        <span> @_directoryScanResult.Skipped already processed.</span>
+                    }
+                    @if (_directoryScanResult.Failed > 0)
+                    {
+                        <span> @_directoryScanResult.Failed failed.</span>
+                    }
+                </MudAlert>
+            }
+        </MudTabPanel>
+    </MudTabs>
+</MudPaper>
+
+@* Processing Queue Status *@
+<MudPaper Class="pa-4 mb-4" Elevation="2">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3">
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Queue" Class="mr-2" />
+            Processing Queue
+        </MudText>
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="RefreshQueueStatus" Disabled="@_isLoadingQueue" />
+    </MudStack>
+
+    @if (_queueStatus != null)
+    {
+        <MudGrid>
+            <MudItem xs="4">
+                <MudCard Elevation="0" Style="background-color: var(--mud-palette-info-lighten);">
+                    <MudCardContent Class="text-center pa-2">
+                        <MudText Typo="Typo.h5" Color="Color.Info">@_queueStatus.PendingCount</MudText>
+                        <MudText Typo="Typo.caption">Pending</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="4">
+                <MudCard Elevation="0" Style="background-color: var(--mud-palette-warning-lighten);">
+                    <MudCardContent Class="text-center pa-2">
+                        <MudText Typo="Typo.h5" Color="Color.Warning">@_queueStatus.ProcessingCount</MudText>
+                        <MudText Typo="Typo.caption">Processing</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="4">
+                <MudCard Elevation="0" Style="background-color: var(--mud-palette-error-lighten);">
+                    <MudCardContent Class="text-center pa-2">
+                        <MudText Typo="Typo.h5" Color="Color.Error">@_queueStatus.FailedCount</MudText>
+                        <MudText Typo="Typo.caption">Failed</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+
+        @if (_queueStatus.ProcessingFiles.Count > 0)
+        {
+            <MudText Typo="Typo.body2" Class="mt-3 mb-1">Currently Processing:</MudText>
+            @foreach (var file in _queueStatus.ProcessingFiles)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="mr-1">@file</MudChip>
+            }
+        }
+    }
+    else
+    {
+        <MudText Typo="Typo.body2" Color="Color.Default">Loading queue status...</MudText>
+    }
+</MudPaper>
+
+<MudDivider Class="my-4" />
+<MudText Typo="Typo.h5" Class="mb-4">Legacy Import (Pre-parsed JSON)</MudText>
+
 <MudGrid>
     @* File Upload Section *@
     <MudItem xs="12" md="6">
         <MudPaper Class="pa-4" Elevation="2">
             <MudText Typo="Typo.h6" Class="mb-3">
                 <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Class="mr-2" />
-                Upload Files
+                Upload JSON Files
             </MudText>
             <MudText Typo="Typo.body2" Color="Color.Default" Class="mb-4">
                 Upload Elite Insights JSON log files directly from your browser.
@@ -377,11 +582,187 @@
     private Dictionary<string, FileUploadProgress> _fileProgress = new();
     private int _uploadParallelism = 4;
 
+    // Raw log upload fields
+    private List<IBrowserFile> _selectedRawFiles = new();
+    private bool _isUploadingRaw;
+    private RawLogUploadResponse? _rawUploadResult;
+    private RawUploadProgress? _rawUploadProgress;
+    private QueueStatusResponse? _queueStatus;
+    private bool _isLoadingQueue;
+
+    // Server directory scan fields
+    private string _rawSourceDirectory = string.Empty;
+    private bool _scanRecursively = true;
+    private bool _isScanningDirectory;
+    private DirectoryScanResult? _directoryScanResult;
+
     // Directory import fields
     private string _sourceDirectory = string.Empty;
     private string? _completedDirectory;
     private string? _failedDirectory;
     private int _parallelism = 8;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshQueueStatus();
+    }
+
+    private void OnRawFilesSelected(IReadOnlyList<IBrowserFile> files)
+    {
+        _selectedRawFiles = files.ToList();
+        _rawUploadResult = null;
+    }
+
+    private async Task UploadRawFilesBatched()
+    {
+        if (_selectedRawFiles.Count == 0) return;
+
+        _isUploadingRaw = true;
+        _rawUploadResult = null;
+
+        const int batchSize = 10; // Upload 10 files at a time
+        var totalFiles = _selectedRawFiles.Count;
+        var totalBatches = (int)Math.Ceiling((double)totalFiles / batchSize);
+        var allErrors = new List<string>();
+        var totalAccepted = 0;
+        var totalRejected = 0;
+
+        _rawUploadProgress = new RawUploadProgress(0, totalFiles, 0, totalBatches, 0);
+        StateHasChanged();
+
+        try
+        {
+            for (int batchIndex = 0; batchIndex < totalBatches; batchIndex++)
+            {
+                var batch = _selectedRawFiles
+                    .Skip(batchIndex * batchSize)
+                    .Take(batchSize)
+                    .ToList();
+
+                _rawUploadProgress = new RawUploadProgress(
+                    batchIndex * batchSize,
+                    totalFiles,
+                    batchIndex + 1,
+                    totalBatches,
+                    (double)(batchIndex * batchSize) / totalFiles * 100
+                );
+                StateHasChanged();
+
+                try
+                {
+                    using var content = new MultipartFormDataContent();
+
+                    foreach (var file in batch)
+                    {
+                        var stream = file.OpenReadStream(maxAllowedSize: 50_000_000);
+                        var streamContent = new StreamContent(stream);
+                        content.Add(streamContent, "files", file.Name);
+                    }
+
+                    var response = await Http.PostAsync("api/logs/upload", content);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var result = await response.Content.ReadFromJsonAsync<RawLogUploadResponse>();
+                        if (result != null)
+                        {
+                            totalAccepted += result.Accepted;
+                            totalRejected += result.Rejected;
+                            allErrors.AddRange(result.Errors);
+                        }
+                    }
+                    else
+                    {
+                        var error = await response.Content.ReadAsStringAsync();
+                        totalRejected += batch.Count;
+                        allErrors.Add($"Batch {batchIndex + 1} failed: {error}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    totalRejected += batch.Count;
+                    allErrors.Add($"Batch {batchIndex + 1} error: {ex.Message}");
+                }
+            }
+
+            _rawUploadResult = new RawLogUploadResponse(totalAccepted, totalRejected, allErrors);
+            await RefreshQueueStatus();
+        }
+        finally
+        {
+            _isUploadingRaw = false;
+            _rawUploadProgress = null;
+            _selectedRawFiles.Clear();
+            StateHasChanged();
+        }
+    }
+
+    private async Task ScanServerDirectory()
+    {
+        if (string.IsNullOrWhiteSpace(_rawSourceDirectory)) return;
+
+        _isScanningDirectory = true;
+        _directoryScanResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var request = new DirectoryScanRequest
+            {
+                SourceDirectory = _rawSourceDirectory,
+                Recursive = _scanRecursively
+            };
+
+            var response = await Http.PostAsJsonAsync("api/logs/scan-directory", request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                _directoryScanResult = await response.Content.ReadFromJsonAsync<DirectoryScanResult>();
+                await RefreshQueueStatus();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                _directoryScanResult = new DirectoryScanResult(0, 0, 0, 1, $"Server error: {error}");
+            }
+        }
+        catch (Exception ex)
+        {
+            _directoryScanResult = new DirectoryScanResult(0, 0, 0, 1, ex.Message);
+        }
+        finally
+        {
+            _isScanningDirectory = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshQueueStatus()
+    {
+        _isLoadingQueue = true;
+        StateHasChanged();
+
+        try
+        {
+            _queueStatus = await Http.GetFromJsonAsync<QueueStatusResponse>("api/logs/queue/status");
+        }
+        catch
+        {
+            _queueStatus = new QueueStatusResponse(0, 0, 0, new List<string>(), new List<string>());
+        }
+        finally
+        {
+            _isLoadingQueue = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / 1024.0 / 1024.0:F1} MB";
+    }
 
     private void OnFilesSelected(IReadOnlyList<IBrowserFile> files)
     {
@@ -566,4 +947,41 @@
         public bool WasDuplicate { get; set; }
         public string? BossName { get; set; }
     }
+
+    // Raw log upload DTOs
+    public record RawLogUploadResponse(
+        int Accepted,
+        int Rejected,
+        List<string> Errors
+    );
+
+    public record QueueStatusResponse(
+        int PendingCount,
+        int ProcessingCount,
+        int FailedCount,
+        List<string> PendingFiles,
+        List<string> ProcessingFiles
+    );
+
+    public record RawUploadProgress(
+        int FilesUploaded,
+        int TotalFiles,
+        int CurrentBatch,
+        int TotalBatches,
+        double PercentComplete
+    );
+
+    public record DirectoryScanRequest
+    {
+        public required string SourceDirectory { get; init; }
+        public bool Recursive { get; init; } = true;
+    }
+
+    public record DirectoryScanResult(
+        int Found,
+        int Queued,
+        int Skipped,
+        int Failed,
+        string? Error = null
+    );
 }

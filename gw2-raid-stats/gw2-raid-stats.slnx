@@ -4,5 +4,6 @@
     <Project Path="src/GW2RaidStats.Core/GW2RaidStats.Core.csproj" />
     <Project Path="src/GW2RaidStats.Infrastructure/GW2RaidStats.Infrastructure.csproj" />
     <Project Path="src/GW2RaidStats.Server/GW2RaidStats.Server.csproj" />
+    <Project Path="src/GW2RaidStats.Processor/GW2RaidStats.Processor.csproj" />
   </Folder>
 </Solution>

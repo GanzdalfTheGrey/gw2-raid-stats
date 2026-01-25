@@ -1,5 +1,12 @@
 version: '3.8'
 
+# Development docker-compose
+# Usage:
+#   docker-compose -f docker-compose.dev.yml up -d
+#   Then run the Server with: cd src/GW2RaidStats.Server && dotnet run
+#
+# To test raw log processing, drop .zevtc files in ./data/gw2-logs/queue/pending/
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -19,6 +26,25 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  processor:
+    build:
+      context: .
+      dockerfile: Dockerfile.processor
+    container_name: gw2-raid-stats-processor-dev
+    restart: unless-stopped
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=raidstats;Username=app;Password=devpassword
+      - Storage__BasePath=/data/gw2-logs
+      - Processor__MaxConcurrentProcessing=8
+      - Processor__PollingIntervalSeconds=3
+      - Logging__LogLevel__Default=Debug
+    volumes:
+      - ./data/gw2-logs:/data/gw2-logs
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres_data:

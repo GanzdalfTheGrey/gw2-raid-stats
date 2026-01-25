@@ -44,6 +44,12 @@ public class EncounterEntity
     [Column("icon_url")]
     public string? IconUrl { get; set; }
 
+    [Column("files_path")]
+    public string? FilesPath { get; set; }
+
+    [Column("original_filename")]
+    public string? OriginalFilename { get; set; }
+
     [Column("created_at"), NotNull]
     public DateTimeOffset CreatedAt { get; set; }
 }

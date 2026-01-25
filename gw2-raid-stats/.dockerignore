@@ -1,0 +1,26 @@
+# Build outputs
+**/bin/
+**/obj/
+**/out/
+
+# Data directories
+data/
+tools/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Misc
+*.log
+.env
+*.local

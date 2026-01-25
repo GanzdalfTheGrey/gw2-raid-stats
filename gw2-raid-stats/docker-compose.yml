@@ -9,8 +9,9 @@ services:
       - Admin__Password=${ADMIN_PASSWORD}
       - Guild__Name=${GUILD_NAME:-My Guild}
       - Guild__Tag=${GUILD_TAG:-TAG}
+      - Storage__BasePath=/data/gw2-logs
     volumes:
-      - ./data/logs:/app/logs
+      - ${DATA_PATH:-./data}/gw2-logs:/data/gw2-logs
     networks:
       - internal
     depends_on:
@@ -23,6 +24,23 @@ services:
       retries: 3
       start_period: 10s
 
+  processor:
+    image: ghcr.io/a-gansemer/gw2-raid-stats-processor:latest
+    container_name: gw2-raid-stats-processor
+    restart: unless-stopped
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=raidstats;Username=app;Password=${DB_PASSWORD}
+      - Storage__BasePath=/data/gw2-logs
+      - Processor__MaxConcurrentProcessing=${PROCESSOR_WORKERS:-4}
+    volumes:
+      - ${DATA_PATH:-./data}/gw2-logs:/data/gw2-logs
+    networks:
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     container_name: gw2-raid-stats-db
@@ -32,8 +50,8 @@ services:
       - POSTGRES_USER=app
       - POSTGRES_PASSWORD=${DB_PASSWORD}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./data/backups:/backups
+      - ${DATA_PATH:-./data}/postgres:/var/lib/postgresql/data
+      - ${DATA_PATH:-./data}/backups:/backups
     networks:
       - internal
     healthcheck:
@@ -56,6 +74,3 @@ services:
 networks:
   internal:
     driver: bridge
-
-volumes:
-  postgres_data:

@@ -1,4 +1,6 @@
+using Microsoft.Extensions.FileProviders;
 using GW2RaidStats.Infrastructure;
+using GW2RaidStats.Infrastructure.Configuration;
 
 // Enable legacy timestamp behavior for Npgsql to properly handle DateTimeOffset with timezones
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
@@ -16,6 +18,9 @@ builder.WebHost.ConfigureKestrel(options =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Storage configuration
+builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection(StorageOptions.SectionName));
 
 // Add Infrastructure services (database, import services)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
@@ -37,6 +42,33 @@ app.UseHttpsRedirection();
 // Serve Blazor WebAssembly static files
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
+
+// Serve HTML reports from storage
+var storageOptions = app.Configuration.GetSection(StorageOptions.SectionName).Get<StorageOptions>() ?? new StorageOptions();
+var encountersPath = storageOptions.EncountersPath;
+
+if (Directory.Exists(encountersPath))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(Path.GetFullPath(encountersPath)),
+        RequestPath = "/reports",
+        ServeUnknownFileTypes = false,
+        DefaultContentType = "text/html"
+    });
+}
+else
+{
+    // Create directory if it doesn't exist (for first run)
+    Directory.CreateDirectory(encountersPath);
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(Path.GetFullPath(encountersPath)),
+        RequestPath = "/reports",
+        ServeUnknownFileTypes = false,
+        DefaultContentType = "text/html"
+    });
+}
 
 app.UseRouting();
 
