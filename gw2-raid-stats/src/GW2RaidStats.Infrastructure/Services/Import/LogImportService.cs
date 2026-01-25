@@ -118,10 +118,12 @@ public class LogImportService
             // Get or create player
             var player = await GetOrCreatePlayerAsync(eiPlayer.Account, encounterTime, ct);
 
-            // Get boss-only DPS (DpsTargets[0] is the main boss, [0] again is total/all phases)
-            // Fall back to DpsAll if DpsTargets not available
-            var dps = eiPlayer.DpsTargets?.FirstOrDefault()?.FirstOrDefault()
-                      ?? eiPlayer.DpsAll?.FirstOrDefault();
+            // For multi-target fights (like Twin Largos), use dpsAll (combined DPS on all targets)
+            // For single-target fights, use dpsTargets[0] (boss-only DPS, excludes adds)
+            var isMultiTarget = WingMapping.IsMultiTargetEncounter(log.TriggerId);
+            var dps = isMultiTarget
+                ? eiPlayer.DpsAll?.FirstOrDefault()
+                : (eiPlayer.DpsTargets?.FirstOrDefault()?.FirstOrDefault() ?? eiPlayer.DpsAll?.FirstOrDefault());
             var defense = eiPlayer.Defenses?.FirstOrDefault();
             var support = eiPlayer.Support?.FirstOrDefault();
 

@@ -25,6 +25,22 @@ public static class WingMapping
     };
 
     /// <summary>
+    /// Trigger IDs for multi-target encounters where DPS should be calculated
+    /// against ALL targets combined (dpsAll) rather than just the first target (dpsTargets[0]).
+    /// This ensures leaderboards show the correct combined DPS for fights with multiple bosses.
+    /// </summary>
+    private static readonly HashSet<int> MultiTargetTriggerIds = new()
+    {
+        21105,          // Twin Largos (combined encounter)
+        21089, 21177    // Twin Largos - Nikare/Kenut individual triggers
+    };
+
+    /// <summary>
+    /// Check if an encounter is a multi-target fight where combined DPS should be used
+    /// </summary>
+    public static bool IsMultiTargetEncounter(int triggerId) => MultiTargetTriggerIds.Contains(triggerId);
+
+    /// <summary>
     /// Check if an encounter should be ignored based on boss name
     /// </summary>
     public static bool IsIgnoredEncounter(string bossName)

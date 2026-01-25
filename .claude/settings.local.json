@@ -14,7 +14,9 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(docker logs:*)",
       "Bash(docker-compose:*)",
-      "Bash(docker exec:*)"
+      "Bash(docker exec:*)",
+      "Bash(ls:*)",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []
