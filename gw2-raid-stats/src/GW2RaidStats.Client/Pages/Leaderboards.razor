@@ -24,7 +24,7 @@
 @code {
     private RenderFragment RenderBossTable(IEnumerable<BossRecord> bosses) => __builder =>
     {
-        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
             <MudText Typo="Typo.h6">Boss Records</MudText>
             <MudStack Row="true" Spacing="2">
                 <MudTextField @bind-Value="_searchString"
@@ -50,89 +50,117 @@
         }
         else
         {
-            <MudTable Items="@bosses"
-                  Dense="true"
-                  Hover="true"
-                  Striped="true"
-                  Loading="@_loading"
-                  LoadingProgressColor="Color.Primary">
-            <HeaderContent>
-                <MudTh><MudTableSortLabel SortBy="new Func<BossRecord, object>(x => x.BossName)">Boss</MudTableSortLabel></MudTh>
-                <MudTh>Mode</MudTh>
-                <MudTh><MudTableSortLabel SortBy="new Func<BossRecord, object>(x => x.KillCount)">Kills</MudTableSortLabel></MudTh>
-                <MudTh>Top DPS</MudTh>
-                <MudTh>Top Boon DPS</MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="Boss">
-                    <MudText Typo="Typo.body2"><strong>@context.BossName</strong></MudText>
-                </MudTd>
-                <MudTd DataLabel="Mode">
-                    @if (context.IsCM)
-                    {
-                        <MudChip T="string" Color="Color.Warning" Size="Size.Small">CM</MudChip>
-                    }
-                    else
-                    {
-                        <MudChip T="string" Color="Color.Default" Size="Size.Small">NM</MudChip>
-                    }
-                </MudTd>
-                <MudTd DataLabel="Kills">@context.KillCount</MudTd>
-                <MudTd DataLabel="Top DPS">
-                    @if (context.TopDps != null)
-                    {
-                        <MudStack Spacing="0">
-                            <MudText Typo="Typo.body2" Color="Color.Error"><strong>@context.TopDps.Dps.ToString("N0")</strong></MudText>
-                            <MudText Typo="Typo.caption">@context.TopDps.CharacterName (@context.TopDps.Profession)</MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">@context.TopDps.AccountName</MudText>
-                            <MudText Typo="Typo.caption">@context.TopDps.EncounterTime.LocalDateTime.ToString("MMM d, yyyy")</MudText>
-                            @if (context.TopDps.BoonSupports.Count > 0)
-                            {
-                                <MudStack Row="true" Spacing="1" Class="mt-1">
-                                    @foreach (var support in context.TopDps.BoonSupports.Take(2))
-                                    {
-                                        <MudTooltip Text="@($"{support.CharacterName} ({support.Profession})")">
-                                            <MudChip T="string" Size="Size.Small"
-                                                     Color="@(support.BoonType == "Quickness" ? Color.Info : Color.Success)">
-                                                @support.BoonType[0]: @support.CharacterName
+            <MudGrid Spacing="3">
+                @foreach (var boss in bosses)
+                {
+                    <MudItem xs="12" sm="6" lg="4">
+                        <MudCard Elevation="2" Style="height: 100%;">
+                            <MudCardHeader>
+                                <CardHeaderContent>
+                                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                                        <MudText Typo="Typo.h6">@boss.BossName</MudText>
+                                        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                            @if (boss.IsCM)
+                                            {
+                                                <MudChip T="string" Color="Color.Warning" Size="Size.Small">CM</MudChip>
+                                            }
+                                            <MudChip T="string" Color="Color.Default" Size="Size.Small" Variant="Variant.Outlined">
+                                                @boss.KillCount kills
                                             </MudChip>
-                                        </MudTooltip>
+                                        </MudStack>
+                                    </MudStack>
+                                </CardHeaderContent>
+                            </MudCardHeader>
+                            <MudCardContent Class="pt-0">
+                                <MudStack Spacing="3">
+                                    @* Top DPS Record *@
+                                    @if (boss.TopDps != null)
+                                    {
+                                        <MudPaper Elevation="0" Class="pa-3" Style="background: rgba(244, 67, 54, 0.08); border-left: 4px solid var(--mud-palette-error);">
+                                            <MudStack Spacing="1">
+                                                <MudText Typo="Typo.overline" Color="Color.Error" Style="font-weight: 600;">DPS RECORD</MudText>
+                                                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.End">
+                                                    <MudStack Spacing="0">
+                                                        <MudLink Href="@($"/players/{Uri.EscapeDataString(boss.TopDps.AccountName)}")" Typo="Typo.h5" Color="Color.Inherit" Style="font-weight: 700;">
+                                                            @boss.TopDps.AccountName
+                                                        </MudLink>
+                                                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                                            @boss.TopDps.CharacterName - @boss.TopDps.Profession
+                                                        </MudText>
+                                                    </MudStack>
+                                                    <MudStack Spacing="0" AlignItems="AlignItems.End">
+                                                        <MudText Typo="Typo.h4" Color="Color.Error" Style="font-weight: 700; line-height: 1;">
+                                                            @boss.TopDps.Dps.ToString("N0")
+                                                        </MudText>
+                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                            @boss.TopDps.EncounterTime.LocalDateTime.ToString("MMM d, yyyy")
+                                                        </MudText>
+                                                    </MudStack>
+                                                </MudStack>
+                                                @if (boss.TopDps.BoonSupports.Count > 0)
+                                                {
+                                                    <MudStack Row="true" Spacing="1" Class="mt-1">
+                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Support:</MudText>
+                                                        @foreach (var support in boss.TopDps.BoonSupports.Take(2))
+                                                        {
+                                                            <MudTooltip Text="@($"{support.CharacterName} ({support.Profession})")">
+                                                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                                                         Color="@(support.BoonType == "Quickness" ? Color.Info : Color.Success)">
+                                                                    @support.BoonType[0]: @support.CharacterName
+                                                                </MudChip>
+                                                            </MudTooltip>
+                                                        }
+                                                    </MudStack>
+                                                }
+                                            </MudStack>
+                                        </MudPaper>
+                                    }
+                                    else
+                                    {
+                                        <MudPaper Elevation="0" Class="pa-3" Style="background: rgba(0,0,0,0.04);">
+                                            <MudText Typo="Typo.body2" Color="Color.Secondary" Align="Align.Center">No DPS record</MudText>
+                                        </MudPaper>
+                                    }
+
+                                    @* Top Boon DPS Record *@
+                                    @if (boss.TopBoonDps != null)
+                                    {
+                                        <MudPaper Elevation="0" Class="pa-3" Style="background: rgba(33, 150, 243, 0.08); border-left: 4px solid var(--mud-palette-info);">
+                                            <MudStack Spacing="1">
+                                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                                    <MudText Typo="Typo.overline" Color="Color.Info" Style="font-weight: 600;">BOON DPS RECORD</MudText>
+                                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
+                                                             Color="@(boss.TopBoonDps.BoonType == "Quickness" ? Color.Info : Color.Success)">
+                                                        @boss.TopBoonDps.BoonType
+                                                    </MudChip>
+                                                </MudStack>
+                                                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.End">
+                                                    <MudStack Spacing="0">
+                                                        <MudLink Href="@($"/players/{Uri.EscapeDataString(boss.TopBoonDps.AccountName)}")" Typo="Typo.subtitle1" Color="Color.Inherit" Style="font-weight: 600;">
+                                                            @boss.TopBoonDps.AccountName
+                                                        </MudLink>
+                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                            @boss.TopBoonDps.CharacterName - @boss.TopBoonDps.Profession
+                                                        </MudText>
+                                                    </MudStack>
+                                                    <MudStack Spacing="0" AlignItems="AlignItems.End">
+                                                        <MudText Typo="Typo.h5" Color="Color.Info" Style="font-weight: 600; line-height: 1;">
+                                                            @boss.TopBoonDps.Dps.ToString("N0")
+                                                        </MudText>
+                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                            @boss.TopBoonDps.EncounterTime.LocalDateTime.ToString("MMM d, yyyy")
+                                                        </MudText>
+                                                    </MudStack>
+                                                </MudStack>
+                                            </MudStack>
+                                        </MudPaper>
                                     }
                                 </MudStack>
-                            }
-                        </MudStack>
-                    }
-                    else
-                    {
-                        <MudText Typo="Typo.caption" Color="Color.Default">-</MudText>
-                    }
-                </MudTd>
-                <MudTd DataLabel="Top Boon DPS">
-                    @if (context.TopBoonDps != null)
-                    {
-                        <MudStack Spacing="0">
-                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
-                                <MudText Typo="Typo.body2" Color="Color.Info"><strong>@context.TopBoonDps.Dps.ToString("N0")</strong></MudText>
-                                <MudChip T="string" Size="Size.Small"
-                                         Color="@(context.TopBoonDps.BoonType == "Quickness" ? Color.Info : Color.Success)">
-                                    @context.TopBoonDps.BoonType
-                                </MudChip>
-                            </MudStack>
-                            <MudText Typo="Typo.caption">@context.TopBoonDps.CharacterName (@context.TopBoonDps.Profession)</MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">@context.TopBoonDps.AccountName</MudText>
-                            <MudText Typo="Typo.caption">@context.TopBoonDps.EncounterTime.LocalDateTime.ToString("MMM d, yyyy")</MudText>
-                        </MudStack>
-                    }
-                    else
-                    {
-                        <MudText Typo="Typo.caption" Color="Color.Default">-</MudText>
-                    }
-                </MudTd>
-            </RowTemplate>
-            <PagerContent>
-                <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
-            </PagerContent>
-        </MudTable>
+                            </MudCardContent>
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
         }
     };
 }
