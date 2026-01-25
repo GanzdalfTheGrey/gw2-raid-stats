@@ -360,13 +360,16 @@ public class RecapService
 
     public async Task<List<int>> GetAvailableYearsAsync(CancellationToken ct = default)
     {
+        var currentYear = DateTime.UtcNow.Year;
+
         var years = await _db.Encounters
             .Select(e => e.EncounterTime.Year)
             .Distinct()
             .OrderByDescending(y => y)
             .ToListAsync(ct);
 
-        return years;
+        // Exclude the current year since it's still ongoing
+        return years.Where(y => y < currentYear).ToList();
     }
 
     private static List<string> GenerateFunFacts(

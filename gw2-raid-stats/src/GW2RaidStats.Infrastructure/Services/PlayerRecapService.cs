@@ -389,6 +389,8 @@ public class PlayerRecapService
 
     public async Task<List<int>> GetAvailableYearsAsync(Guid playerId, CancellationToken ct = default)
     {
+        var currentYear = DateTime.UtcNow.Year;
+
         var years = await (
             from pe in _db.PlayerEncounters
             join e in _db.Encounters on pe.EncounterId equals e.Id
@@ -396,7 +398,8 @@ public class PlayerRecapService
             select e.EncounterTime.Year
         ).Distinct().OrderByDescending(y => y).ToListAsync(ct);
 
-        return years;
+        // Exclude the current year since it's still ongoing
+        return years.Where(y => y < currentYear).ToList();
     }
 }
 
