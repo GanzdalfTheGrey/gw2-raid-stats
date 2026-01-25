@@ -8,11 +8,13 @@ public class BossStatsService
 {
     private readonly RaidStatsDb _db;
     private readonly IgnoredBossService _ignoredBossService;
+    private readonly IncludedPlayerService _includedPlayerService;
 
-    public BossStatsService(RaidStatsDb db, IgnoredBossService ignoredBossService)
+    public BossStatsService(RaidStatsDb db, IgnoredBossService ignoredBossService, IncludedPlayerService includedPlayerService)
     {
         _db = db;
         _ignoredBossService = ignoredBossService;
+        _includedPlayerService = includedPlayerService;
     }
 
     public async Task<List<BossSummary>> GetAllBossesAsync(bool includeIgnored = false, CancellationToken ct = default)
@@ -76,11 +78,22 @@ public class BossStatsService
             ))
             .ToList();
 
-        // Get top DPS for this boss
+        // Get top DPS for this boss (guild members only)
         var encounterIds = encounters.Where(e => e.Success).Select(e => e.Id).ToList();
-        var topDps = await _db.PlayerEncounters
+        var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
+        var includedList = includedAccounts.ToList();
+
+        var topDpsQuery = _db.PlayerEncounters
             .Where(pe => encounterIds.Contains(pe.EncounterId))
-            .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
+            .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p });
+
+        // Filter to guild members only if there are included players configured
+        if (includedList.Count > 0)
+        {
+            topDpsQuery = topDpsQuery.Where(x => includedList.Contains(x.p.AccountName));
+        }
+
+        var topDps = await topDpsQuery
             .OrderByDescending(x => x.pe.Dps)
             .Take(5)
             .Select(x => new BossTopDps(
