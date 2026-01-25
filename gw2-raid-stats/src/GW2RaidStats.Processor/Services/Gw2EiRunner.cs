@@ -80,15 +80,18 @@ public class Gw2EiRunner
 
             // Find the generated files - GW2EI generates them next to the input file
             // They are named like: inputfilename_class_boss_time_result.json/html
-            var allFiles = Directory.GetFiles(inputDirectory)
+            // Filter by input filename prefix to avoid race conditions with parallel workers
+            var matchingFiles = Directory.GetFiles(inputDirectory)
+                .Where(f => Path.GetFileName(f).StartsWith(inputFileNameWithoutExt + "_"))
                 .Where(f => f.EndsWith(".json") || f.EndsWith(".html"))
                 .ToArray();
 
-            _logger.LogDebug("Found {Count} JSON/HTML files in {Dir}: {Files}",
-                allFiles.Length, inputDirectory, string.Join(", ", allFiles.Select(Path.GetFileName)));
+            _logger.LogDebug("Found {Count} matching files for {Input} in {Dir}: {Files}",
+                matchingFiles.Length, inputFileNameWithoutExt, inputDirectory,
+                string.Join(", ", matchingFiles.Select(Path.GetFileName)));
 
-            var jsonFile = allFiles.FirstOrDefault(f => f.EndsWith(".json"));
-            var htmlFile = allFiles.FirstOrDefault(f => f.EndsWith(".html"));
+            var jsonFile = matchingFiles.FirstOrDefault(f => f.EndsWith(".json"));
+            var htmlFile = matchingFiles.FirstOrDefault(f => f.EndsWith(".html"));
 
             if (jsonFile == null)
             {
