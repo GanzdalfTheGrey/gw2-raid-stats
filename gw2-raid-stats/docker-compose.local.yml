@@ -60,6 +60,16 @@ services:
       timeout: 5s
       retries: 5
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: gw2-raid-stats-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    networks:
+      - internal
+    depends_on:
+      - app
+
 networks:
   internal:
     driver: bridge
