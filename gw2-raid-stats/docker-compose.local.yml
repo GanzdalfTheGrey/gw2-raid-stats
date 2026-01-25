@@ -50,7 +50,7 @@ services:
       - POSTGRES_USER=app
       - POSTGRES_PASSWORD=${DB_PASSWORD}
     volumes:
-      - ${DATA_PATH:-./data}/postgres:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./src/GW2RaidStats.Infrastructure/Migrations:/docker-entrypoint-initdb.d:ro
     networks:
       - internal
@@ -63,3 +63,6 @@ services:
 networks:
   internal:
     driver: bridge
+
+volumes:
+  postgres_data:
