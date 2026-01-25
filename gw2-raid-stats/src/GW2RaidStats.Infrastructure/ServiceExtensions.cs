@@ -45,6 +45,7 @@ public static class ServiceExtensions
         services.AddScoped<RecapFunStatsService>();
         services.AddScoped<PlayerRecapService>();
         services.AddScoped<BossStatsService>();
+        services.AddScoped<LogSearchService>();
 
         return services;
     }
