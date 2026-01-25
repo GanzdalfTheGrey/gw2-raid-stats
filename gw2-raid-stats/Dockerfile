@@ -8,6 +8,7 @@ COPY src/GW2RaidStats.Core/*.csproj ./src/GW2RaidStats.Core/
 COPY src/GW2RaidStats.Infrastructure/*.csproj ./src/GW2RaidStats.Infrastructure/
 COPY src/GW2RaidStats.Client/*.csproj ./src/GW2RaidStats.Client/
 COPY src/GW2RaidStats.Server/*.csproj ./src/GW2RaidStats.Server/
+COPY src/GW2RaidStats.Processor/*.csproj ./src/GW2RaidStats.Processor/
 
 # Restore dependencies
 RUN dotnet restore gw2-raid-stats.slnx
