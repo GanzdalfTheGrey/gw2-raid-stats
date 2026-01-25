@@ -119,13 +119,11 @@
                                 <td>@FormatDuration(encounter.DurationMs)</td>
                                 <td>@encounter.EncounterTime.LocalDateTime.ToString("h:mm tt")</td>
                                 <td>
-                                    @if (!string.IsNullOrEmpty(encounter.LogUrl))
-                                    {
-                                        <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
-                                                       Size="Size.Small"
-                                                       Href="@encounter.LogUrl"
-                                                       Target="_blank" />
-                                    }
+                                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                   Size="Size.Small"
+                                                   Href="@($"/api/reports/{encounter.Id}/view")"
+                                                   Target="_blank"
+                                                   Title="View Report" />
                                 </td>
                             </tr>
                         }

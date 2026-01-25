@@ -139,6 +139,7 @@ public class PlayerProfileService
             {
                 var best = g.OrderByDescending(e => e.Dps).First();
                 return new PersonalBest(
+                    best.EncounterId,
                     g.Key.TriggerId,
                     g.Key.BossName,
                     g.Key.IsCM,
@@ -158,6 +159,7 @@ public class PlayerProfileService
             .OrderByDescending(e => e.EncounterTime)
             .Take(20)
             .Select(e => new PlayerRecentEncounter(
+                e.EncounterId,
                 e.BossName,
                 e.IsCM,
                 e.Success,
@@ -307,6 +309,7 @@ public record ClassStats(string Profession, int Count, decimal Percentage);
 public record RoleStats(string Role, int Count, decimal Percentage);
 
 public record PersonalBest(
+    Guid EncounterId,
     int TriggerId,
     string BossName,
     bool IsCM,
@@ -319,6 +322,7 @@ public record PersonalBest(
 );
 
 public record PlayerRecentEncounter(
+    Guid EncounterId,
     string BossName,
     bool IsCM,
     bool Success,

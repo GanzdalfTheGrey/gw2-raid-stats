@@ -179,13 +179,11 @@ else
                             <MudTd DataLabel="Date">@context.EncounterTime.LocalDateTime.ToString("MMM d, yyyy HH:mm")</MudTd>
                             <MudTd DataLabel="Recorded By">@(context.RecordedBy ?? "-")</MudTd>
                             <MudTd DataLabel="Log">
-                                @if (!string.IsNullOrEmpty(context.LogUrl))
-                                {
-                                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
-                                                   Size="Size.Small"
-                                                   Href="@context.LogUrl"
-                                                   Target="_blank" />
-                                }
+                                <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                               Size="Size.Small"
+                                               Href="@($"/api/reports/{context.Id}/view")"
+                                               Target="_blank"
+                                               Title="View Report" />
                             </MudTd>
                         </RowTemplate>
                     </MudTable>

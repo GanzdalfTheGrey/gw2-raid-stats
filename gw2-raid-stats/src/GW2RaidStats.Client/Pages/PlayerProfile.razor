@@ -163,13 +163,11 @@ else
                             <MudTd DataLabel="Kills">@context.KillCount</MudTd>
                             <MudTd DataLabel="Date">@context.EncounterTime.LocalDateTime.ToString("MMM d, yyyy")</MudTd>
                             <MudTd DataLabel="Log">
-                                @if (!string.IsNullOrEmpty(context.LogUrl))
-                                {
-                                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
-                                                   Size="Size.Small"
-                                                   Href="@context.LogUrl"
-                                                   Target="_blank" />
-                                }
+                                <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                               Size="Size.Small"
+                                               Href="@($"/api/reports/{context.EncounterId}/view")"
+                                               Target="_blank"
+                                               Title="View Report" />
                             </MudTd>
                         </RowTemplate>
                     </MudTable>
@@ -228,13 +226,11 @@ else
                             </MudTd>
                             <MudTd DataLabel="Date">@context.EncounterTime.LocalDateTime.ToString("MMM d, yyyy HH:mm")</MudTd>
                             <MudTd DataLabel="Log">
-                                @if (!string.IsNullOrEmpty(context.LogUrl))
-                                {
-                                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
-                                                   Size="Size.Small"
-                                                   Href="@context.LogUrl"
-                                                   Target="_blank" />
-                                }
+                                <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                               Size="Size.Small"
+                                               Href="@($"/api/reports/{context.EncounterId}/view")"
+                                               Target="_blank"
+                                               Title="View Report" />
                             </MudTd>
                         </RowTemplate>
                     </MudTable>
@@ -321,6 +317,7 @@ else
     public record RoleStats(string Role, int Count, decimal Percentage);
 
     public record PersonalBest(
+        Guid EncounterId,
         int TriggerId,
         string BossName,
         bool IsCM,
@@ -333,6 +330,7 @@ else
     );
 
     public record RecentEncounter(
+        Guid EncounterId,
         string BossName,
         bool IsCM,
         bool Success,
