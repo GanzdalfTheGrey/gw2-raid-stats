@@ -18,7 +18,7 @@ public class LeaderboardService
     private const string LateStartFilter = "Late start";
 
     // Ignored encounter names (non-boss events)
-    private static readonly string[] IgnoredEncounters = ["Spirit Race", "Twisted Castle", "River of Souls", "Statues of Grenth"];
+    private static readonly string[] IgnoredEncounters = ["Spirit Race", "Twisted Castle", "River of Souls", "Statues of Grenth", "Bandit Trio"];
 
     // Display name for non-included players (pugs)
     private const string PugDisplayName = "Pug";

@@ -10,7 +10,8 @@ public static class WingMapping
         "Spirit Race",
         "Twisted Castle",
         "River of Souls",  // This is an event, not a boss
-        "Statues of Grenth" // Wing 5 event (Broken King, Eater of Souls, Eyes)
+        "Statues of Grenth", // Wing 5 event (Broken King, Eater of Souls, Eyes)
+        "Bandit Trio" // Wing 2 event (Berg, Zane, Narella)
     };
 
     /// <summary>
