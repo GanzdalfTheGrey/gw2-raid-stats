@@ -88,8 +88,8 @@ public static class WingMapping
         19450 => 5,  // Dhuum
 
         // Wing 6 - Mythwright Gambit
-        43974 or 21105 => 6,  // Conjured Amalgamate (43974 is common ID)
-        21089 or 21177 => 6,  // Twin Largos (Nikare/Kenut)
+        43974 => 6,  // Conjured Amalgamate
+        21105 or 21089 or 21177 => 6,  // Twin Largos (21105=combined, 21089=Nikare, 21177=Kenut)
         20934 => 6,  // Qadim
 
         // Wing 7 - The Key of Ahdashim
@@ -153,8 +153,8 @@ public static class WingMapping
         19450 => 2,  // Dhuum
 
         // Wing 6
-        43974 or 21105 => 1,  // Conjured Amalgamate
-        21089 or 21177 => 2,  // Twin Largos
+        43974 => 1,  // Conjured Amalgamate
+        21105 or 21089 or 21177 => 2,  // Twin Largos (21105=combined, 21089=Nikare, 21177=Kenut)
         20934 => 3,  // Qadim
 
         // Wing 7

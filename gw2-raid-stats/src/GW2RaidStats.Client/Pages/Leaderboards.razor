@@ -150,9 +150,17 @@
                                             <MudText Typo="Typo.h4" Color="Color.Error" Style="font-weight: 700; line-height: 1;">
                                                 @boss.TopDps.Dps.ToString("N0")
                                             </MudText>
-                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                                @boss.TopDps.EncounterTime.LocalDateTime.ToString("MMM d, yyyy")
-                                            </MudText>
+                                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                    @boss.TopDps.EncounterTime.LocalDateTime.ToString("MMM d, yyyy")
+                                                </MudText>
+                                                <MudTooltip Text="View Log">
+                                                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                                   Size="Size.Small"
+                                                                   Href="@($"/api/reports/{boss.TopDps.EncounterId}/view")"
+                                                                   Target="_blank" />
+                                                </MudTooltip>
+                                            </MudStack>
                                         </MudStack>
                                     </MudStack>
                                     @if (boss.TopDps.BoonSupports.Count > 0)
@@ -205,9 +213,17 @@
                                             <MudText Typo="Typo.h5" Color="Color.Info" Style="font-weight: 600; line-height: 1;">
                                                 @boss.TopBoonDps.Dps.ToString("N0")
                                             </MudText>
-                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                                @boss.TopBoonDps.EncounterTime.LocalDateTime.ToString("MMM d, yyyy")
-                                            </MudText>
+                                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                    @boss.TopBoonDps.EncounterTime.LocalDateTime.ToString("MMM d, yyyy")
+                                                </MudText>
+                                                <MudTooltip Text="View Log">
+                                                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                                   Size="Size.Small"
+                                                                   Href="@($"/api/reports/{boss.TopBoonDps.EncounterId}/view")"
+                                                                   Target="_blank" />
+                                                </MudTooltip>
+                                            </MudStack>
                                         </MudStack>
                                     </MudStack>
                                 </MudStack>
@@ -278,6 +294,7 @@
 
     public record LeaderboardEntry(
         Guid Id,
+        Guid EncounterId,
         string AccountName,
         string CharacterName,
         string Profession,

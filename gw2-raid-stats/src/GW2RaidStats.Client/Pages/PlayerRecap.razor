@@ -332,7 +332,7 @@ else
 
         <div class="text-center mt-4">
             <MudButton Variant="Variant.Text" Color="Color.Primary"
-                       Href="@($"/player/{PlayerId}")">
+                       Href="@($"/players/{Uri.EscapeDataString(_recap.AccountName)}")">
                 Back to Player Profile
             </MudButton>
         </div>

@@ -107,6 +107,7 @@ public class LeaderboardService
 
             results.Add(new LeaderboardEntry(
                 entry.Id,
+                entry.EncounterId,
                 entry.AccountName,
                 entry.CharacterName,
                 entry.Profession,
@@ -181,6 +182,7 @@ public class LeaderboardService
 
             results.Add(new LeaderboardEntry(
                 entry.Id,
+                entry.EncounterId,
                 entry.AccountName,
                 entry.CharacterName,
                 entry.Profession,
@@ -373,6 +375,7 @@ public record BossInfo(int TriggerId, string BossName, int KillCount);
 
 public record LeaderboardEntry(
     Guid Id,
+    Guid EncounterId,
     string AccountName,
     string CharacterName,
     string Profession,

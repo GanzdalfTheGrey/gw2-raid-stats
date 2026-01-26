@@ -1,6 +1,7 @@
 using LinqToDB;
 using LinqToDB.Async;
 using GW2RaidStats.Infrastructure.Database;
+using GW2RaidStats.Core;
 
 namespace GW2RaidStats.Infrastructure.Services;
 
@@ -138,6 +139,8 @@ public class PlayerProfileService
             .Select(g =>
             {
                 var best = g.OrderByDescending(e => e.Dps).First();
+                var wing = WingMapping.GetWing(g.Key.TriggerId);
+                var encounterOrder = WingMapping.GetEncounterOrder(g.Key.TriggerId);
                 return new PersonalBest(
                     best.EncounterId,
                     g.Key.TriggerId,
@@ -148,10 +151,14 @@ public class PlayerProfileService
                     best.CharacterName,
                     best.EncounterTime,
                     best.LogUrl,
-                    g.Count()
+                    g.Count(),
+                    wing,
+                    encounterOrder
                 );
             })
-            .OrderByDescending(pb => pb.Dps)
+            .OrderBy(pb => pb.Wing ?? 99)
+            .ThenBy(pb => pb.EncounterOrder)
+            .ThenBy(pb => pb.IsCM)
             .ToList();
 
         // Get recent activity (last 20 encounters)
@@ -318,7 +325,9 @@ public record PersonalBest(
     string CharacterName,
     DateTimeOffset EncounterTime,
     string? LogUrl,
-    int KillCount
+    int KillCount,
+    int? Wing,
+    int EncounterOrder
 );
 
 public record PlayerRecentEncounter(

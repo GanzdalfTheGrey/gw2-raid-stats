@@ -124,17 +124,23 @@ else
         @* Personal Bests *@
         <MudItem xs="12">
             <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.h6" Class="mb-3">
-                    <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Class="mr-2" />
-                    Personal Bests
-                </MudText>
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudText Typo="Typo.h6">
+                        <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Class="mr-2" />
+                        Personal Bests
+                    </MudText>
+                    <MudToggleGroup T="string" @bind-Value="_personalBestSort" Color="Color.Primary" CheckMark="true" Size="Size.Small">
+                        <MudToggleItem Value="@("wing")" Text="By Wing" />
+                        <MudToggleItem Value="@("dps")" Text="By DPS" />
+                    </MudToggleGroup>
+                </MudStack>
                 @if (_profile.PersonalBests.Count == 0)
                 {
                     <MudAlert Severity="Severity.Info">No kills recorded yet.</MudAlert>
                 }
                 else
                 {
-                    <MudTable Items="@_profile.PersonalBests.Take(20)"
+                    <MudTable Items="@SortedPersonalBests"
                               Dense="true"
                               Hover="true"
                               Striped="true">
@@ -246,6 +252,11 @@ else
 
     private bool _loading = true;
     private PlayerProfileDto? _profile;
+    private string _personalBestSort = "wing";
+
+    private IEnumerable<PersonalBest> SortedPersonalBests => _personalBestSort == "dps"
+        ? _profile?.PersonalBests.OrderByDescending(pb => pb.Dps) ?? Enumerable.Empty<PersonalBest>()
+        : _profile?.PersonalBests.OrderBy(pb => pb.Wing ?? 99).ThenBy(pb => pb.EncounterOrder).ThenBy(pb => pb.IsCM) ?? Enumerable.Empty<PersonalBest>();
 
     protected override async Task OnParametersSetAsync()
     {
@@ -326,7 +337,9 @@ else
         string CharacterName,
         DateTimeOffset EncounterTime,
         string? LogUrl,
-        int KillCount
+        int KillCount,
+        int? Wing,
+        int EncounterOrder
     );
 
     public record RecentEncounter(
