@@ -119,6 +119,87 @@ public class LogSearchService
             .OrderBy(w => w)
             .ToListAsync(ct);
     }
+
+    /// <summary>
+    /// Delete encounters by their IDs. Also deletes associated player encounters and mechanic events.
+    /// </summary>
+    public async Task<DeleteLogsResult> DeleteLogsAsync(List<Guid> encounterIds, bool deleteFiles = false, CancellationToken ct = default)
+    {
+        if (encounterIds.Count == 0)
+            return new DeleteLogsResult(0, 0, new List<string>());
+
+        var errors = new List<string>();
+        var filePaths = new List<string>();
+
+        // Get file paths before deletion if we need to delete files
+        if (deleteFiles)
+        {
+            filePaths = await _db.Encounters
+                .Where(e => encounterIds.Contains(e.Id) && e.FilesPath != null)
+                .Select(e => e.FilesPath!)
+                .ToListAsync(ct);
+        }
+
+        // Delete mechanic events first (foreign key constraint)
+        var mechanicsDeleted = await _db.MechanicEvents
+            .Where(me => encounterIds.Contains(me.EncounterId))
+            .DeleteAsync(ct);
+
+        // Delete player encounters (foreign key constraint)
+        var playerEncountersDeleted = await _db.PlayerEncounters
+            .Where(pe => encounterIds.Contains(pe.EncounterId))
+            .DeleteAsync(ct);
+
+        // Delete encounters
+        var encountersDeleted = await _db.Encounters
+            .Where(e => encounterIds.Contains(e.Id))
+            .DeleteAsync(ct);
+
+        // Delete files from disk if requested
+        if (deleteFiles)
+        {
+            foreach (var path in filePaths)
+            {
+                try
+                {
+                    if (Directory.Exists(path))
+                    {
+                        Directory.Delete(path, recursive: true);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Failed to delete files at {path}: {ex.Message}");
+                }
+            }
+        }
+
+        return new DeleteLogsResult(encountersDeleted, playerEncountersDeleted, errors);
+    }
+
+    /// <summary>
+    /// Get a single log entry by ID
+    /// </summary>
+    public async Task<LogEntry?> GetLogByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        return await _db.Encounters
+            .Where(e => e.Id == id)
+            .Select(e => new LogEntry(
+                e.Id,
+                e.TriggerId,
+                e.BossName,
+                e.Wing,
+                e.IsCM,
+                e.IsLegendaryCM,
+                e.Success,
+                e.DurationMs / 1000.0,
+                e.EncounterTime,
+                e.RecordedBy,
+                e.LogUrl,
+                e.IconUrl
+            ))
+            .FirstOrDefaultAsync(ct);
+    }
 }
 
 public record LogSearchRequest(
@@ -157,4 +238,10 @@ public record LogEntry(
     string? RecordedBy,
     string? LogUrl,
     string? IconUrl
+);
+
+public record DeleteLogsResult(
+    int EncountersDeleted,
+    int PlayerEncountersDeleted,
+    List<string> Errors
 );

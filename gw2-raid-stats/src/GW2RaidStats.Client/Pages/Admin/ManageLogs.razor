@@ -1,0 +1,541 @@
+@page "/admin/logs"
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+
+<PageTitle>GW2 Raid Stats - Manage Logs</PageTitle>
+
+<AdminAuth>
+<MudText Typo="Typo.h4" Class="mb-4">Manage Logs</MudText>
+
+<MudPaper Class="pa-4 mb-4" Elevation="2">
+    <MudText Typo="Typo.h6" Class="mb-3">
+        <MudIcon Icon="@Icons.Material.Filled.FilterList" Class="mr-2" />
+        Filters
+    </MudText>
+
+    <MudGrid>
+        <MudItem xs="12" sm="6" md="3">
+            <MudAutocomplete T="string"
+                             Label="Boss Name"
+                             @bind-Value="_bossNameFilter"
+                             SearchFunc="SearchBossNames"
+                             Clearable="true"
+                             Variant="Variant.Outlined"
+                             Dense="true"
+                             ResetValueOnEmptyText="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="int?" Label="Wing" @bind-Value="_wingFilter" Clearable="true" Variant="Variant.Outlined" Dense="true">
+                @foreach (var wing in _availableWings)
+                {
+                    <MudSelectItem Value="@((int?)wing)">Wing @wing</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="3" md="2">
+            <MudSelect T="bool?" Label="Mode" @bind-Value="_isCMFilter" Clearable="true" Variant="Variant.Outlined" Dense="true">
+                <MudSelectItem Value="@((bool?)false)">Normal</MudSelectItem>
+                <MudSelectItem Value="@((bool?)true)">CM</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="3" md="2">
+            <MudSelect T="bool?" Label="Result" @bind-Value="_successFilter" Clearable="true" Variant="Variant.Outlined" Dense="true">
+                <MudSelectItem Value="@((bool?)true)">Kill</MudSelectItem>
+                <MudSelectItem Value="@((bool?)false)">Wipe</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="3" md="2">
+            <MudDatePicker Label="From Date"
+                           @bind-Date="_fromDate"
+                           Variant="Variant.Outlined"
+                           Clearable="true" />
+        </MudItem>
+        <MudItem xs="6" sm="3" md="2">
+            <MudDatePicker Label="To Date"
+                           @bind-Date="_toDate"
+                           Variant="Variant.Outlined"
+                           Clearable="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudStack Row="true" Spacing="2">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Search"
+                           OnClick="SearchLogs">
+                    Search
+                </MudButton>
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Secondary"
+                           StartIcon="@Icons.Material.Filled.Clear"
+                           OnClick="ClearFilters">
+                    Clear
+                </MudButton>
+            </MudStack>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-4" Elevation="2">
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+    }
+
+    @* Selection Actions Bar *@
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+            <MudCheckBox T="bool" Value="@_selectAll" ValueChanged="OnSelectAllChanged" Color="Color.Primary" />
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                @if (_selectedIds.Count > 0)
+                {
+                    <strong>@_selectedIds.Count selected</strong>
+                }
+                else
+                {
+                    @:Select all
+                }
+            </MudText>
+        </MudStack>
+
+        @if (_selectedIds.Count > 0)
+        {
+            <MudStack Row="true" Spacing="2">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.Delete"
+                           OnClick="OpenDeleteDialog"
+                           Disabled="@_deleting">
+                    Delete Selected (@_selectedIds.Count)
+                </MudButton>
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Secondary"
+                           OnClick="ClearSelection">
+                    Clear Selection
+                </MudButton>
+            </MudStack>
+        }
+        else
+        {
+            <MudText Typo="Typo.subtitle1" Color="Color.Secondary">
+                @if (_searchResult != null)
+                {
+                    @:@_searchResult.TotalCount.ToString("N0") logs found
+                }
+            </MudText>
+        }
+    </MudStack>
+
+    @if (_searchResult == null || _searchResult.Logs.Count == 0)
+    {
+        @if (!_loading)
+        {
+            <MudAlert Severity="Severity.Info">No logs found. Try adjusting your filters.</MudAlert>
+        }
+    }
+    else
+    {
+        <MudTable Items="@_searchResult.Logs"
+                  Dense="true"
+                  Hover="true"
+                  Striped="true"
+                  Loading="@_loading"
+                  LoadingProgressColor="Color.Primary">
+            <HeaderContent>
+                <MudTh Style="width: 50px;"></MudTh>
+                <MudTh Style="width: 50px;"></MudTh>
+                <MudTh>Boss</MudTh>
+                <MudTh>Result</MudTh>
+                <MudTh>Duration</MudTh>
+                <MudTh>Date</MudTh>
+                <MudTh>Recorded By</MudTh>
+                <MudTh>Actions</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="">
+                    <MudCheckBox T="bool"
+                                 Value="@_selectedIds.Contains(context.Id)"
+                                 ValueChanged="@((bool val) => OnRowSelectionChanged(context.Id, val))"
+                                 Color="Color.Primary" />
+                </MudTd>
+                <MudTd DataLabel="">
+                    @if (!string.IsNullOrEmpty(context.IconUrl))
+                    {
+                        <MudAvatar Size="Size.Small">
+                            <MudImage Src="@context.IconUrl" Alt="@context.BossName" />
+                        </MudAvatar>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Boss">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudText>@context.BossName</MudText>
+                        @if (context.IsCM)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">CM</MudChip>
+                        }
+                        @if (context.IsLegendaryCM)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined">LCM</MudChip>
+                        }
+                        @if (context.Wing.HasValue)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">W@(context.Wing)</MudChip>
+                        }
+                    </MudStack>
+                </MudTd>
+                <MudTd DataLabel="Result">
+                    @if (context.Success)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">Kill</MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Error">Wipe</MudChip>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Duration">@FormatDuration(context.DurationSeconds)</MudTd>
+                <MudTd DataLabel="Date">@context.EncounterTime.LocalDateTime.ToString("MMM d, yyyy HH:mm")</MudTd>
+                <MudTd DataLabel="Recorded By">@(context.RecordedBy ?? "-")</MudTd>
+                <MudTd DataLabel="Actions">
+                    <MudStack Row="true" Spacing="0">
+                        <MudTooltip Text="View Log">
+                            <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                           Size="Size.Small"
+                                           Href="@($"/api/reports/{context.Id}/view")"
+                                           Target="_blank" />
+                        </MudTooltip>
+                        <MudTooltip Text="Delete">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Size="Size.Small"
+                                           Color="Color.Error"
+                                           OnClick="@(() => OpenDeleteSingleDialog(context))" />
+                        </MudTooltip>
+                    </MudStack>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        @if (_searchResult.TotalPages > 1)
+        {
+            <MudStack Row="true" Justify="Justify.Center" Class="mt-4">
+                <MudPagination Count="@_searchResult.TotalPages"
+                               Selected="@(_currentPage + 1)"
+                               SelectedChanged="OnPageChanged"
+                               Color="Color.Primary"
+                               ShowFirstButton="true"
+                               ShowLastButton="true" />
+            </MudStack>
+        }
+    }
+</MudPaper>
+
+@* Delete Confirmation Dialog *@
+<MudDialog @bind-Visible="_showDeleteDialog">
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Error" Class="mr-2" />
+            Confirm Deletion
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Class="mb-3">
+            Are you sure you want to delete <strong>@_deleteCount</strong> log(s)?
+        </MudText>
+        <MudText Color="Color.Secondary" Typo="Typo.body2" Class="mb-3">
+            This will permanently remove the encounter data and all associated player statistics.
+        </MudText>
+        <MudCheckBox T="bool" @bind-Value="_deleteFiles" Color="Color.Error">
+            Also delete log files from disk
+        </MudCheckBox>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CloseDeleteDialog" Disabled="@_deleting">Cancel</MudButton>
+        <MudButton Color="Color.Error"
+                   Variant="Variant.Filled"
+                   OnClick="ConfirmDelete"
+                   Disabled="@_deleting">
+            @if (_deleting)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Delete
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+</AdminAuth>
+
+@code {
+    private bool _loading = true;
+    private bool _deleting = false;
+    private LogSearchResultDto? _searchResult;
+    private List<string> _availableBossNames = new();
+    private List<int> _availableWings = new();
+
+    // Filter values
+    private string? _bossNameFilter;
+    private int? _wingFilter;
+    private bool? _isCMFilter;
+    private bool? _successFilter;
+    private DateTime? _fromDate;
+    private DateTime? _toDate;
+
+    // Pagination
+    private int _currentPage = 0;
+    private int _pageSize = 50;
+
+    // Selection
+    private HashSet<Guid> _selectedIds = new();
+    private bool _selectAll = false;
+
+    // Delete dialog
+    private bool _showDeleteDialog = false;
+    private bool _deleteFiles = false;
+    private int _deleteCount = 0;
+    private LogEntryDto? _singleDeleteTarget;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFilterOptionsAsync();
+        await SearchLogs();
+    }
+
+    private async Task LoadFilterOptionsAsync()
+    {
+        try
+        {
+            var bossNamesTask = Http.GetFromJsonAsync<List<string>>("api/logs/boss-names");
+            var wingsTask = Http.GetFromJsonAsync<List<int>>("api/logs/wings");
+
+            await Task.WhenAll(bossNamesTask, wingsTask);
+
+            _availableBossNames = bossNamesTask.Result ?? new();
+            _availableWings = wingsTask.Result ?? new();
+        }
+        catch
+        {
+            _availableBossNames = new();
+            _availableWings = new();
+        }
+    }
+
+    private Task<IEnumerable<string>> SearchBossNames(string value, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(value))
+            return Task.FromResult<IEnumerable<string>>(_availableBossNames);
+
+        return Task.FromResult<IEnumerable<string>>(_availableBossNames
+            .Where(n => n.Contains(value, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private async Task SearchLogs()
+    {
+        _loading = true;
+        _currentPage = 0;
+        ClearSelection();
+        await LoadLogsAsync();
+    }
+
+    private async Task LoadLogsAsync()
+    {
+        _loading = true;
+        try
+        {
+            var queryParams = new List<string>
+            {
+                $"page={_currentPage}",
+                $"pageSize={_pageSize}"
+            };
+
+            if (!string.IsNullOrWhiteSpace(_bossNameFilter))
+                queryParams.Add($"bossName={Uri.EscapeDataString(_bossNameFilter)}");
+            if (_wingFilter.HasValue)
+                queryParams.Add($"wing={_wingFilter.Value}");
+            if (_isCMFilter.HasValue)
+                queryParams.Add($"isCM={_isCMFilter.Value}");
+            if (_successFilter.HasValue)
+                queryParams.Add($"success={_successFilter.Value}");
+            if (_fromDate.HasValue)
+                queryParams.Add($"fromDate={_fromDate.Value:yyyy-MM-dd}");
+            if (_toDate.HasValue)
+                queryParams.Add($"toDate={_toDate.Value:yyyy-MM-dd}");
+
+            var url = $"api/logs?{string.Join("&", queryParams)}";
+            _searchResult = await Http.GetFromJsonAsync<LogSearchResultDto>(url);
+        }
+        catch
+        {
+            _searchResult = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ClearFilters()
+    {
+        _bossNameFilter = null;
+        _wingFilter = null;
+        _isCMFilter = null;
+        _successFilter = null;
+        _fromDate = null;
+        _toDate = null;
+        _currentPage = 0;
+        ClearSelection();
+        await LoadLogsAsync();
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        _currentPage = page - 1;
+        ClearSelection();
+        await LoadLogsAsync();
+    }
+
+    private void OnSelectAllChanged(bool value)
+    {
+        _selectAll = value;
+        if (value && _searchResult != null)
+        {
+            foreach (var log in _searchResult.Logs)
+            {
+                _selectedIds.Add(log.Id);
+            }
+        }
+        else
+        {
+            _selectedIds.Clear();
+        }
+    }
+
+    private void OnRowSelectionChanged(Guid id, bool selected)
+    {
+        if (selected)
+        {
+            _selectedIds.Add(id);
+        }
+        else
+        {
+            _selectedIds.Remove(id);
+        }
+
+        // Update select all checkbox state
+        _selectAll = _searchResult != null &&
+                     _searchResult.Logs.All(l => _selectedIds.Contains(l.Id));
+    }
+
+    private void ClearSelection()
+    {
+        _selectedIds.Clear();
+        _selectAll = false;
+    }
+
+    private void OpenDeleteDialog()
+    {
+        _singleDeleteTarget = null;
+        _deleteCount = _selectedIds.Count;
+        _deleteFiles = false;
+        _showDeleteDialog = true;
+    }
+
+    private void OpenDeleteSingleDialog(LogEntryDto log)
+    {
+        _singleDeleteTarget = log;
+        _deleteCount = 1;
+        _deleteFiles = false;
+        _showDeleteDialog = true;
+    }
+
+    private void CloseDeleteDialog()
+    {
+        _showDeleteDialog = false;
+        _singleDeleteTarget = null;
+    }
+
+    private async Task ConfirmDelete()
+    {
+        _deleting = true;
+        try
+        {
+            var idsToDelete = _singleDeleteTarget != null
+                ? new List<Guid> { _singleDeleteTarget.Id }
+                : _selectedIds.ToList();
+
+            var request = new DeleteLogsRequest(idsToDelete, _deleteFiles);
+            var response = await Http.PostAsJsonAsync("api/admin/logs/delete", request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<DeleteLogsResultDto>();
+                Snackbar.Add($"Deleted {result?.EncountersDeleted ?? 0} log(s)", Severity.Success);
+
+                if (result?.Errors?.Count > 0)
+                {
+                    foreach (var error in result.Errors)
+                    {
+                        Snackbar.Add(error, Severity.Warning);
+                    }
+                }
+
+                ClearSelection();
+                await LoadLogsAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to delete logs", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _deleting = false;
+            _showDeleteDialog = false;
+            _singleDeleteTarget = null;
+        }
+    }
+
+    private string FormatDuration(double seconds)
+    {
+        var ts = TimeSpan.FromSeconds(seconds);
+        return ts.TotalMinutes >= 1
+            ? $"{(int)ts.TotalMinutes}:{ts.Seconds:D2}"
+            : $"{ts.Seconds}s";
+    }
+
+    // DTOs
+    public record LogSearchResultDto(
+        List<LogEntryDto> Logs,
+        int TotalCount,
+        int Page,
+        int PageSize,
+        int TotalPages
+    );
+
+    public record LogEntryDto(
+        Guid Id,
+        int TriggerId,
+        string BossName,
+        int? Wing,
+        bool IsCM,
+        bool IsLegendaryCM,
+        bool Success,
+        double DurationSeconds,
+        DateTimeOffset EncounterTime,
+        string? RecordedBy,
+        string? LogUrl,
+        string? IconUrl
+    );
+
+    public record DeleteLogsRequest(
+        List<Guid> EncounterIds,
+        bool DeleteFiles = false
+    );
+
+    public record DeleteLogsResultDto(
+        int EncountersDeleted,
+        int PlayerEncountersDeleted,
+        List<string> Errors
+    );
+}
