@@ -16,10 +16,8 @@ public static class MechanicIcdHelper
     /// </remarks>
     public static readonly Dictionary<string, int> KnownIcds = new(StringComparer.OrdinalIgnoreCase)
     {
-        // Harvest Temple CM
-        ["Echo.PU"] = 500,           // Ender's Echo Pick Up - multi-hit grab
-
-        // Dhuum
+        // Dhuum CM
+        ["Echo PU"] = 500,           // Ender's Echo Pick Up - multi-hit grab
         ["Snatch"] = 500,            // Dhuum snatch - can hit multiple times
 
         // Deimos
@@ -41,10 +39,11 @@ public static class MechanicIcdHelper
     }
 
     /// <summary>
-    /// Counts mechanic events with ICD grouping.
-    /// Events within the ICD window are counted as a single occurrence.
+    /// Counts mechanic events with ICD grouping using a sliding window.
+    /// Events within ICD of the previous event are part of the same occurrence.
+    /// Only when there's a gap > ICD does a new occurrence start.
     /// </summary>
-    /// <param name="eventTimesMs">List of event times in milliseconds, must be sorted ascending</param>
+    /// <param name="eventTimesMs">List of event times in milliseconds</param>
     /// <param name="icdMs">Internal cooldown in milliseconds</param>
     /// <returns>Number of distinct occurrences</returns>
     public static int CountWithIcd(List<int> eventTimesMs, int icdMs)
@@ -56,15 +55,17 @@ public static class MechanicIcdHelper
         eventTimesMs.Sort();
 
         int count = 1;
-        int lastEventTime = eventTimesMs[0];
+        int previousEventTime = eventTimesMs[0];
 
         for (int i = 1; i < eventTimesMs.Count; i++)
         {
-            if (eventTimesMs[i] - lastEventTime > icdMs)
+            if (eventTimesMs[i] - previousEventTime > icdMs)
             {
+                // Gap is larger than ICD, this is a new occurrence
                 count++;
-                lastEventTime = eventTimesMs[i];
             }
+            // Always update to compare next event against this one (sliding window)
+            previousEventTime = eventTimesMs[i];
         }
 
         return count;
