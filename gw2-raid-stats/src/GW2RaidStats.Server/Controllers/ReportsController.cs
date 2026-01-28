@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using LinqToDB;
@@ -67,6 +68,102 @@ public class ReportsController : ControllerBase
             encounter.OriginalFilename,
             hasLocalReport
         ));
+    }
+
+    /// <summary>
+    /// Download the raw .zevtc log file for an encounter
+    /// </summary>
+    [HttpGet("{encounterId:guid}/download")]
+    public async Task<IActionResult> DownloadLog(Guid encounterId, CancellationToken ct)
+    {
+        var encounter = await _db.Encounters
+            .Where(e => e.Id == encounterId)
+            .Select(e => new { e.FilesPath, e.OriginalFilename, e.BossName, e.EncounterTime })
+            .FirstOrDefaultAsync(ct);
+
+        if (encounter == null)
+        {
+            return NotFound();
+        }
+
+        if (string.IsNullOrEmpty(encounter.FilesPath))
+        {
+            return NotFound("No local log file available for this encounter");
+        }
+
+        var zevtcPath = Path.Combine(_storageOptions.EncountersPath, encounter.FilesPath, "log.zevtc");
+        if (!System.IO.File.Exists(zevtcPath))
+        {
+            return NotFound("Log file not found on disk");
+        }
+
+        // Use original filename if available, otherwise generate one
+        var filename = !string.IsNullOrEmpty(encounter.OriginalFilename)
+            ? encounter.OriginalFilename
+            : $"{encounter.BossName}_{encounter.EncounterTime:yyyyMMdd_HHmmss}.zevtc";
+
+        var stream = new FileStream(zevtcPath, FileMode.Open, FileAccess.Read);
+        return File(stream, "application/octet-stream", filename);
+    }
+
+    /// <summary>
+    /// Download all logs from a session (all encounters on the same day as the most recent log)
+    /// </summary>
+    [HttpGet("download-session")]
+    public async Task<IActionResult> DownloadSessionLogs(CancellationToken ct)
+    {
+        // Get the most recent encounter to determine the session date
+        var latestEncounter = await _db.Encounters
+            .OrderByDescending(e => e.EncounterTime)
+            .FirstOrDefaultAsync(ct);
+
+        if (latestEncounter == null)
+        {
+            return NotFound("No encounters found");
+        }
+
+        // Get all encounters from the same calendar date (session)
+        var sessionDate = latestEncounter.EncounterTime.Date;
+        var encounterOffset = latestEncounter.EncounterTime.Offset;
+        var sessionStart = new DateTimeOffset(sessionDate, encounterOffset);
+        var sessionEnd = sessionStart.AddDays(1);
+
+        var sessionEncounters = await _db.Encounters
+            .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd)
+            .Where(e => e.FilesPath != null)
+            .OrderBy(e => e.EncounterTime)
+            .Select(e => new { e.FilesPath, e.OriginalFilename, e.BossName, e.EncounterTime })
+            .ToListAsync(ct);
+
+        if (sessionEncounters.Count == 0)
+        {
+            return NotFound("No downloadable logs found for this session");
+        }
+
+        // Create a ZIP file in memory
+        var memoryStream = new MemoryStream();
+        using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var encounter in sessionEncounters)
+            {
+                var zevtcPath = Path.Combine(_storageOptions.EncountersPath, encounter.FilesPath!, "log.zevtc");
+                if (System.IO.File.Exists(zevtcPath))
+                {
+                    var filename = !string.IsNullOrEmpty(encounter.OriginalFilename)
+                        ? encounter.OriginalFilename
+                        : $"{encounter.BossName}_{encounter.EncounterTime:yyyyMMdd_HHmmss}.zevtc";
+
+                    var entry = archive.CreateEntry(filename, CompressionLevel.NoCompression);
+                    using var entryStream = entry.Open();
+                    using var fileStream = System.IO.File.OpenRead(zevtcPath);
+                    fileStream.CopyTo(entryStream);
+                }
+            }
+        }
+
+        memoryStream.Position = 0;
+        var zipFilename = $"raid_logs_{sessionDate:yyyy-MM-dd}.zip";
+        return File(memoryStream, "application/zip", zipFilename);
     }
 
     /// <summary>

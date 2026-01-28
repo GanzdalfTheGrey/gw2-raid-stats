@@ -47,28 +47,24 @@ app.UseStaticFiles();
 var storageOptions = app.Configuration.GetSection(StorageOptions.SectionName).Get<StorageOptions>() ?? new StorageOptions();
 var encountersPath = storageOptions.EncountersPath;
 
-if (Directory.Exists(encountersPath))
+// Create directory if it doesn't exist (for first run)
+if (!Directory.Exists(encountersPath))
 {
-    app.UseStaticFiles(new StaticFileOptions
-    {
-        FileProvider = new PhysicalFileProvider(Path.GetFullPath(encountersPath)),
-        RequestPath = "/reports",
-        ServeUnknownFileTypes = false,
-        DefaultContentType = "text/html"
-    });
-}
-else
-{
-    // Create directory if it doesn't exist (for first run)
     Directory.CreateDirectory(encountersPath);
-    app.UseStaticFiles(new StaticFileOptions
-    {
-        FileProvider = new PhysicalFileProvider(Path.GetFullPath(encountersPath)),
-        RequestPath = "/reports",
-        ServeUnknownFileTypes = false,
-        DefaultContentType = "text/html"
-    });
 }
+
+// Configure MIME types for .zevtc files
+var contentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+contentTypeProvider.Mappings[".zevtc"] = "application/octet-stream";
+contentTypeProvider.Mappings[".evtc"] = "application/octet-stream";
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(Path.GetFullPath(encountersPath)),
+    RequestPath = "/reports",
+    ContentTypeProvider = contentTypeProvider,
+    DefaultContentType = "text/html"
+});
 
 app.UseRouting();
 

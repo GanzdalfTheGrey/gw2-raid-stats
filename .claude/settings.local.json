@@ -16,7 +16,9 @@
       "Bash(docker-compose:*)",
       "Bash(docker exec:*)",
       "Bash(ls:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(tree:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

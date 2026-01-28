@@ -174,11 +174,18 @@
                 <MudTd DataLabel="Date">@context.EncounterTime.LocalDateTime.ToString("MMM d, yyyy HH:mm")</MudTd>
                 <MudTd DataLabel="Recorded By">@(context.RecordedBy ?? "-")</MudTd>
                 <MudTd DataLabel="Log">
-                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
-                                   Size="Size.Small"
-                                   Href="@($"/api/reports/{context.Id}/view")"
-                                   Target="_blank"
-                                   Title="View Report" />
+                    <MudStack Row="true" Spacing="0">
+                        <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                       Size="Size.Small"
+                                       Href="@($"/api/reports/{context.Id}/view")"
+                                       Target="_blank"
+                                       Title="View HTML Report" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Download"
+                                       Size="Size.Small"
+                                       Href="@($"/api/reports/{context.Id}/download")"
+                                       Target="_blank"
+                                       Title="Download .zevtc" />
+                    </MudStack>
                 </MudTd>
             </RowTemplate>
         </MudTable>
