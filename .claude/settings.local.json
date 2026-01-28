@@ -18,7 +18,8 @@
       "Bash(ls:*)",
       "Bash(python3:*)",
       "Bash(tree:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

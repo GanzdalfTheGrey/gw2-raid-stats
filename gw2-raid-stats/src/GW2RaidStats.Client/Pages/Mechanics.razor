@@ -1,0 +1,311 @@
+@page "/mechanics"
+@inject HttpClient Http
+
+<PageTitle>GW2 Raid Stats - Mechanics</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Mechanic Lookup</MudText>
+
+<MudPaper Class="pa-4 mb-4" Elevation="2">
+    <MudText Typo="Typo.h6" Class="mb-3">
+        <MudIcon Icon="@Icons.Material.Filled.FilterList" Class="mr-2" />
+        Search
+    </MudText>
+
+    <MudGrid>
+        <MudItem xs="12" sm="6" md="4">
+            <MudAutocomplete T="MechanicInfoDto"
+                             Label="Mechanic"
+                             @bind-Value="_selectedMechanic"
+                             SearchFunc="SearchMechanics"
+                             ToStringFunc="@(m => m?.MechanicFullName ?? m?.MechanicName ?? "")"
+                             Clearable="true"
+                             Variant="Variant.Outlined"
+                             Dense="true"
+                             ResetValueOnEmptyText="true"
+                             ShowProgressIndicator="true">
+                <ItemTemplate Context="mechanic">
+                    <MudStack Spacing="0">
+                        <MudText>@(mechanic.MechanicFullName ?? mechanic.MechanicName)</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @mechanic.MechanicName - @mechanic.TotalCount.ToString("N0") total
+                        </MudText>
+                    </MudStack>
+                </ItemTemplate>
+            </MudAutocomplete>
+        </MudItem>
+        <MudItem xs="6" sm="3" md="2">
+            <MudDatePicker Label="From Date"
+                           @bind-Date="_fromDate"
+                           Variant="Variant.Outlined"
+                           Clearable="true" />
+        </MudItem>
+        <MudItem xs="6" sm="3" md="2">
+            <MudDatePicker Label="To Date"
+                           @bind-Date="_toDate"
+                           Variant="Variant.Outlined"
+                           Clearable="true" />
+        </MudItem>
+        <MudItem xs="12" sm="12" md="4">
+            <MudStack Row="true" Spacing="2" Class="mt-1">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Search"
+                           OnClick="SearchAsync"
+                           Disabled="_selectedMechanic == null">
+                    Search
+                </MudButton>
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Secondary"
+                           StartIcon="@Icons.Material.Filled.Clear"
+                           OnClick="ClearFilters">
+                    Clear
+                </MudButton>
+            </MudStack>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+
+@if (_searchResult != null)
+{
+    <MudPaper Class="pa-4" Elevation="2">
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+            <MudStack Spacing="0">
+                <MudText Typo="Typo.h6">@(_searchResult.MechanicFullName ?? _searchResult.MechanicName)</MudText>
+                @if (!string.IsNullOrEmpty(_searchResult.Description))
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">@_searchResult.Description</MudText>
+                }
+            </MudStack>
+            <MudChip T="string" Color="Color.Primary" Size="Size.Large">
+                @_searchResult.TotalCount.ToString("N0") total
+            </MudChip>
+        </MudStack>
+
+        @if (_searchResult.PlayerStats.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">No player data found for this mechanic in the selected date range.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@_searchResult.PlayerStats"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true">
+                <HeaderContent>
+                    <MudTh Style="width: 60px;">Rank</MudTh>
+                    <MudTh>Player</MudTh>
+                    <MudTh Style="width: 150px;">Count</MudTh>
+                    <MudTh Style="width: 200px;">Percentage</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Rank">
+                        @GetRank(context)
+                    </MudTd>
+                    <MudTd DataLabel="Player">
+                        <MudLink Href="@($"/players/{Uri.EscapeDataString(context.AccountName)}")">
+                            @context.AccountName
+                        </MudLink>
+                    </MudTd>
+                    <MudTd DataLabel="Count">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary">@context.Count.ToString("N0")</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Percentage">
+                        <MudProgressLinear Color="Color.Primary"
+                                           Value="@GetPercentage(context)"
+                                           Class="my-1"
+                                           Style="height: 20px; border-radius: 4px;">
+                            <MudText Typo="Typo.caption" Style="position: absolute; width: 100%; text-align: center; color: white;">
+                                @GetPercentage(context).ToString("F1")%
+                            </MudText>
+                        </MudProgressLinear>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+else if (!_loading && _hasSearched)
+{
+    <MudAlert Severity="Severity.Info">Select a mechanic and click Search to see results.</MudAlert>
+}
+else if (!_loading)
+{
+    <MudPaper Class="pa-4" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-3">Available Mechanics</MudText>
+        @if (_allMechanics.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">No mechanics found. Import some logs to see mechanics data.</MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                @_allMechanics.Count mechanics tracked across all encounters. Select one above to search.
+            </MudText>
+            <MudTable Items="@_allMechanics.Take(20)"
+                      T="MechanicInfoDto"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      OnRowClick="@(args => SelectMechanic(args.Item))">
+                <HeaderContent>
+                    <MudTh>Mechanic</MudTh>
+                    <MudTh>Description</MudTh>
+                    <MudTh Style="width: 120px;">Total Count</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Mechanic">
+                        <MudStack Spacing="0">
+                            <MudText>@(context.MechanicFullName ?? context.MechanicName)</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@context.MechanicName</MudText>
+                        </MudStack>
+                    </MudTd>
+                    <MudTd DataLabel="Description">
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">@(context.Description ?? "-")</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Total Count">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default">@context.TotalCount.ToString("N0")</MudChip>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+            @if (_allMechanics.Count > 20)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                    Showing top 20 of @_allMechanics.Count mechanics. Use the search above to find others.
+                </MudText>
+            }
+        }
+    </MudPaper>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _hasSearched = false;
+    private List<MechanicInfoDto> _allMechanics = new();
+    private MechanicInfoDto? _selectedMechanic;
+    private DateTime? _fromDate;
+    private DateTime? _toDate;
+    private MechanicSearchResultDto? _searchResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMechanicsAsync();
+    }
+
+    private async Task LoadMechanicsAsync()
+    {
+        _loading = true;
+        try
+        {
+            _allMechanics = await Http.GetFromJsonAsync<List<MechanicInfoDto>>("api/mechanics") ?? new();
+        }
+        catch
+        {
+            _allMechanics = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Task<IEnumerable<MechanicInfoDto>> SearchMechanics(string value, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(value))
+            return Task.FromResult<IEnumerable<MechanicInfoDto>>(_allMechanics.Take(20));
+
+        var results = _allMechanics
+            .Where(m =>
+                (m.MechanicName?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (m.MechanicFullName?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (m.Description?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false))
+            .Take(20);
+
+        return Task.FromResult(results);
+    }
+
+    private void SelectMechanic(MechanicInfoDto mechanic)
+    {
+        _selectedMechanic = mechanic;
+    }
+
+    private async Task SearchAsync()
+    {
+        if (_selectedMechanic == null) return;
+
+        _loading = true;
+        _hasSearched = true;
+        _searchResult = null;
+
+        try
+        {
+            var queryParams = new List<string>
+            {
+                $"mechanicName={Uri.EscapeDataString(_selectedMechanic.MechanicName)}"
+            };
+
+            if (_fromDate.HasValue)
+                queryParams.Add($"fromDate={_fromDate.Value:yyyy-MM-dd}");
+            if (_toDate.HasValue)
+                queryParams.Add($"toDate={_toDate.Value:yyyy-MM-dd}");
+
+            var url = $"api/mechanics/search?{string.Join("&", queryParams)}";
+            _searchResult = await Http.GetFromJsonAsync<MechanicSearchResultDto>(url);
+        }
+        catch
+        {
+            _searchResult = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ClearFilters()
+    {
+        _selectedMechanic = null;
+        _fromDate = null;
+        _toDate = null;
+        _searchResult = null;
+        _hasSearched = false;
+    }
+
+    private int GetRank(MechanicPlayerStatDto player)
+    {
+        return _searchResult?.PlayerStats.IndexOf(player) + 1 ?? 0;
+    }
+
+    private double GetPercentage(MechanicPlayerStatDto player)
+    {
+        if (_searchResult == null || _searchResult.TotalCount == 0) return 0;
+        return (double)player.Count / _searchResult.TotalCount * 100;
+    }
+
+    // DTOs
+    public record MechanicInfoDto(
+        string MechanicName,
+        string? MechanicFullName,
+        string? Description,
+        int TotalCount
+    );
+
+    public record MechanicSearchResultDto(
+        string MechanicName,
+        string? MechanicFullName,
+        string? Description,
+        DateTimeOffset? FromDate,
+        DateTimeOffset? ToDate,
+        int TotalCount,
+        List<MechanicPlayerStatDto> PlayerStats
+    );
+
+    public record MechanicPlayerStatDto(
+        string AccountName,
+        int Count
+    );
+}

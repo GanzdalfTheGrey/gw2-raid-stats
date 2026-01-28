@@ -46,6 +46,7 @@ public static class ServiceExtensions
         services.AddScoped<PlayerRecapService>();
         services.AddScoped<BossStatsService>();
         services.AddScoped<LogSearchService>();
+        services.AddScoped<MechanicSearchService>();
 
         return services;
     }
