@@ -20,7 +20,8 @@
       "Bash(tree:*)",
       "Bash(grep:*)",
       "Bash(cat:*)",
-      "Bash(head:*)"
+      "Bash(head:*)",
+      "Bash(dotnet clean:*)"
     ],
     "deny": [],
     "ask": []

@@ -26,6 +26,9 @@ public class MechanicEventEntity
     [Column("event_time_ms"), NotNull]
     public int EventTimeMs { get; set; }
 
+    [Column("icd_ms"), NotNull]
+    public int IcdMs { get; set; }
+
     [Column("created_at"), NotNull]
     public DateTimeOffset CreatedAt { get; set; }
 

@@ -7,10 +7,12 @@ namespace GW2RaidStats.Infrastructure.Services;
 public class MechanicSearchService
 {
     private readonly RaidStatsDb _db;
+    private readonly IncludedPlayerService _includedPlayerService;
 
-    public MechanicSearchService(RaidStatsDb db)
+    public MechanicSearchService(RaidStatsDb db, IncludedPlayerService includedPlayerService)
     {
         _db = db;
+        _includedPlayerService = includedPlayerService;
     }
 
     /// <summary>
@@ -34,6 +36,7 @@ public class MechanicSearchService
 
     /// <summary>
     /// Get player leaderboard for a specific mechanic within a date range
+    /// Only shows guild members (included players)
     /// </summary>
     public async Task<MechanicSearchResult> SearchMechanicAsync(
         string mechanicName,
@@ -60,11 +63,21 @@ public class MechanicSearchService
             );
         }
 
+        // Get included players (guild members) - only they appear in mechanics stats
+        var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
+        var includedList = includedAccounts.ToList();
+
         // Build query with optional date filters
         var query = _db.MechanicEvents
             .InnerJoin(_db.Encounters, (m, e) => m.EncounterId == e.Id, (m, e) => new { m, e })
             .InnerJoin(_db.Players, (x, p) => x.m.PlayerId == p.Id, (x, p) => new { x.m, x.e, p })
             .Where(x => x.m.MechanicName == mechanicName && x.m.PlayerId != null);
+
+        // Only show guild members
+        if (includedList.Count > 0)
+        {
+            query = query.Where(x => includedList.Contains(x.p.AccountName));
+        }
 
         if (fromDate.HasValue)
         {
