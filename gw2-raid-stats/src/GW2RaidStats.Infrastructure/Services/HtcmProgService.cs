@@ -44,30 +44,6 @@ public class HtcmProgService
     }
 
     /// <summary>
-    /// Count occurrences where events more than ICD ms apart are separate occurrences.
-    /// Events within ICD of each other count as 1 occurrence.
-    /// </summary>
-    private static int CountWithIcd(List<int> eventTimes, int icdMs)
-    {
-        if (eventTimes.Count == 0) return 0;
-        if (icdMs <= 0) return eventTimes.Count; // No grouping if ICD is 0
-
-        int count = 1;
-        int lastEventTime = eventTimes[0];
-
-        for (int i = 1; i < eventTimes.Count; i++)
-        {
-            if (eventTimes[i] - lastEventTime > icdMs)
-            {
-                count++;
-                lastEventTime = eventTimes[i];
-            }
-        }
-
-        return count;
-    }
-
-    /// <summary>
     /// Get all available sessions (days) with HTCM attempts
     /// </summary>
     public async Task<List<HtcmSession>> GetAvailableSessionsAsync(CancellationToken ct = default)
@@ -144,8 +120,9 @@ public class HtcmProgService
             .GroupBy(x => new { x.AccountName, x.MechanicName })
             .Select(g =>
             {
-                var events = g.OrderBy(e => e.EventTimeMs).ToList();
-                var count = CountWithIcd(events.Select(e => e.EventTimeMs).ToList(), events.FirstOrDefault()?.IcdMs ?? 0);
+                var times = g.OrderBy(e => e.EventTimeMs).Select(e => e.EventTimeMs).ToList();
+                var icd = MechanicIcdHelper.GetIcd(g.Key.MechanicName);
+                var count = MechanicIcdHelper.CountWithIcd(times, icd);
                 return new { g.Key.AccountName, g.Key.MechanicName, Count = count };
             })
             .ToList();
@@ -460,12 +437,13 @@ public class HtcmProgService
                     .Where(m => m.MechanicName == mechanic && m.SessionDate == session.Date)
                     .ToList();
 
+                var icd = MechanicIcdHelper.GetIcd(mechanic);
                 var count = sessionEvents
                     .GroupBy(e => e.AccountName)
                     .Sum(playerGroup =>
                     {
-                        var events = playerGroup.OrderBy(e => e.EventTimeMs).ToList();
-                        return CountWithIcd(events.Select(e => e.EventTimeMs).ToList(), events.FirstOrDefault()?.IcdMs ?? 0);
+                        var times = playerGroup.OrderBy(e => e.EventTimeMs).Select(e => e.EventTimeMs).ToList();
+                        return MechanicIcdHelper.CountWithIcd(times, icd);
                     });
 
                 return new HtcmMechanicSessionCount(session.Date, count);

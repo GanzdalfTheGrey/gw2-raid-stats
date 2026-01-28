@@ -91,17 +91,50 @@ public class MechanicSearchService
             query = query.Where(x => x.e.EncounterTime < endDate);
         }
 
-        // Get player counts
-        var playerStats = await query
-            .GroupBy(x => new { x.p.Id, x.p.AccountName })
-            .Select(g => new MechanicPlayerStat(
-                g.Key.AccountName,
-                g.Count()
-            ))
-            .OrderByDescending(p => p.Count)
-            .ToListAsync(ct);
+        // Check if this mechanic has a known ICD for grouping
+        var icd = MechanicIcdHelper.GetIcd(mechanicName);
 
-        var totalCount = playerStats.Sum(p => p.Count);
+        List<MechanicPlayerStat> playerStats;
+        int totalCount;
+
+        if (icd > 0)
+        {
+            // Fetch individual events and apply ICD grouping in memory
+            var events = await query
+                .Select(x => new { x.p.Id, x.p.AccountName, x.m.EventTimeMs })
+                .ToListAsync(ct);
+
+            // Group by player and apply ICD counting
+            var playerCounts = events
+                .GroupBy(e => new { e.Id, e.AccountName })
+                .Select(g =>
+                {
+                    var times = g.Select(e => e.EventTimeMs).ToList();
+                    return new MechanicPlayerStat(
+                        g.Key.AccountName,
+                        MechanicIcdHelper.CountWithIcd(times, icd)
+                    );
+                })
+                .OrderByDescending(p => p.Count)
+                .ToList();
+
+            playerStats = playerCounts;
+            totalCount = playerStats.Sum(p => p.Count);
+        }
+        else
+        {
+            // No ICD - use simple count at database level
+            playerStats = await query
+                .GroupBy(x => new { x.p.Id, x.p.AccountName })
+                .Select(g => new MechanicPlayerStat(
+                    g.Key.AccountName,
+                    g.Count()
+                ))
+                .OrderByDescending(p => p.Count)
+                .ToListAsync(ct);
+
+            totalCount = playerStats.Sum(p => p.Count);
+        }
 
         return new MechanicSearchResult(
             mechanicInfo.MechanicName,

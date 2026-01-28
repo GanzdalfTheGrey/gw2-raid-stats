@@ -119,7 +119,7 @@ else
                     <!-- Pulls Table -->
                     <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Pulls</MudText>
                     <MudTable Items="@_sessionDetail.Pulls" Dense="true" Hover="true" Striped="true"
-                              OnRowClick="@((TableRowClickEventArgs<HtcmPullDto> args) => TogglePullExpansion(args.Item.PullNumber))">
+                              OnRowClick="@((TableRowClickEventArgs<HtcmPullDto> args) => { if (args.Item != null) TogglePullExpansion(args.Item.PullNumber); })">
                         <HeaderContent>
                             <MudTh Style="width: 30px;"></MudTh>
                             <MudTh Style="width: 50px;">#</MudTh>

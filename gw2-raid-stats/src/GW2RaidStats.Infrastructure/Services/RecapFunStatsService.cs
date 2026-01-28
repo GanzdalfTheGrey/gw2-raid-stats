@@ -190,23 +190,55 @@ public class RecapFunStatsService
             .Select(p => p.Id)
             .ToListAsync(ct);
 
-        // Get mechanic counts per player for the year
-        var leaderboard = await _db.MechanicEvents
+        // Check if this mechanic has a known ICD for grouping
+        var icd = MechanicIcdHelper.GetIcd(mechanicName);
+
+        var query = _db.MechanicEvents
             .InnerJoin(_db.Encounters, (m, e) => m.EncounterId == e.Id, (m, e) => new { m, e })
             .InnerJoin(_db.Players, (x, p) => x.m.PlayerId == p.Id, (x, p) => new { x.m, x.e, p })
             .Where(x => x.m.MechanicName == mechanicName
                 && x.e.EncounterTime >= yearStart
                 && x.e.EncounterTime < yearEnd
                 && x.m.PlayerId != null
-                && playerIds.Contains(x.m.PlayerId.Value))
-            .GroupBy(x => new { x.p.Id, x.p.AccountName })
-            .Select(g => new MechanicLeaderboardEntry(
-                g.Key.AccountName,
-                g.Count()
-            ))
-            .OrderByDescending(e => e.Count)
-            .Take(limit)
-            .ToListAsync(ct);
+                && playerIds.Contains(x.m.PlayerId.Value));
+
+        List<MechanicLeaderboardEntry> leaderboard;
+
+        if (icd > 0)
+        {
+            // Fetch individual events and apply ICD grouping in memory
+            var events = await query
+                .Select(x => new { x.p.Id, x.p.AccountName, x.m.EventTimeMs })
+                .ToListAsync(ct);
+
+            // Group by player and apply ICD counting
+            leaderboard = events
+                .GroupBy(e => new { e.Id, e.AccountName })
+                .Select(g =>
+                {
+                    var times = g.Select(e => e.EventTimeMs).ToList();
+                    return new MechanicLeaderboardEntry(
+                        g.Key.AccountName,
+                        MechanicIcdHelper.CountWithIcd(times, icd)
+                    );
+                })
+                .OrderByDescending(e => e.Count)
+                .Take(limit)
+                .ToList();
+        }
+        else
+        {
+            // No ICD - use simple count at database level
+            leaderboard = await query
+                .GroupBy(x => new { x.p.Id, x.p.AccountName })
+                .Select(g => new MechanicLeaderboardEntry(
+                    g.Key.AccountName,
+                    g.Count()
+                ))
+                .OrderByDescending(e => e.Count)
+                .Take(limit)
+                .ToListAsync(ct);
+        }
 
         return leaderboard;
     }

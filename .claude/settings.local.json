@@ -21,7 +21,9 @@
       "Bash(grep:*)",
       "Bash(cat:*)",
       "Bash(head:*)",
-      "Bash(dotnet clean:*)"
+      "Bash(dotnet clean:*)",
+      "WebSearch",
+      "WebFetch(domain:baaron4.github.io)"
     ],
     "deny": [],
     "ask": []
