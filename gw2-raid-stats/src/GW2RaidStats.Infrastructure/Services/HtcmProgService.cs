@@ -27,7 +27,7 @@ public class HtcmProgService
         "Spread.B",        // Spread Bait
         "Spread.O",        // Spread Overlap
         "Void.D",          // Void Debuff
-        "Mord.SW.H",       // Mordremoth Shockwave
+        "ShckWv.H",        // Mordremoth Shockwave
         "Mord.Poi.H",      // Mordremoth Poison
         "Giant.Puke.H",    // Giant Puke
         "Giant.Scream.H",  // Giant Scream
