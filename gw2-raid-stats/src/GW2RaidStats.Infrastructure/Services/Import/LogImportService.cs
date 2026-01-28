@@ -227,7 +227,6 @@ public class LogImportService
                         MechanicFullName = mechanic.FullName,
                         Description = mechanic.Description,
                         EventTimeMs = data.Time,
-                        IcdMs = mechanic.Icd,
                         CreatedAt = DateTimeOffset.UtcNow
                     };
 

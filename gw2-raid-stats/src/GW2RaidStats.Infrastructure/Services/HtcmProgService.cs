@@ -112,7 +112,7 @@ public class HtcmProgService
             .Where(x => encounterIds.Contains(x.m.EncounterId) &&
                         TrackedMechanics.Contains(x.m.MechanicName))
             .OrderBy(x => x.m.EventTimeMs)
-            .Select(x => new { x.p.AccountName, x.m.MechanicName, x.m.EventTimeMs, x.m.IcdMs })
+            .Select(x => new { x.p.AccountName, x.m.MechanicName, x.m.EventTimeMs })
             .ToListAsync(ct);
 
         // Group mechanics using ICD (events within ICD ms count as 1 occurrence)
@@ -424,7 +424,7 @@ public class HtcmProgService
             .Where(x => allEncounterIds.Contains(x.m.EncounterId) &&
                         TrackedMechanics.Contains(x.m.MechanicName))
             .OrderBy(x => x.m.EventTimeMs)
-            .Select(x => new { x.m.MechanicName, x.p.AccountName, x.m.EventTimeMs, x.m.IcdMs, SessionDate = x.e.EncounterTime.Date })
+            .Select(x => new { x.m.MechanicName, x.p.AccountName, x.m.EventTimeMs, SessionDate = x.e.EncounterTime.Date })
             .ToListAsync(ct);
 
         // Build trends with ICD grouping
