@@ -466,6 +466,29 @@ else
 
             case 12:
                 <div class="slide" @key="_currentSlide">
+                    <MudText Typo="Typo.h5" Color="Color.Secondary">Total damage taken</MudText>
+                    <div class="big-number-red">@FormatDamage(_recap.TotalDamageTaken)</div>
+                    <div class="stat-label">damage received from bosses</div>
+                    @if (_recap.TopDamageTakenPlayers != null && _recap.TopDamageTakenPlayers.Count > 0)
+                    {
+                        <MudText Typo="Typo.subtitle1" Class="mt-4" Style="animation: fadeInUp 0.6s ease-out 0.5s both;">
+                            Top Damage Takers
+                        </MudText>
+                        <div class="class-list mt-2">
+                            @foreach (var player in _recap.TopDamageTakenPlayers)
+                            {
+                                <div class="class-item">
+                                    <span>@player.AccountName</span>
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Error">@FormatDamage(player.DamageTaken)</MudChip>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                break;
+
+            case 13:
+                <div class="slide" @key="_currentSlide">
                     <MudText Typo="Typo.h5" Color="Color.Secondary">Clutch Saves</MudText>
                     <div class="big-number" style="background: linear-gradient(135deg, #10b981, #059669); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
                         @_recap.TotalResurrects.ToString("N0")
@@ -483,7 +506,7 @@ else
                 </div>
                 break;
 
-            case 13:
+            case 14:
                 <div class="slide" @key="_currentSlide">
                     <MudText Typo="Typo.h5" Color="Color.Secondary">Most Diverse Player</MudText>
                     @if (_recap.MostDiversePlayer != null)
@@ -509,10 +532,10 @@ else
                 break;
 
             default:
-                @* Fun stats achievements (slides 14 through 14 + N-1) *@
-                @if (_currentSlide >= 14 && _currentSlide < TotalSlides)
+                @* Fun stats achievements (slides 15 through 15 + N-1) *@
+                @if (_currentSlide >= 15 && _currentSlide < TotalSlides)
                 {
-                    var funStatIndex = _currentSlide - 14;
+                    var funStatIndex = _currentSlide - 15;
                     if (_recap.FunStatsAchievements != null && funStatIndex < _recap.FunStatsAchievements.Count)
                     {
                         var achievement = _recap.FunStatsAchievements[funStatIndex];
@@ -626,9 +649,9 @@ else
     private System.Timers.Timer? _autoAdvanceTimer;
     private DotNetObjectReference<Recap>? _dotNetRef;
 
-    // Base slides: 0=Title, 1=Encounters, 2=Hours, 3=MostKilled, 4=Nemesis, 5=MostAttempted, 6=FavClass, 7=FavSpec, 8=TopDPS, 9=Deaths, 10=Damage, 11=Breakbar, 12=ClutchSaves, 13=MostDiverse
-    // Then fun stats slides (14 through 14+N-1), then summary slide (last)
-    private const int BaseSlideCount = 14;
+    // Base slides: 0=Title, 1=Encounters, 2=Hours, 3=MostKilled, 4=Nemesis, 5=MostAttempted, 6=FavClass, 7=FavSpec, 8=TopDPS, 9=Deaths, 10=Damage, 11=Breakbar, 12=DamageTaken, 13=ClutchSaves, 14=MostDiverse
+    // Then fun stats slides (15 through 15+N-1), then summary slide (last)
+    private const int BaseSlideCount = 15;
     private int FunStatsCount => _recap?.FunStatsAchievements?.Count ?? 0;
     private int TotalSlides => BaseSlideCount + FunStatsCount; // last slide index
 
@@ -850,6 +873,8 @@ else
         PlayerDeathStatDto? MostDeathsPlayer = null,
         List<PlayerDamageStatDto>? TopDamagePlayers = null,
         List<PlayerBreakbarStatDto>? TopBreakbarPlayers = null,
+        long TotalDamageTaken = 0,
+        List<PlayerDamageTakenStatDto>? TopDamageTakenPlayers = null,
         int TotalResurrects = 0,
         PlayerResurrectStatDto? ClutchSavesPlayer = null,
         PlayerDiversityStatDto? MostDiversePlayer = null,
@@ -870,6 +895,7 @@ else
     public record PlayerDeathStatDto(string AccountName, int Deaths);
     public record PlayerDamageStatDto(string AccountName, long Damage);
     public record PlayerBreakbarStatDto(string AccountName, decimal BreakbarDamage);
+    public record PlayerDamageTakenStatDto(string AccountName, long DamageTaken);
     public record PlayerResurrectStatDto(string AccountName, int Resurrects);
     public record PlayerDiversityStatDto(string AccountName, int UniqueSpecs, List<string> Specs);
     public record EncounterSnapshotDto(string BossName, bool IsCM, bool Success, DateTimeOffset EncounterTime);

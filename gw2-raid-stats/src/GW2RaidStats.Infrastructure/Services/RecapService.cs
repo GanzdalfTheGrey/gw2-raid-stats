@@ -133,6 +133,7 @@ public class RecapService
                 x.pe.Damage,
                 x.pe.BreakbarDamage,
                 x.pe.Resurrects,
+                x.pe.DamageTaken,
                 x.e.BossName,
                 x.e.TriggerId,
                 x.e.IsCM,
@@ -247,6 +248,17 @@ public class RecapService
             .Take(5)
             .ToList();
 
+        // Total damage taken
+        var totalDamageTaken = playerEncounters.Sum(pe => pe.DamageTaken);
+
+        // Top 5 players by damage taken
+        var topDamageTakenPlayers = playerEncounters
+            .GroupBy(pe => pe.AccountName)
+            .Select(g => new PlayerDamageTakenStat(g.Key, g.Sum(pe => pe.DamageTaken)))
+            .OrderByDescending(p => p.DamageTaken)
+            .Take(5)
+            .ToList();
+
         // Clutch saves (most resurrects)
         var totalResurrects = playerEncounters.Sum(pe => pe.Resurrects);
         var clutchSavesPlayer = playerEncounters
@@ -308,6 +320,8 @@ public class RecapService
             MostDeathsPlayer: mostDeathsPlayer,
             TopDamagePlayers: topDamagePlayers,
             TopBreakbarPlayers: topBreakbarPlayers,
+            TotalDamageTaken: totalDamageTaken,
+            TopDamageTakenPlayers: topDamageTakenPlayers,
             TotalResurrects: totalResurrects,
             ClutchSavesPlayer: clutchSavesPlayer,
             MostDiversePlayer: mostDiversePlayer,
@@ -456,6 +470,8 @@ public record YearlyRecap(
     PlayerDeathStat? MostDeathsPlayer = null,
     List<PlayerDamageStat>? TopDamagePlayers = null,
     List<PlayerBreakbarStat>? TopBreakbarPlayers = null,
+    long TotalDamageTaken = 0,
+    List<PlayerDamageTakenStat>? TopDamageTakenPlayers = null,
     int TotalResurrects = 0,
     PlayerResurrectStat? ClutchSavesPlayer = null,
     PlayerDiversityStat? MostDiversePlayer = null,
@@ -485,6 +501,7 @@ public record FunStatAchievement(
 );
 public record PlayerDamageStat(string AccountName, long Damage);
 public record PlayerBreakbarStat(string AccountName, decimal BreakbarDamage);
+public record PlayerDamageTakenStat(string AccountName, long DamageTaken);
 public record BossAttemptStat(string BossName, bool IsCM, int Attempts, int Clears);
 public record PlayerResurrectStat(string AccountName, int Resurrects);
 public record PlayerDiversityStat(string AccountName, int UniqueSpecs, List<string> Specs);
