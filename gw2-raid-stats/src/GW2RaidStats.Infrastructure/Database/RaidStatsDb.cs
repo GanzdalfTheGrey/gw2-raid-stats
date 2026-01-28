@@ -16,4 +16,5 @@ public class RaidStatsDb : DataConnection
     public ITable<IncludedPlayerEntity> IncludedPlayers => this.GetTable<IncludedPlayerEntity>();
     public ITable<SettingsEntity> Settings => this.GetTable<SettingsEntity>();
     public ITable<RecapFunStatEntity> RecapFunStats => this.GetTable<RecapFunStatEntity>();
+    public ITable<EncounterPhaseStatEntity> EncounterPhaseStats => this.GetTable<EncounterPhaseStatEntity>();
 }

@@ -35,17 +35,31 @@ public class LogImportService
             // Compute hash for deduplication
             var hash = ComputeHash(jsonBytes);
 
+            // Parse JSON first (needed for both new and duplicate processing)
+            var log = JsonSerializer.Deserialize<EliteInsightsLog>(jsonBytes, JsonOptions);
+
             // Check for duplicate
             var existingEncounter = await _db.Encounters
                 .FirstOrDefaultAsync(e => e.JsonHash == hash, ct);
 
             if (existingEncounter != null)
             {
+                // Update existing encounter with progression data if missing
+                if (log != null && existingEncounter.FurthestPhase == null)
+                {
+                    var (furthestPhase, furthestPhaseIndex, bossHpRemaining) = ExtractProgressionData(log);
+                    if (furthestPhase != null || bossHpRemaining.HasValue)
+                    {
+                        await _db.Encounters
+                            .Where(e => e.Id == existingEncounter.Id)
+                            .Set(e => e.FurthestPhase, furthestPhase)
+                            .Set(e => e.FurthestPhaseIndex, furthestPhaseIndex)
+                            .Set(e => e.BossHealthPercentRemaining, bossHpRemaining)
+                            .UpdateAsync(ct);
+                    }
+                }
                 return new ImportResult(true, existingEncounter.Id, fileName, existingEncounter.BossName, null, WasDuplicate: true);
             }
-
-            // Parse JSON
-            var log = JsonSerializer.Deserialize<EliteInsightsLog>(jsonBytes, JsonOptions);
             if (log == null)
             {
                 return new ImportResult(false, null, fileName, null, "Failed to parse JSON", WasDuplicate: false);
@@ -91,6 +105,9 @@ public class LogImportService
         // Get log URL if available
         var logUrl = log.UploadLinks?.FirstOrDefault();
 
+        // Extract progression data (phases and boss HP)
+        var (furthestPhase, furthestPhaseIndex, bossHpRemaining) = ExtractProgressionData(log);
+
         // Create encounter
         var encounter = new EncounterEntity
         {
@@ -107,6 +124,9 @@ public class LogImportService
             LogUrl = logUrl,
             JsonHash = hash,
             IconUrl = log.FightIcon,
+            FurthestPhase = furthestPhase,
+            FurthestPhaseIndex = furthestPhaseIndex,
+            BossHealthPercentRemaining = bossHpRemaining,
             CreatedAt = DateTimeOffset.UtcNow
         };
 
@@ -212,6 +232,41 @@ public class LogImportService
 
                     await _db.InsertAsync(mechanicEvent, token: ct);
                 }
+            }
+        }
+
+        // Process phase stats (squad DPS per phase)
+        if (log.Phases != null && log.Phases.Count > 0)
+        {
+            for (int phaseIndex = 0; phaseIndex < log.Phases.Count; phaseIndex++)
+            {
+                var phase = log.Phases[phaseIndex];
+
+                // Skip phases with no duration
+                if (phase.End <= phase.Start) continue;
+
+                // Calculate squad DPS for this phase by summing all players' DPS
+                var squadDps = 0;
+                foreach (var player in log.Players)
+                {
+                    if (player.DpsAll != null && phaseIndex < player.DpsAll.Count)
+                    {
+                        squadDps += player.DpsAll[phaseIndex].Dps;
+                    }
+                }
+
+                var phaseStat = new EncounterPhaseStatEntity
+                {
+                    Id = Guid.NewGuid(),
+                    EncounterId = encounter.Id,
+                    PhaseIndex = phaseIndex,
+                    PhaseName = phase.Name,
+                    SquadDps = squadDps,
+                    DurationMs = phase.End - phase.Start,
+                    CreatedAt = DateTimeOffset.UtcNow
+                };
+
+                await _db.InsertAsync(phaseStat, token: ct);
             }
         }
 
@@ -325,6 +380,54 @@ public class LogImportService
             // If parsing fails for any reason, return zeros
             return (0, 0, 0);
         }
+    }
+
+    private static (string? furthestPhase, int? furthestPhaseIndex, decimal? bossHpRemaining) ExtractProgressionData(EliteInsightsLog log)
+    {
+        string? furthestPhase = null;
+        int? furthestPhaseIndex = null;
+        decimal? bossHpRemaining = null;
+
+        // Extract furthest phase from phases array
+        if (log.Phases != null && log.Phases.Count > 0)
+        {
+            // Find the last phase that was actually reached (has duration > 0 or end > start)
+            for (int i = log.Phases.Count - 1; i >= 0; i--)
+            {
+                var phase = log.Phases[i];
+                // A phase was reached if it has some duration (end > start)
+                if (phase.End > phase.Start)
+                {
+                    furthestPhase = phase.Name;
+                    furthestPhaseIndex = i;
+                    break;
+                }
+            }
+
+            // If no phase had duration (shouldn't happen), use the first phase
+            if (furthestPhase == null && log.Phases.Count > 0)
+            {
+                furthestPhase = log.Phases[0].Name;
+                furthestPhaseIndex = 0;
+            }
+        }
+
+        // Calculate overall clear percentage by summing HP burned across all targets
+        if (log.Targets != null && log.Targets.Count > 0)
+        {
+            // Sum up healthPercentBurned for all targets
+            var totalHpBurned = log.Targets.Sum(t => t.HealthPercentBurned);
+            var totalPossible = log.Targets.Count * 100m;
+
+            // Clear percentage = total burned / total possible
+            var clearPercentage = totalPossible > 0 ? (totalHpBurned / totalPossible) * 100 : 0;
+
+            // Remaining = 100% - clear%
+            bossHpRemaining = 100 - clearPercentage;
+            if (bossHpRemaining < 0) bossHpRemaining = 0;
+        }
+
+        return (furthestPhase, furthestPhaseIndex, bossHpRemaining);
     }
 
     private static DateTimeOffset ParseEncounterTime(EliteInsightsLog log)

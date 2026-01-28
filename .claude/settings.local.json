@@ -19,7 +19,8 @@
       "Bash(python3:*)",
       "Bash(tree:*)",
       "Bash(grep:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(head:*)"
     ],
     "deny": [],
     "ask": []

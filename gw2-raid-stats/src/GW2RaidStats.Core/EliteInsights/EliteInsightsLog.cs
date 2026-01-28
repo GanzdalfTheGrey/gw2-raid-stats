@@ -61,6 +61,12 @@ public class EliteInsightsLog
 
     [JsonPropertyName("uploadLinks")]
     public List<string>? UploadLinks { get; set; }
+
+    [JsonPropertyName("phases")]
+    public List<EIPhase>? Phases { get; set; }
+
+    [JsonPropertyName("targets")]
+    public List<EITarget>? Targets { get; set; }
 }
 
 public class EIPlayer
@@ -259,6 +265,41 @@ public class EIBuffData
 
     [JsonPropertyName("uptime")]
     public decimal Uptime { get; set; }
+}
+
+public class EIPhase
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("start")]
+    public int Start { get; set; }
+
+    [JsonPropertyName("end")]
+    public int End { get; set; }
+
+    [JsonPropertyName("targets")]
+    public List<int>? Targets { get; set; }
+
+    public int Duration => End - Start;
+}
+
+public class EITarget
+{
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("finalHealth")]
+    public long FinalHealth { get; set; }
+
+    [JsonPropertyName("healthPercentBurned")]
+    public decimal HealthPercentBurned { get; set; }
+
+    [JsonPropertyName("totalHealth")]
+    public long TotalHealth { get; set; }
 }
 
 /// <summary>

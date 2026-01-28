@@ -47,6 +47,7 @@ public static class ServiceExtensions
         services.AddScoped<BossStatsService>();
         services.AddScoped<LogSearchService>();
         services.AddScoped<MechanicSearchService>();
+        services.AddScoped<HtcmProgService>();
 
         return services;
     }

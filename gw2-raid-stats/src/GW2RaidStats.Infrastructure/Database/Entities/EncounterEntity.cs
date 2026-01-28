@@ -50,6 +50,15 @@ public class EncounterEntity
     [Column("original_filename")]
     public string? OriginalFilename { get; set; }
 
+    [Column("furthest_phase")]
+    public string? FurthestPhase { get; set; }
+
+    [Column("furthest_phase_index")]
+    public int? FurthestPhaseIndex { get; set; }
+
+    [Column("boss_health_percent_remaining")]
+    public decimal? BossHealthPercentRemaining { get; set; }
+
     [Column("created_at"), NotNull]
     public DateTimeOffset CreatedAt { get; set; }
 }
