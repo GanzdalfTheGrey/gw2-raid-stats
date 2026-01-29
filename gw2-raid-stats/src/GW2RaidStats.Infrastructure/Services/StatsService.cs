@@ -164,9 +164,11 @@ public class StatsService
         if (latestEncounter == null) return null;
 
         // Get all encounters from that same calendar date (preserving timezone)
-        // Use DateTime.Date to get the local date in the encounter's timezone
-        var sessionDate = latestEncounter.EncounterTime.DateTime.Date;
+        // Explicitly calculate local time using UTC + offset to avoid server timezone issues
         var encounterOffset = latestEncounter.EncounterTime.Offset;
+        var localDateTime = latestEncounter.EncounterTime.UtcDateTime + encounterOffset;
+        // SpecifyKind is needed because UtcDateTime returns Kind=Utc, which can't be used with non-zero offsets
+        var sessionDate = DateTime.SpecifyKind(localDateTime.Date, DateTimeKind.Unspecified);
         var sessionStart = new DateTimeOffset(sessionDate, encounterOffset);
         var sessionEnd = sessionStart.AddDays(1);
 
@@ -197,8 +199,9 @@ public class StatsService
         var totalElapsedMs = (lastEncounter.EncounterTime - firstEncounter.EncounterTime).TotalMilliseconds + lastEncounter.DurationMs;
         var downtimeMs = totalElapsedMs - totalTimeMs;
 
+        // Send the first encounter's time so client can display in viewer's local timezone
         return new PreviousSession(
-            SessionDate: sessionDate,
+            SessionTime: firstEncounter.EncounterTime,
             Encounters: encounters,
             TotalAttempts: totalAttempts,
             TotalKills: totalKills,
@@ -223,8 +226,11 @@ public class StatsService
         }
 
         // Get all encounters from that same calendar date (preserving timezone)
-        var sessionDate = latestEncounter.EncounterTime.Date;
+        // Explicitly calculate local time using UTC + offset to avoid server timezone issues
         var encounterOffset = latestEncounter.EncounterTime.Offset;
+        var localDateTime = latestEncounter.EncounterTime.UtcDateTime + encounterOffset;
+        // SpecifyKind is needed because UtcDateTime returns Kind=Utc, which can't be used with non-zero offsets
+        var sessionDate = DateTime.SpecifyKind(localDateTime.Date, DateTimeKind.Unspecified);
         var sessionStart = new DateTimeOffset(sessionDate, encounterOffset);
         var sessionEnd = sessionStart.AddDays(1);
 
@@ -428,7 +434,7 @@ public record TopPerformer(
 );
 
 public record PreviousSession(
-    DateTime SessionDate,
+    DateTimeOffset SessionTime,
     List<SessionEncounter> Encounters,
     int TotalAttempts,
     int TotalKills,

@@ -58,7 +58,7 @@
                     @if (_previousSession != null)
                     {
                         <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">
-                            @_previousSession.SessionDate.ToString("dddd, MMMM d, yyyy")
+                            @_previousSession.SessionTime.LocalDateTime.ToString("dddd, MMMM d, yyyy")
                         </MudText>
                     }
                 </MudText>
@@ -309,7 +309,7 @@
     );
 
     public record PreviousSession(
-        DateTime SessionDate,
+        DateTimeOffset SessionTime,
         List<SessionEncounter> Encounters,
         int TotalAttempts,
         int TotalKills,

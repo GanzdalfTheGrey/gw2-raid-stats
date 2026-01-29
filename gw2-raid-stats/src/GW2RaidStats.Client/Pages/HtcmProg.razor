@@ -18,25 +18,25 @@ else
     <!-- Overall Stats Header -->
     <MudPaper Class="pa-4 mb-4" Elevation="2">
         <MudGrid>
-            <MudItem xs="12" sm="6" md="3">
+            <MudItem xs="6" sm="6" lg="3">
                 <MudStack Spacing="0" AlignItems="AlignItems.Center">
                     <MudText Typo="Typo.h3" Color="Color.Primary">@_progressionData.TotalPulls</MudText>
                     <MudText Typo="Typo.body2" Color="Color.Secondary">Total Attempts</MudText>
                 </MudStack>
             </MudItem>
-            <MudItem xs="12" sm="6" md="3">
+            <MudItem xs="6" sm="6" lg="3">
                 <MudStack Spacing="0" AlignItems="AlignItems.Center">
                     <MudText Typo="Typo.h3" Color="Color.Success">@(_progressionData.BestPhase ?? "N/A")</MudText>
                     <MudText Typo="Typo.body2" Color="Color.Secondary">Best Phase</MudText>
                 </MudStack>
             </MudItem>
-            <MudItem xs="12" sm="6" md="3">
+            <MudItem xs="6" sm="6" lg="3">
                 <MudStack Spacing="0" AlignItems="AlignItems.Center">
                     <MudText Typo="Typo.h3" Color="Color.Warning">@_progressionData.BestBossHpRemaining.ToString("F1")%</MudText>
                     <MudText Typo="Typo.body2" Color="Color.Secondary">Best HP Remaining</MudText>
                 </MudStack>
             </MudItem>
-            <MudItem xs="12" sm="6" md="3">
+            <MudItem xs="6" sm="6" lg="3">
                 <MudStack Spacing="0" AlignItems="AlignItems.Center">
                     @if (_progressionData.FirstKill.HasValue)
                     {
@@ -55,7 +55,7 @@ else
 
     <!-- Session Selector and Stats -->
     <MudGrid>
-        <MudItem xs="12" md="8">
+        <MudItem xs="12" lg="8">
             <MudPaper Class="pa-4 mb-4" Elevation="2">
                 <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
                     <MudText Typo="Typo.h6">Session Details</MudText>
@@ -78,37 +78,37 @@ else
                 @if (_sessionDetail != null)
                 {
                     <MudGrid>
-                        <MudItem xs="6" sm="4" md="2">
+                        <MudItem xs="4" sm="4" lg="2">
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.h5">@_sessionDetail.PullCount</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Pulls</MudText>
                             </MudStack>
                         </MudItem>
-                        <MudItem xs="6" sm="4" md="2">
+                        <MudItem xs="4" sm="4" lg="2">
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.h5">@_sessionDetail.BestPhase</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Best Phase</MudText>
                             </MudStack>
                         </MudItem>
-                        <MudItem xs="6" sm="4" md="2">
+                        <MudItem xs="4" sm="4" lg="2">
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.h5">@_sessionDetail.BestBossHpRemaining.ToString("F1")%</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Best HP Left</MudText>
                             </MudStack>
                         </MudItem>
-                        <MudItem xs="6" sm="4" md="2">
+                        <MudItem xs="4" sm="4" lg="2">
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.h5">@FormatDuration(_sessionDetail.TotalTime)</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Total Time</MudText>
                             </MudStack>
                         </MudItem>
-                        <MudItem xs="6" sm="4" md="2">
+                        <MudItem xs="4" sm="4" lg="2">
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.h5">@((_sessionDetail.AverageSquadDps / 1000.0).ToString("F1"))k</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Avg Squad DPS</MudText>
                             </MudStack>
                         </MudItem>
-                        <MudItem xs="6" sm="4" md="2">
+                        <MudItem xs="4" sm="4" lg="2">
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.h5">@_sessionDetail.TotalDeaths</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Deaths</MudText>
@@ -118,6 +118,7 @@ else
 
                     <!-- Pulls Table -->
                     <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Pulls</MudText>
+                    <div style="overflow-x: auto;">
                     <MudTable Items="@_sessionDetail.Pulls" Dense="true" Hover="true" Striped="true"
                               OnRowClick="@((TableRowClickEventArgs<HtcmPullDto> args) => { if (args.Item != null) TogglePullExpansion(args.Item.PullNumber); })">
                         <HeaderContent>
@@ -225,6 +226,7 @@ else
                             }
                         </ChildRowContent>
                     </MudTable>
+                    </div>
 
                     <!-- Player Mechanics -->
                     @if (_sessionDetail.PlayerMechanics.Count > 0)
@@ -268,7 +270,7 @@ else
         </MudItem>
 
         <!-- Phase DPS Chart -->
-        <MudItem xs="12" md="4">
+        <MudItem xs="12" lg="4">
             <MudPaper Class="pa-4 mb-4" Elevation="2">
                 <MudText Typo="Typo.h6" Class="mb-3">Phase DPS (Session Avg)</MudText>
                 @if (_sessionDetail != null && _phaseDpsChartSeries.Count > 0)
