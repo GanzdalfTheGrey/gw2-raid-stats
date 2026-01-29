@@ -78,37 +78,37 @@ else
                 @if (_sessionDetail != null)
                 {
                     <MudGrid>
-                        <MudItem xs="4" sm="4" lg="2">
+                        <MudItem xs="6" sm="4" lg="4" xl="2">
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.h5">@_sessionDetail.PullCount</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Pulls</MudText>
                             </MudStack>
                         </MudItem>
-                        <MudItem xs="4" sm="4" lg="2">
+                        <MudItem xs="6" sm="4" lg="4" xl="2">
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.h5">@_sessionDetail.BestPhase</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Best Phase</MudText>
                             </MudStack>
                         </MudItem>
-                        <MudItem xs="4" sm="4" lg="2">
+                        <MudItem xs="6" sm="4" lg="4" xl="2">
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.h5">@_sessionDetail.BestBossHpRemaining.ToString("F1")%</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Best HP Left</MudText>
                             </MudStack>
                         </MudItem>
-                        <MudItem xs="4" sm="4" lg="2">
+                        <MudItem xs="6" sm="4" lg="4" xl="2">
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.h5">@FormatDuration(_sessionDetail.TotalTime)</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Total Time</MudText>
                             </MudStack>
                         </MudItem>
-                        <MudItem xs="4" sm="4" lg="2">
+                        <MudItem xs="6" sm="4" lg="4" xl="2">
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.h5">@((_sessionDetail.AverageSquadDps / 1000.0).ToString("F1"))k</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Avg Squad DPS</MudText>
                             </MudStack>
                         </MudItem>
-                        <MudItem xs="4" sm="4" lg="2">
+                        <MudItem xs="6" sm="4" lg="4" xl="2">
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.h5">@_sessionDetail.TotalDeaths</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Deaths</MudText>
