@@ -164,7 +164,8 @@ public class StatsService
         if (latestEncounter == null) return null;
 
         // Get all encounters from that same calendar date (preserving timezone)
-        var sessionDate = latestEncounter.EncounterTime.Date;
+        // Use DateTime.Date to get the local date in the encounter's timezone
+        var sessionDate = latestEncounter.EncounterTime.DateTime.Date;
         var encounterOffset = latestEncounter.EncounterTime.Offset;
         var sessionStart = new DateTimeOffset(sessionDate, encounterOffset);
         var sessionEnd = sessionStart.AddDays(1);
@@ -190,12 +191,19 @@ public class StatsService
         var totalKills = sessionEncounters.Count(e => e.Success);
         var totalTimeMs = sessionEncounters.Sum(e => e.DurationMs);
 
+        // Calculate downtime: elapsed time from first to last encounter minus time spent on bosses
+        var firstEncounter = sessionEncounters.First();
+        var lastEncounter = sessionEncounters.Last();
+        var totalElapsedMs = (lastEncounter.EncounterTime - firstEncounter.EncounterTime).TotalMilliseconds + lastEncounter.DurationMs;
+        var downtimeMs = totalElapsedMs - totalTimeMs;
+
         return new PreviousSession(
             SessionDate: sessionDate,
             Encounters: encounters,
             TotalAttempts: totalAttempts,
             TotalKills: totalKills,
-            TotalTimeSeconds: totalTimeMs / 1000.0
+            TotalTimeSeconds: totalTimeMs / 1000.0,
+            DowntimeSeconds: downtimeMs / 1000.0
         );
     }
 
@@ -424,7 +432,8 @@ public record PreviousSession(
     List<SessionEncounter> Encounters,
     int TotalAttempts,
     int TotalKills,
-    double TotalTimeSeconds
+    double TotalTimeSeconds,
+    double DowntimeSeconds
 );
 
 public record SessionEncounter(

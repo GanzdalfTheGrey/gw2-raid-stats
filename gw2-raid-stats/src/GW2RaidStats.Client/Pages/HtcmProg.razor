@@ -178,14 +178,12 @@ else
                                 }
                             </MudTd>
                             <MudTd>
-                                @if (!string.IsNullOrEmpty(context.LogUrl))
-                                {
-                                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
-                                                   Size="Size.Small"
-                                                   Href="@context.LogUrl"
-                                                   Target="_blank"
-                                                   OnClick:stopPropagation="true" />
-                                }
+                                <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                               Size="Size.Small"
+                                               Href="@($"/api/reports/{context.EncounterId}/view")"
+                                               Target="_blank"
+                                               Title="View HTML Report"
+                                               OnClick:stopPropagation="true" />
                             </MudTd>
                         </RowTemplate>
                         <ChildRowContent>
@@ -786,6 +784,7 @@ else
     );
 
     public record HtcmPullDto(
+        Guid EncounterId,
         int PullNumber,
         DateTimeOffset Time,
         TimeSpan Duration,

@@ -171,6 +171,7 @@ public class HtcmProgService
             }
 
             pulls.Add(new HtcmPull(
+                encounter.Id,
                 i + 1,
                 encounter.EncounterTime,
                 TimeSpan.FromMilliseconds(encounter.DurationMs),
@@ -483,6 +484,7 @@ public record HtcmSessionDetail(
 );
 
 public record HtcmPull(
+    Guid EncounterId,
     int PullNumber,
     DateTimeOffset Time,
     TimeSpan Duration,
