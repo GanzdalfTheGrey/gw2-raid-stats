@@ -21,6 +21,7 @@ tools/
 # Environment files
 .env
 *.local
+appsettings.Development.json
 
 # Logs
 *.log

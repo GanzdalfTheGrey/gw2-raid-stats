@@ -17,4 +17,7 @@ public class RaidStatsDb : DataConnection
     public ITable<SettingsEntity> Settings => this.GetTable<SettingsEntity>();
     public ITable<RecapFunStatEntity> RecapFunStats => this.GetTable<RecapFunStatEntity>();
     public ITable<EncounterPhaseStatEntity> EncounterPhaseStats => this.GetTable<EncounterPhaseStatEntity>();
+    public ITable<DiscordConfigEntity> DiscordConfigs => this.GetTable<DiscordConfigEntity>();
+    public ITable<DiscordUserLinkEntity> DiscordUserLinks => this.GetTable<DiscordUserLinkEntity>();
+    public ITable<NotificationQueueEntity> NotificationQueue => this.GetTable<NotificationQueueEntity>();
 }

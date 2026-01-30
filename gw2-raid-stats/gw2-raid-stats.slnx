@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/GW2RaidStats.Client/GW2RaidStats.Client.csproj" />
     <Project Path="src/GW2RaidStats.Core/GW2RaidStats.Core.csproj" />
+    <Project Path="src/GW2RaidStats.DiscordBot/GW2RaidStats.DiscordBot.csproj" />
     <Project Path="src/GW2RaidStats.Infrastructure/GW2RaidStats.Infrastructure.csproj" />
     <Project Path="src/GW2RaidStats.Server/GW2RaidStats.Server.csproj" />
     <Project Path="src/GW2RaidStats.Processor/GW2RaidStats.Processor.csproj" />

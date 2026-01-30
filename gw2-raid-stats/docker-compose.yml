@@ -41,6 +41,21 @@ services:
       postgres:
         condition: service_healthy
 
+  discordbot:
+    image: ghcr.io/a-gansemer/gw2-raid-stats-discordbot:latest
+    container_name: gw2-raid-stats-discordbot
+    restart: unless-stopped
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=raidstats;Username=app;Password=${DB_PASSWORD}
+      - Discord__BotToken=${DISCORD_BOT_TOKEN}
+      - Discord__AppUrl=${APP_URL:-https://your-app-url.com}
+    networks:
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     container_name: gw2-raid-stats-db

@@ -10,6 +10,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME_APP: ${{ github.repository_owner }}/gw2-raid-stats
   IMAGE_NAME_PROCESSOR: ${{ github.repository_owner }}/gw2-raid-stats-processor
+  IMAGE_NAME_DISCORDBOT: ${{ github.repository_owner }}/gw2-raid-stats-discordbot
 
 jobs:
   build:
@@ -75,5 +76,28 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta-processor.outputs.tags }}
           labels: ${{ steps.meta-processor.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build and push Discord Bot image
+      - name: Extract metadata for Discord Bot
+        id: meta-discordbot
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_DISCORDBOT }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Discord Bot image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.discordbot
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-discordbot.outputs.tags }}
+          labels: ${{ steps.meta-discordbot.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

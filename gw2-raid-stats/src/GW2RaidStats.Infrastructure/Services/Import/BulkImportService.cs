@@ -10,11 +10,13 @@ namespace GW2RaidStats.Infrastructure.Services.Import;
 public class BulkImportService
 {
     private readonly Func<RaidStatsDb> _dbFactory;
+    private readonly IncludedPlayerService _includedPlayerService;
     private readonly ILogger<BulkImportService> _logger;
 
-    public BulkImportService(Func<RaidStatsDb> dbFactory, ILogger<BulkImportService> logger)
+    public BulkImportService(Func<RaidStatsDb> dbFactory, IncludedPlayerService includedPlayerService, ILogger<BulkImportService> logger)
     {
         _dbFactory = dbFactory;
+        _includedPlayerService = includedPlayerService;
         _logger = logger;
     }
 
@@ -75,7 +77,8 @@ public class BulkImportService
             {
                 // Each parallel task gets its own DB connection
                 using var db = _dbFactory();
-                var importService = new LogImportService(db);
+                var recordNotificationService = new RecordNotificationService(db, _includedPlayerService);
+                var importService = new LogImportService(db, recordNotificationService);
 
                 result = await importService.ImportLogFromFileAsync(filePath, token);
                 results.Add(result);

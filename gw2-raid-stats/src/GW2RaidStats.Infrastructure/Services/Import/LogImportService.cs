@@ -13,14 +13,16 @@ namespace GW2RaidStats.Infrastructure.Services.Import;
 public class LogImportService
 {
     private readonly RaidStatsDb _db;
+    private readonly RecordNotificationService _recordNotificationService;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
 
-    public LogImportService(RaidStatsDb db)
+    public LogImportService(RaidStatsDb db, RecordNotificationService recordNotificationService)
     {
         _db = db;
+        _recordNotificationService = recordNotificationService;
     }
 
     public async Task<ImportResult> ImportLogAsync(Stream jsonStream, string fileName, CancellationToken ct = default)
@@ -79,6 +81,12 @@ public class LogImportService
 
             // Import the log
             var encounterId = await ImportLogDataAsync(log, hash, ct);
+
+            // Check for broken records and queue notifications (only for successful kills)
+            if (log.Success)
+            {
+                await _recordNotificationService.CheckAndQueueRecordNotificationsAsync(encounterId, ct);
+            }
 
             return new ImportResult(true, encounterId, fileName, log.FightName, null, WasDuplicate: false);
         }

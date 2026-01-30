@@ -398,7 +398,154 @@ public class StatsService
 
         return new SessionHighlights(newRecords, milestones);
     }
+
+    /// <summary>
+    /// Get "wall of shame" stats for the most recent session
+    /// </summary>
+    public async Task<SessionShameStats?> GetSessionShameStatsAsync(CancellationToken ct = default)
+    {
+        // Find the most recent session date
+        var latestEncounter = await _db.Encounters
+            .OrderByDescending(e => e.EncounterTime)
+            .FirstOrDefaultAsync(ct);
+
+        if (latestEncounter == null) return null;
+
+        // Get session date range
+        var encounterOffset = latestEncounter.EncounterTime.Offset;
+        var localDateTime = latestEncounter.EncounterTime.UtcDateTime + encounterOffset;
+        var sessionDate = DateTime.SpecifyKind(localDateTime.Date, DateTimeKind.Unspecified);
+        var sessionStart = new DateTimeOffset(sessionDate, encounterOffset);
+        var sessionEnd = sessionStart.AddDays(1);
+
+        // Get encounter IDs for this session
+        var sessionEncounterIds = await _db.Encounters
+            .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd)
+            .Select(e => e.Id)
+            .ToListAsync(ct);
+
+        if (sessionEncounterIds.Count == 0) return null;
+
+        // Get included players (guild members)
+        var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
+        var includedList = includedAccounts.ToList();
+
+        // Get player stats aggregated for the session
+        var playerStats = await _db.PlayerEncounters
+            .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
+            .Where(x => sessionEncounterIds.Contains(x.pe.EncounterId))
+            .Where(x => includedList.Contains(x.p.AccountName))
+            .GroupBy(x => x.p.AccountName)
+            .Select(g => new
+            {
+                AccountName = g.Key,
+                TotalDeaths = g.Sum(x => x.pe.Deaths),
+                TotalDowns = g.Sum(x => x.pe.Downs)
+            })
+            .ToListAsync(ct);
+
+        if (playerStats.Count == 0) return null;
+
+        // Find the player with most deaths
+        var mostDeaths = playerStats.OrderByDescending(p => p.TotalDeaths).First();
+        var mostDowns = playerStats.OrderByDescending(p => p.TotalDowns).First();
+
+        return new SessionShameStats(
+            MostDeathsPlayer: mostDeaths.AccountName,
+            MostDeathsCount: mostDeaths.TotalDeaths,
+            MostDownsPlayer: mostDowns.AccountName,
+            MostDownsCount: mostDowns.TotalDowns
+        );
+    }
+
+    public async Task<SessionMvpStats?> GetSessionMvpStatsAsync(CancellationToken ct = default)
+    {
+        // Find the most recent session date
+        var latestEncounter = await _db.Encounters
+            .OrderByDescending(e => e.EncounterTime)
+            .FirstOrDefaultAsync(ct);
+
+        if (latestEncounter == null) return null;
+
+        // Get session date range
+        var encounterOffset = latestEncounter.EncounterTime.Offset;
+        var localDateTime = latestEncounter.EncounterTime.UtcDateTime + encounterOffset;
+        var sessionDate = DateTime.SpecifyKind(localDateTime.Date, DateTimeKind.Unspecified);
+        var sessionStart = new DateTimeOffset(sessionDate, encounterOffset);
+        var sessionEnd = sessionStart.AddDays(1);
+
+        // Get encounter IDs for this session (only successful kills)
+        var sessionEncounterIds = await _db.Encounters
+            .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd && e.Success)
+            .Select(e => e.Id)
+            .ToListAsync(ct);
+
+        if (sessionEncounterIds.Count == 0) return null;
+
+        // Get included players (guild members)
+        var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
+        var includedList = includedAccounts.ToList();
+
+        // Get player stats aggregated for the session
+        var playerStats = await _db.PlayerEncounters
+            .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
+            .Where(x => sessionEncounterIds.Contains(x.pe.EncounterId))
+            .Where(x => includedList.Contains(x.p.AccountName))
+            .GroupBy(x => x.p.AccountName)
+            .Select(g => new
+            {
+                AccountName = g.Key,
+                AvgDps = g.Average(x => (double)x.pe.Dps),
+                TotalDeaths = g.Sum(x => x.pe.Deaths),
+                EncounterCount = g.Count(),
+                AvgQuickness = g.Average(x => (double)(x.pe.QuicknessGeneration ?? 0)),
+                AvgAlacrity = g.Average(x => (double)(x.pe.AlacracityGeneration ?? 0))
+            })
+            .ToListAsync(ct);
+
+        if (playerStats.Count == 0) return null;
+
+        // Top DPS (non-support players - less than 10% boon generation)
+        var dpsPlayers = playerStats.Where(p => p.AvgQuickness < 10 && p.AvgAlacrity < 10).ToList();
+        var topDps = dpsPlayers.OrderByDescending(p => p.AvgDps).FirstOrDefault();
+
+        // Top Support DPS (players with significant boon generation)
+        var supportPlayers = playerStats.Where(p => p.AvgQuickness >= 10 || p.AvgAlacrity >= 10).ToList();
+        var topSupport = supportPlayers.OrderByDescending(p => p.AvgDps).FirstOrDefault();
+
+        // Survivor (fewest deaths, min 3 encounters to qualify)
+        var survivor = playerStats
+            .Where(p => p.EncounterCount >= 3)
+            .OrderBy(p => p.TotalDeaths)
+            .ThenByDescending(p => p.EncounterCount)
+            .FirstOrDefault();
+
+        return new SessionMvpStats(
+            TopDpsPlayer: topDps?.AccountName,
+            TopDpsValue: topDps != null ? (int)topDps.AvgDps : null,
+            TopSupportPlayer: topSupport?.AccountName,
+            TopSupportDps: topSupport != null ? (int)topSupport.AvgDps : null,
+            SurvivorPlayer: survivor?.AccountName,
+            SurvivorDeaths: survivor?.TotalDeaths
+        );
+    }
 }
+
+public record SessionMvpStats(
+    string? TopDpsPlayer,
+    int? TopDpsValue,
+    string? TopSupportPlayer,
+    int? TopSupportDps,
+    string? SurvivorPlayer,
+    int? SurvivorDeaths
+);
+
+public record SessionShameStats(
+    string MostDeathsPlayer,
+    int MostDeathsCount,
+    string MostDownsPlayer,
+    int MostDownsCount
+);
 
 public record DashboardStats(
     int TotalEncounters,

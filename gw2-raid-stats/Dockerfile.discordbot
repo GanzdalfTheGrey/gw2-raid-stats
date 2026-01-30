@@ -1,0 +1,44 @@
+# Build stage
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+
+# Copy solution and all project files for restore
+COPY *.slnx ./
+COPY src/GW2RaidStats.Core/*.csproj ./src/GW2RaidStats.Core/
+COPY src/GW2RaidStats.Infrastructure/*.csproj ./src/GW2RaidStats.Infrastructure/
+COPY src/GW2RaidStats.DiscordBot/*.csproj ./src/GW2RaidStats.DiscordBot/
+COPY src/GW2RaidStats.Client/*.csproj ./src/GW2RaidStats.Client/
+COPY src/GW2RaidStats.Server/*.csproj ./src/GW2RaidStats.Server/
+COPY src/GW2RaidStats.Processor/*.csproj ./src/GW2RaidStats.Processor/
+
+# Restore dependencies
+RUN dotnet restore src/GW2RaidStats.DiscordBot/GW2RaidStats.DiscordBot.csproj
+
+# Copy only the projects we need
+COPY src/GW2RaidStats.Core/ ./src/GW2RaidStats.Core/
+COPY src/GW2RaidStats.Infrastructure/ ./src/GW2RaidStats.Infrastructure/
+COPY src/GW2RaidStats.DiscordBot/ ./src/GW2RaidStats.DiscordBot/
+
+WORKDIR /src/src/GW2RaidStats.DiscordBot
+RUN dotnet publish -c Release -o /app/publish --no-restore
+
+# Runtime stage
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+WORKDIR /app
+
+# Create non-root user for security
+RUN adduser --disabled-password --gecos '' --uid 1000 appuser
+
+# Copy published app
+COPY --from=build /app/publish .
+
+# Set ownership
+RUN chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Set environment variables
+ENV ASPNETCORE_ENVIRONMENT=Production
+
+ENTRYPOINT ["dotnet", "GW2RaidStats.DiscordBot.dll"]

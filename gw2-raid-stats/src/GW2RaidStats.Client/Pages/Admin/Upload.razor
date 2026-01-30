@@ -1,5 +1,6 @@
 @page "/admin/upload"
 @inject HttpClient Http
+@inject ISnackbar Snackbar
 
 <PageTitle>GW2 Raid Stats - Upload Logs</PageTitle>
 
@@ -206,6 +207,27 @@
     {
         <MudText Typo="Typo.body2" Color="Color.Default">Loading queue status...</MudText>
     }
+</MudPaper>
+
+@* Discord Notification Section *@
+<MudPaper Class="pa-4 mb-4" Elevation="2">
+    <MudText Typo="Typo.h6" Class="mb-3">
+        <MudIcon Icon="@Icons.Material.Filled.Campaign" Class="mr-2" />
+        Discord Notifications
+    </MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+        Post a summary of the most recent raid session to your Discord notification channel.
+    </MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               Disabled="@_postingSession"
+               OnClick="PostSessionSummary"
+               StartIcon="@Icons.Material.Filled.Send">
+        @if (_postingSession)
+        {
+            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+        }
+        Post Session Summary to Discord
+    </MudButton>
 </MudPaper>
 
 <MudDivider Class="my-4" />
@@ -577,6 +599,7 @@
     private List<IBrowserFile> _selectedFiles = new();
     private bool _isUploading;
     private bool _isImporting;
+    private bool _postingSession;
     private List<ImportResult> _uploadResults = new();
     private BulkImportResult? _bulkResult;
     private Dictionary<string, FileUploadProgress> _fileProgress = new();
@@ -605,6 +628,31 @@
     protected override async Task OnInitializedAsync()
     {
         await RefreshQueueStatus();
+    }
+
+    private async Task PostSessionSummary()
+    {
+        _postingSession = true;
+        try
+        {
+            var response = await Http.PostAsync("api/admin/discord/post-session-summary", null);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Session summary queued for Discord!", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Failed to queue session summary", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _postingSession = false;
+        }
     }
 
     private void OnRawFilesSelected(IReadOnlyList<IBrowserFile> files)
