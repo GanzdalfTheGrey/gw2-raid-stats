@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using GW2RaidStats.Infrastructure.Services;
 using GW2RaidStats.Infrastructure.Services.Import;
 
@@ -10,11 +11,20 @@ public class AdminLogsController : ControllerBase
 {
     private readonly LogSearchService _logSearchService;
     private readonly RescanService _rescanService;
+    private readonly ILogger<AdminLogsController> _logger;
 
-    public AdminLogsController(LogSearchService logSearchService, RescanService rescanService)
+    // Track rescan status
+    private static bool _isRescanning = false;
+    private static RescanResult? _lastRescanResult = null;
+
+    public AdminLogsController(
+        LogSearchService logSearchService,
+        RescanService rescanService,
+        ILogger<AdminLogsController> logger)
     {
         _logSearchService = logSearchService;
         _rescanService = rescanService;
+        _logger = logger;
     }
 
     /// <summary>
@@ -66,13 +76,55 @@ public class AdminLogsController : ControllerBase
     }
 
     /// <summary>
-    /// Rescan all stored JSON files and update database records with any missing attributes
+    /// Rescan all stored JSON files and update database records with any missing attributes.
+    /// Runs in the background - use GET /api/admin/logs/rescan/status to check progress.
     /// </summary>
     [HttpPost("rescan")]
-    public async Task<ActionResult<RescanResult>> RescanLogs(CancellationToken ct = default)
+    public ActionResult StartRescan()
     {
-        var result = await _rescanService.RescanAllAsync(progress: null, ct);
-        return Ok(result);
+        if (_isRescanning)
+        {
+            return Conflict(new { message = "Rescan is already in progress" });
+        }
+
+        _isRescanning = true;
+        _lastRescanResult = null;
+
+        // Run in background without the HTTP request's cancellation token
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                _logger.LogInformation("Starting background rescan...");
+                var result = await _rescanService.RescanAllAsync(progress: null, ct: default);
+                _lastRescanResult = result;
+                _logger.LogInformation("Rescan complete: {Updated} updated, {Skipped} skipped", result.Updated, result.Skipped);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Rescan failed");
+                _lastRescanResult = new RescanResult(0, 0, 0, new List<string> { ex.Message }, null);
+            }
+            finally
+            {
+                _isRescanning = false;
+            }
+        });
+
+        return Accepted(new { message = "Rescan started. Check /api/admin/logs/rescan/status for progress." });
+    }
+
+    /// <summary>
+    /// Get the status of the current or last rescan operation
+    /// </summary>
+    [HttpGet("rescan/status")]
+    public ActionResult GetRescanStatus()
+    {
+        return Ok(new
+        {
+            isRunning = _isRescanning,
+            result = _lastRescanResult
+        });
     }
 }
 

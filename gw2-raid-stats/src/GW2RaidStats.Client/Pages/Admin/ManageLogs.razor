@@ -593,6 +593,11 @@
         string? EncountersPath = null
     );
 
+    public record RescanStatusDto(
+        bool IsRunning,
+        RescanResultDto? Result
+    );
+
     private async Task RescanLogs()
     {
         _rescanning = true;
@@ -601,15 +606,41 @@
 
         try
         {
+            // Start the rescan (returns immediately)
             var response = await Http.PostAsync("api/admin/logs/rescan", null);
-            if (response.IsSuccessStatusCode)
+            if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
             {
-                _rescanResult = await response.Content.ReadFromJsonAsync<RescanResultDto>();
-                Snackbar.Add($"Rescan complete: {_rescanResult?.Updated ?? 0} records updated", Severity.Success);
+                Snackbar.Add("Rescan is already in progress", Severity.Warning);
+                // Still poll for status
+            }
+            else if (!response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Failed to start rescan", Severity.Error);
+                _rescanning = false;
+                return;
             }
             else
             {
-                Snackbar.Add("Rescan failed", Severity.Error);
+                Snackbar.Add("Rescan started...", Severity.Info);
+            }
+
+            // Poll for completion
+            while (true)
+            {
+                await Task.Delay(2000); // Check every 2 seconds
+
+                var statusResponse = await Http.GetFromJsonAsync<RescanStatusDto>("api/admin/logs/rescan/status");
+                if (statusResponse == null) break;
+
+                if (!statusResponse.IsRunning)
+                {
+                    _rescanResult = statusResponse.Result;
+                    if (_rescanResult != null)
+                    {
+                        Snackbar.Add($"Rescan complete: {_rescanResult.Updated} records updated", Severity.Success);
+                    }
+                    break;
+                }
             }
         }
         catch (Exception ex)
