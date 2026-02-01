@@ -101,29 +101,33 @@ public class RecordNotificationService
 
     private async Task CheckDpsRecordsAsync(EncounterEntity encounter, List<string> includedAccounts, CancellationToken ct)
     {
-        // Get player performances for this encounter
+        // Get previous best DPS for this boss by any guild member (query once, not per player)
+        var previousBest = await _db.PlayerEncounters
+            .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+            .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
+            .Where(x => x.e.TriggerId == encounter.TriggerId
+                     && x.e.IsCM == encounter.IsCM
+                     && x.e.Success
+                     && x.e.Id != encounter.Id
+                     && x.e.EncounterTime < encounter.EncounterTime)
+            .Where(x => includedAccounts.Contains(x.p.AccountName))
+            .OrderByDescending(x => x.pe.Dps)
+            .FirstOrDefaultAsync(ct);
+
+        var previousBestDps = previousBest?.pe.Dps ?? 0;
+
+        // Get player performances for this encounter, sorted by DPS descending
         var playerEncounters = await _db.PlayerEncounters
             .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
             .Where(x => x.pe.EncounterId == encounter.Id)
             .Where(x => includedAccounts.Contains(x.p.AccountName))
+            .OrderByDescending(x => x.pe.Dps)
             .ToListAsync(ct);
 
+        // Notify for ALL players who beat the previous record (highest DPS first)
         foreach (var current in playerEncounters)
         {
-            // Get previous best DPS for this boss by any guild member
-            var previousBest = await _db.PlayerEncounters
-                .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
-                .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
-                .Where(x => x.e.TriggerId == encounter.TriggerId
-                         && x.e.IsCM == encounter.IsCM
-                         && x.e.Success
-                         && x.e.Id != encounter.Id
-                         && x.e.EncounterTime < encounter.EncounterTime)
-                .Where(x => includedAccounts.Contains(x.p.AccountName))
-                .OrderByDescending(x => x.pe.Dps)
-                .FirstOrDefaultAsync(ct);
-
-            if (previousBest == null || current.pe.Dps > previousBest.pe.Dps)
+            if (previousBest == null || current.pe.Dps > previousBestDps)
             {
                 var payload = new RecordPayload(
                     "DPS",
@@ -137,25 +141,12 @@ public class RecordNotificationService
                 );
 
                 await QueueNotificationAsync("record_broken", payload, ct);
-                break; // Only notify for the top DPS record per encounter
             }
         }
     }
 
     private async Task CheckBoonDpsRecordsAsync(EncounterEntity encounter, List<string> includedAccounts, CancellationToken ct)
     {
-        // Get boon DPS performances for this encounter
-        var boonPlayers = await _db.PlayerEncounters
-            .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
-            .Where(x => x.pe.EncounterId == encounter.Id)
-            .Where(x => includedAccounts.Contains(x.p.AccountName))
-            .Where(x => (x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
-                        (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold)
-            .OrderByDescending(x => x.pe.Dps)
-            .FirstOrDefaultAsync(ct);
-
-        if (boonPlayers == null) return;
-
         // Get previous best boon DPS for this boss
         var previousBest = await _db.PlayerEncounters
             .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
@@ -171,20 +162,36 @@ public class RecordNotificationService
             .OrderByDescending(x => x.pe.Dps)
             .FirstOrDefaultAsync(ct);
 
-        if (previousBest == null || boonPlayers.pe.Dps > previousBest.pe.Dps)
-        {
-            var payload = new RecordPayload(
-                "Boon DPS",
-                encounter.BossName,
-                encounter.IsCM,
-                boonPlayers.p.AccountName,
-                boonPlayers.pe.Profession,
-                boonPlayers.pe.Dps,
-                previousBest?.pe.Dps,
-                encounter.LogUrl
-            );
+        var previousBestDps = previousBest?.pe.Dps ?? 0;
 
-            await QueueNotificationAsync("record_broken", payload, ct);
+        // Get boon DPS performances for this encounter, sorted by DPS descending
+        var boonPlayers = await _db.PlayerEncounters
+            .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
+            .Where(x => x.pe.EncounterId == encounter.Id)
+            .Where(x => includedAccounts.Contains(x.p.AccountName))
+            .Where(x => (x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
+                        (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold)
+            .OrderByDescending(x => x.pe.Dps)
+            .ToListAsync(ct);
+
+        // Notify for ALL boon players who beat the previous record (highest DPS first)
+        foreach (var current in boonPlayers)
+        {
+            if (previousBest == null || current.pe.Dps > previousBestDps)
+            {
+                var payload = new RecordPayload(
+                    "Boon DPS",
+                    encounter.BossName,
+                    encounter.IsCM,
+                    current.p.AccountName,
+                    current.pe.Profession,
+                    current.pe.Dps,
+                    previousBest?.pe.Dps,
+                    encounter.LogUrl
+                );
+
+                await QueueNotificationAsync("record_broken", payload, ct);
+            }
         }
     }
 
