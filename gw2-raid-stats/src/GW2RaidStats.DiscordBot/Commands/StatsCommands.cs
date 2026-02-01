@@ -1,6 +1,9 @@
 using Discord;
 using Discord.Interactions;
 using GW2RaidStats.Infrastructure.Services;
+using LinqToDB;
+using LinqToDB.Async;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GW2RaidStats.DiscordBot.Commands;
 
@@ -9,15 +12,51 @@ public class StatsCommands : InteractionModuleBase<SocketInteractionContext>
     private readonly StatsService _statsService;
     private readonly LeaderboardService _leaderboardService;
     private readonly HtcmProgService _htcmService;
+    private readonly IServiceProvider _serviceProvider;
 
     public StatsCommands(
         StatsService statsService,
         LeaderboardService leaderboardService,
-        HtcmProgService htcmService)
+        HtcmProgService htcmService,
+        IServiceProvider serviceProvider)
     {
         _statsService = statsService;
         _leaderboardService = leaderboardService;
         _htcmService = htcmService;
+        _serviceProvider = serviceProvider;
+    }
+
+    [SlashCommand("help", "Show available commands")]
+    public async Task HelpAsync()
+    {
+        var embed = new EmbedBuilder()
+            .WithTitle("📖 Available Commands")
+            .WithColor(Color.Blue)
+            .WithCurrentTimestamp();
+
+        embed.AddField("📊 General Stats",
+            "`/stats` - Overall raid statistics\n" +
+            "`/session` - Most recent raid session summary\n" +
+            "`/recent [count]` - Recent encounters\n" +
+            "`/htcm` - Harvest Temple CM progression",
+            inline: false);
+
+        embed.AddField("🏆 Leaderboards",
+            "`/leaderboard <boss> [cm]` - Top DPS for a boss\n" +
+            "`/leaderboard-unique <boss> [cm]` - Top DPS (one per player)\n" +
+            "`/boss <boss>` - Stats for a specific boss",
+            inline: false);
+
+        embed.AddField("👤 Personal Stats",
+            "`/link <account>` - Link your GW2 account\n" +
+            "`/unlink` - Unlink your account\n" +
+            "`/whoami` - Show your linked account\n" +
+            "`/mystats` - Your personal statistics\n" +
+            "`/mybossrecords` - Your top DPS on each boss\n" +
+            "`/myboonrecords` - Your top boon DPS on each boss",
+            inline: false);
+
+        await RespondAsync(embed: embed.Build());
     }
 
     [SlashCommand("stats", "Show overall raid statistics")]
@@ -278,6 +317,202 @@ public class StatsCommands : InteractionModuleBase<SocketInteractionContext>
         embed.WithDescription(string.Join("\n", lines));
 
         await FollowupAsync(embed: embed.Build());
+    }
+
+    [SlashCommand("leaderboard-unique", "Show top DPS for a boss (one entry per player)")]
+    public async Task LeaderboardUniqueAsync(
+        [Summary("boss", "Boss name to search for")] string bossSearch,
+        [Summary("cm", "Challenge Mode?")] bool isCM = false)
+    {
+        await DeferAsync();
+
+        // Find matching boss
+        var bosses = await _leaderboardService.GetBossListAsync();
+        var matchingBoss = bosses
+            .FirstOrDefault(b => b.BossName.Contains(bossSearch, StringComparison.OrdinalIgnoreCase));
+
+        if (matchingBoss == null)
+        {
+            var suggestions = bosses
+                .Where(b => b.BossName.Contains(bossSearch, StringComparison.OrdinalIgnoreCase) ||
+                           bossSearch.Split(' ').Any(word => b.BossName.Contains(word, StringComparison.OrdinalIgnoreCase)))
+                .Take(5)
+                .Select(b => b.BossName);
+
+            var message = suggestions.Any()
+                ? $"Boss not found. Did you mean: {string.Join(", ", suggestions)}?"
+                : "Boss not found. Try a different search term.";
+
+            await FollowupAsync(message, ephemeral: true);
+            return;
+        }
+
+        var topDps = await _leaderboardService.GetTopDpsForBossUniqueAsync(matchingBoss.TriggerId, isCM, 10);
+        var topBoonDps = await _leaderboardService.GetTopBoonDpsForBossAsync(matchingBoss.TriggerId, isCM, 10);
+
+        // Also make boon DPS unique
+        var uniqueBoonDps = topBoonDps
+            .GroupBy(x => x.AccountName)
+            .Select(g => g.First())
+            .Take(5)
+            .ToList();
+
+        var embed = new EmbedBuilder()
+            .WithTitle($"🏆 {matchingBoss.BossName}{(isCM ? " (CM)" : "")} Leaderboard (Unique)")
+            .WithColor(Color.Gold)
+            .WithCurrentTimestamp()
+            .WithFooter("One entry per player");
+
+        if (topDps.Count == 0)
+        {
+            embed.WithDescription("No kills recorded for this boss yet.");
+        }
+        else
+        {
+            var dpsLines = topDps
+                .Select((entry, i) => $"**{i + 1}.** {entry.AccountName} ({entry.Profession}) - **{entry.Dps:N0}** DPS");
+            embed.AddField("Top DPS", string.Join("\n", dpsLines));
+        }
+
+        if (uniqueBoonDps.Count > 0)
+        {
+            var boonLines = uniqueBoonDps
+                .Select((entry, i) => $"**{i + 1}.** {entry.AccountName} ({entry.Profession}) - **{entry.Dps:N0}** DPS");
+            embed.AddField("Top Boon DPS", string.Join("\n", boonLines));
+        }
+
+        await FollowupAsync(embed: embed.Build());
+    }
+
+    [SlashCommand("mybossrecords", "Show your top DPS on each boss")]
+    public async Task MyBossRecordsAsync()
+    {
+        await DeferAsync();
+
+        // Get linked account
+        var userId = Context.User.Id;
+        var link = await GetUserLinkAsync(userId);
+
+        if (link == null)
+        {
+            await FollowupAsync("You haven't linked your GW2 account yet. Use `/link <account_name>` first.", ephemeral: true);
+            return;
+        }
+
+        var records = await _leaderboardService.GetPlayerBossRecordsAsync(link);
+
+        if (records.Count == 0)
+        {
+            await FollowupAsync("No boss records found for your account.", ephemeral: true);
+            return;
+        }
+
+        // Group by wing for display
+        var byWing = records
+            .Where(r => r.Wing.HasValue)
+            .GroupBy(r => r.Wing!.Value)
+            .OrderBy(g => g.Key);
+
+        var embed = new EmbedBuilder()
+            .WithTitle($"🎯 {link}'s Boss Records")
+            .WithColor(Color.Blue)
+            .WithCurrentTimestamp();
+
+        foreach (var wingGroup in byWing)
+        {
+            var lines = wingGroup
+                .Take(10) // Limit per wing to avoid embed limits
+                .Select(r =>
+                {
+                    var cm = r.IsCM ? " (CM)" : "";
+                    return $"**{r.BossName}**{cm}: {r.Dps:N0} DPS ({r.Profession})";
+                });
+
+            embed.AddField($"Wing {wingGroup.Key}", string.Join("\n", lines), inline: false);
+        }
+
+        // Add non-raid bosses if any
+        var nonRaid = records.Where(r => !r.Wing.HasValue).ToList();
+        if (nonRaid.Count > 0)
+        {
+            var lines = nonRaid
+                .Take(10)
+                .Select(r =>
+                {
+                    var cm = r.IsCM ? " (CM)" : "";
+                    return $"**{r.BossName}**{cm}: {r.Dps:N0} DPS ({r.Profession})";
+                });
+            embed.AddField("Other", string.Join("\n", lines), inline: false);
+        }
+
+        await FollowupAsync(embed: embed.Build());
+    }
+
+    [SlashCommand("myboonrecords", "Show your top boon DPS on each boss")]
+    public async Task MyBoonRecordsAsync()
+    {
+        await DeferAsync();
+
+        // Get linked account
+        var userId = Context.User.Id;
+        var link = await GetUserLinkAsync(userId);
+
+        if (link == null)
+        {
+            await FollowupAsync("You haven't linked your GW2 account yet. Use `/link <account_name>` first.", ephemeral: true);
+            return;
+        }
+
+        var records = await _leaderboardService.GetPlayerAllBossRecordsAsync(link, boonDpsOnly: true);
+
+        if (records.Count == 0)
+        {
+            await FollowupAsync("No boss data found.", ephemeral: true);
+            return;
+        }
+
+        // Group by wing for display
+        var byWing = records
+            .Where(r => r.Wing.HasValue)
+            .GroupBy(r => r.Wing!.Value)
+            .OrderBy(g => g.Key);
+
+        var embed = new EmbedBuilder()
+            .WithTitle($"🛡️ {link}'s Boon DPS Records")
+            .WithColor(Color.Green)
+            .WithCurrentTimestamp();
+
+        foreach (var wingGroup in byWing)
+        {
+            var lines = wingGroup
+                .Take(10)
+                .Select(r =>
+                {
+                    var cm = r.IsCM ? " (CM)" : "";
+                    if (!r.HasRecord)
+                    {
+                        return $"**{r.BossName}**{cm}: *No record*";
+                    }
+                    return $"**{r.BossName}**{cm}: {r.Dps:N0} DPS ({r.Profession})";
+                });
+
+            embed.AddField($"Wing {wingGroup.Key}", string.Join("\n", lines), inline: false);
+        }
+
+        await FollowupAsync(embed: embed.Build());
+    }
+
+    private async Task<string?> GetUserLinkAsync(ulong discordUserId)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GW2RaidStats.Infrastructure.Database.RaidStatsDb>();
+        var accountName = await db.DiscordUserLinks
+            .InnerJoin(db.Players, (l, p) => l.PlayerId == p.Id, (l, p) => new { l, p })
+            .Where(x => x.l.DiscordUserId == (long)discordUserId)
+            .Select(x => x.p.AccountName)
+            .FirstOrDefaultAsync();
+
+        return accountName;
     }
 
     private static string FormatDuration(TimeSpan duration)

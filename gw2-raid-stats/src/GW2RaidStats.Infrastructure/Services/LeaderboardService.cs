@@ -345,6 +345,257 @@ public class LeaderboardService
     }
 
     /// <summary>
+    /// Get top DPS records for a specific boss with unique players only (one entry per player)
+    /// </summary>
+    public async Task<List<LeaderboardEntry>> GetTopDpsForBossUniqueAsync(
+        int triggerId,
+        bool isCM,
+        int limit = 10,
+        CancellationToken ct = default)
+    {
+        // Get included players (guild members)
+        var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
+        var includedList = includedAccounts.ToList();
+
+        // Get all player encounters for this boss, grouped by player, taking best DPS per player
+        var query = _db.PlayerEncounters
+            .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+            .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
+            .Where(x => x.e.TriggerId == triggerId && x.e.IsCM == isCM && x.e.Success)
+            .Where(x => !x.e.BossName.Contains(LateStartFilter))
+            .Where(x => AlwaysAllowedEncounters.Any(a => x.e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => x.e.BossName.Contains(i)));
+
+        if (includedList.Count > 0)
+        {
+            query = query.Where(x => includedList.Contains(x.p.AccountName));
+        }
+
+        // Get all entries then group in memory for best per player
+        var allEntries = await query
+            .Select(x => new
+            {
+                x.pe.Id,
+                x.pe.EncounterId,
+                x.pe.Dps,
+                x.pe.CharacterName,
+                x.pe.Profession,
+                x.pe.SquadGroup,
+                x.p.AccountName,
+                x.e.EncounterTime,
+                x.e.BossName,
+                x.e.LogUrl
+            })
+            .ToListAsync(ct);
+
+        var topUnique = allEntries
+            .GroupBy(x => x.AccountName)
+            .Select(g => g.OrderByDescending(x => x.Dps).First())
+            .OrderByDescending(x => x.Dps)
+            .Take(limit)
+            .ToList();
+
+        var results = new List<LeaderboardEntry>();
+        foreach (var entry in topUnique)
+        {
+            var supports = await GetBoonSupportsForEncounterAsync(
+                entry.EncounterId, entry.SquadGroup ?? 1, includedAccounts, ct);
+
+            results.Add(new LeaderboardEntry(
+                entry.Id,
+                entry.EncounterId,
+                entry.AccountName,
+                entry.CharacterName,
+                entry.Profession,
+                entry.Dps,
+                entry.EncounterTime,
+                entry.BossName,
+                entry.LogUrl,
+                supports
+            ));
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Get a player's best DPS on each boss, ordered by wing/encounter
+    /// </summary>
+    public async Task<List<PlayerBossRecord>> GetPlayerBossRecordsAsync(
+        string accountName,
+        CancellationToken ct = default)
+    {
+        // Get all successful encounters with player data
+        var playerRecords = await _db.PlayerEncounters
+            .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+            .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
+            .Where(x => x.p.AccountName == accountName && x.e.Success)
+            .Where(x => !x.e.BossName.Contains(LateStartFilter))
+            .Where(x => AlwaysAllowedEncounters.Any(a => x.e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => x.e.BossName.Contains(i)))
+            .Select(x => new
+            {
+                x.e.TriggerId,
+                x.e.BossName,
+                x.e.IsCM,
+                x.pe.Dps,
+                x.pe.Profession,
+                x.pe.CharacterName,
+                x.e.EncounterTime,
+                x.e.LogUrl
+            })
+            .ToListAsync(ct);
+
+        // Group by boss/mode and get best DPS for each
+        var bestPerBoss = playerRecords
+            .GroupBy(x => new { x.TriggerId, x.IsCM })
+            .Select(g =>
+            {
+                var best = g.OrderByDescending(x => x.Dps).First();
+                var wing = WingMapping.GetWing(best.TriggerId) ?? WingMapping.GetWingByBossName(best.BossName);
+                var encounterOrder = WingMapping.GetEncounterOrder(best.TriggerId);
+
+                return new PlayerBossRecord(
+                    best.TriggerId,
+                    best.BossName,
+                    best.IsCM,
+                    best.Dps,
+                    best.Profession,
+                    best.CharacterName,
+                    best.EncounterTime,
+                    best.LogUrl,
+                    wing,
+                    encounterOrder
+                );
+            })
+            .OrderBy(x => x.Wing ?? 999)
+            .ThenBy(x => x.EncounterOrder)
+            .ThenBy(x => x.IsCM)
+            .ToList();
+
+        return bestPerBoss;
+    }
+
+    /// <summary>
+    /// Get a player's best boon DPS on each boss, ordered by wing/encounter
+    /// </summary>
+    public async Task<List<PlayerBossRecord>> GetPlayerBoonBossRecordsAsync(
+        string accountName,
+        CancellationToken ct = default)
+    {
+        // Get all successful encounters where player was providing boons
+        var playerRecords = await _db.PlayerEncounters
+            .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+            .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
+            .Where(x => x.p.AccountName == accountName && x.e.Success)
+            .Where(x => !x.e.BossName.Contains(LateStartFilter))
+            .Where(x => AlwaysAllowedEncounters.Any(a => x.e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => x.e.BossName.Contains(i)))
+            .Where(x => (x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
+                        (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold)
+            .Select(x => new
+            {
+                x.e.TriggerId,
+                x.e.BossName,
+                x.e.IsCM,
+                x.pe.Dps,
+                x.pe.Profession,
+                x.pe.CharacterName,
+                x.e.EncounterTime,
+                x.e.LogUrl,
+                x.pe.QuicknessGeneration,
+                x.pe.AlacracityGeneration
+            })
+            .ToListAsync(ct);
+
+        // Group by boss/mode and get best boon DPS for each
+        var bestPerBoss = playerRecords
+            .GroupBy(x => new { x.TriggerId, x.IsCM })
+            .Select(g =>
+            {
+                var best = g.OrderByDescending(x => x.Dps).First();
+                var wing = WingMapping.GetWing(best.TriggerId) ?? WingMapping.GetWingByBossName(best.BossName);
+                var encounterOrder = WingMapping.GetEncounterOrder(best.TriggerId);
+                var boonType = (best.QuicknessGeneration ?? 0) >= BoonSupportThreshold ? "Quickness" : "Alacrity";
+
+                return new PlayerBossRecord(
+                    best.TriggerId,
+                    best.BossName,
+                    best.IsCM,
+                    best.Dps,
+                    best.Profession,
+                    best.CharacterName,
+                    best.EncounterTime,
+                    best.LogUrl,
+                    wing,
+                    encounterOrder,
+                    boonType
+                );
+            })
+            .OrderBy(x => x.Wing ?? 999)
+            .ThenBy(x => x.EncounterOrder)
+            .ThenBy(x => x.IsCM)
+            .ToList();
+
+        return bestPerBoss;
+    }
+
+    /// <summary>
+    /// Get all bosses with a player's records (including "no record" entries)
+    /// </summary>
+    public async Task<List<PlayerBossRecord>> GetPlayerAllBossRecordsAsync(
+        string accountName,
+        bool boonDpsOnly = false,
+        CancellationToken ct = default)
+    {
+        // Get all unique boss/mode combinations
+        var allBosses = await _db.Encounters
+            .Where(e => e.Success)
+            .Where(e => !e.BossName.Contains(LateStartFilter))
+            .Where(e => AlwaysAllowedEncounters.Any(a => e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => e.BossName.Contains(i)))
+            .GroupBy(e => new { e.TriggerId, e.BossName, e.IsCM })
+            .Select(g => new { g.Key.TriggerId, g.Key.BossName, g.Key.IsCM })
+            .ToListAsync(ct);
+
+        // Get player's records
+        var playerRecords = boonDpsOnly
+            ? await GetPlayerBoonBossRecordsAsync(accountName, ct)
+            : await GetPlayerBossRecordsAsync(accountName, ct);
+
+        var playerRecordLookup = playerRecords.ToDictionary(r => (r.TriggerId, r.IsCM));
+
+        // Build complete list with "no record" entries
+        var results = allBosses.Select(boss =>
+        {
+            var wing = WingMapping.GetWing(boss.TriggerId) ?? WingMapping.GetWingByBossName(boss.BossName);
+            var encounterOrder = WingMapping.GetEncounterOrder(boss.TriggerId);
+
+            if (playerRecordLookup.TryGetValue((boss.TriggerId, boss.IsCM), out var record))
+            {
+                return record;
+            }
+
+            // No record for this boss
+            return new PlayerBossRecord(
+                boss.TriggerId,
+                boss.BossName,
+                boss.IsCM,
+                null, // No DPS
+                null,
+                null,
+                null,
+                null,
+                wing,
+                encounterOrder,
+                null
+            );
+        })
+        .OrderBy(x => x.Wing ?? 999)
+        .ThenBy(x => x.EncounterOrder)
+        .ThenBy(x => x.IsCM)
+        .ToList();
+
+        return results;
+    }
+
+    /// <summary>
     /// Get full leaderboard data for a boss (both regular and boon DPS)
     /// </summary>
     public async Task<BossLeaderboard> GetBossLeaderboardAsync(
@@ -424,3 +675,20 @@ public record TriggerIdInfo(
     int? Wing,
     int KillCount
 );
+
+public record PlayerBossRecord(
+    int TriggerId,
+    string BossName,
+    bool IsCM,
+    int? Dps,
+    string? Profession,
+    string? CharacterName,
+    DateTimeOffset? EncounterTime,
+    string? LogUrl,
+    int? Wing,
+    int EncounterOrder,
+    string? BoonType = null
+)
+{
+    public bool HasRecord => Dps.HasValue;
+};
