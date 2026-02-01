@@ -229,6 +229,45 @@
                                 </MudStack>
                             </MudPaper>
                         }
+
+                        @* Top Healer DPS Record *@
+                        @if (boss.TopHealerDps != null)
+                        {
+                            <MudPaper Elevation="0" Class="pa-3" Style="background: rgba(76, 175, 80, 0.08); border-left: 4px solid var(--mud-palette-success);">
+                                <MudStack Spacing="1">
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                        <MudText Typo="Typo.overline" Color="Color.Success" Style="font-weight: 600;">HEALER DPS RECORD</MudText>
+                                        <MudIcon Icon="@Icons.Material.Filled.Healing" Size="Size.Small" Color="Color.Success" />
+                                    </MudStack>
+                                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.End">
+                                        <MudStack Spacing="0">
+                                            <MudLink Href="@($"/players/{Uri.EscapeDataString(boss.TopHealerDps.AccountName)}")" Typo="Typo.subtitle1" Color="Color.Inherit" Style="font-weight: 600;">
+                                                @boss.TopHealerDps.AccountName
+                                            </MudLink>
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                @boss.TopHealerDps.CharacterName - @boss.TopHealerDps.Profession
+                                            </MudText>
+                                        </MudStack>
+                                        <MudStack Spacing="0" AlignItems="AlignItems.End">
+                                            <MudText Typo="Typo.h5" Color="Color.Success" Style="font-weight: 600; line-height: 1;">
+                                                @boss.TopHealerDps.Dps.ToString("N0")
+                                            </MudText>
+                                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                    @boss.TopHealerDps.EncounterTime.LocalDateTime.ToString("MMM d, yyyy")
+                                                </MudText>
+                                                <MudTooltip Text="View Log">
+                                                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                                   Size="Size.Small"
+                                                                   Href="@($"/api/reports/{boss.TopHealerDps.EncounterId}/view")"
+                                                                   Target="_blank" />
+                                                </MudTooltip>
+                                            </MudStack>
+                                        </MudStack>
+                                    </MudStack>
+                                </MudStack>
+                            </MudPaper>
+                        }
                     </MudStack>
                 </MudCardContent>
             </MudCard>
@@ -287,6 +326,7 @@
         int KillCount,
         LeaderboardEntry? TopDps,
         LeaderboardEntry? TopBoonDps,
+        LeaderboardEntry? TopHealerDps,
         bool IsRaid,
         int? Wing = null,
         int EncounterOrder = 999

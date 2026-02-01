@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using GW2RaidStats.Infrastructure.Services;
+using GW2RaidStats.Infrastructure.Services.Import;
 
 namespace GW2RaidStats.Server.Controllers;
 
@@ -8,10 +9,12 @@ namespace GW2RaidStats.Server.Controllers;
 public class AdminLogsController : ControllerBase
 {
     private readonly LogSearchService _logSearchService;
+    private readonly RescanService _rescanService;
 
-    public AdminLogsController(LogSearchService logSearchService)
+    public AdminLogsController(LogSearchService logSearchService, RescanService rescanService)
     {
         _logSearchService = logSearchService;
+        _rescanService = rescanService;
     }
 
     /// <summary>
@@ -59,6 +62,16 @@ public class AdminLogsController : ControllerBase
             return NotFound();
         }
 
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Rescan all stored JSON files and update database records with any missing attributes
+    /// </summary>
+    [HttpPost("rescan")]
+    public async Task<ActionResult<RescanResult>> RescanLogs(CancellationToken ct = default)
+    {
+        var result = await _rescanService.RescanAllAsync(progress: null, ct);
         return Ok(result);
     }
 }

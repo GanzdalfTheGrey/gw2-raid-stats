@@ -7,6 +7,46 @@
 <AdminAuth>
 <MudText Typo="Typo.h4" Class="mb-4">Manage Logs</MudText>
 
+@* Maintenance Actions *@
+<MudPaper Class="pa-4 mb-4" Elevation="2">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+        <MudStack>
+            <MudText Typo="Typo.h6">
+                <MudIcon Icon="@Icons.Material.Filled.Build" Class="mr-2" />
+                Maintenance
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Rescan stored JSON files to update database records with any missing attributes (e.g., healing power stat).
+            </MudText>
+        </MudStack>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Refresh"
+                   OnClick="RescanLogs"
+                   Disabled="@_rescanning">
+            @if (_rescanning)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                @:Rescanning...
+            }
+            else
+            {
+                @:Rescan JSON Files
+            }
+        </MudButton>
+    </MudStack>
+    @if (_rescanResult != null)
+    {
+        <MudAlert Severity="@(_rescanResult.Errors.Count > 0 ? Severity.Warning : Severity.Success)" Class="mt-3">
+            Processed @_rescanResult.Processed logs: @_rescanResult.Updated updated, @_rescanResult.Skipped unchanged.
+            @if (_rescanResult.Errors.Count > 0)
+            {
+                <span> (@_rescanResult.Errors.Count errors)</span>
+            }
+        </MudAlert>
+    }
+</MudPaper>
+
 <MudPaper Class="pa-4 mb-4" Elevation="2">
     <MudText Typo="Typo.h6" Class="mb-3">
         <MudIcon Icon="@Icons.Material.Filled.FilterList" Class="mr-2" />
@@ -266,6 +306,8 @@
 @code {
     private bool _loading = true;
     private bool _deleting = false;
+    private bool _rescanning = false;
+    private RescanResultDto? _rescanResult;
     private LogSearchResultDto? _searchResult;
     private List<string> _availableBossNames = new();
     private List<int> _availableWings = new();
@@ -538,4 +580,40 @@
         int PlayerEncountersDeleted,
         List<string> Errors
     );
+
+    public record RescanResultDto(
+        int Processed,
+        int Updated,
+        int Skipped,
+        List<string> Errors
+    );
+
+    private async Task RescanLogs()
+    {
+        _rescanning = true;
+        _rescanResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var response = await Http.PostAsync("api/admin/logs/rescan", null);
+            if (response.IsSuccessStatusCode)
+            {
+                _rescanResult = await response.Content.ReadFromJsonAsync<RescanResultDto>();
+                Snackbar.Add($"Rescan complete: {_rescanResult?.Updated ?? 0} records updated", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Rescan failed", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _rescanning = false;
+        }
+    }
 }

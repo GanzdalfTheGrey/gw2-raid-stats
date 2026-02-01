@@ -44,6 +44,7 @@ public class StatsCommands : InteractionModuleBase<SocketInteractionContext>
         embed.AddField("🏆 Leaderboards",
             "`/leaderboard <boss> [cm]` - Top DPS for a boss\n" +
             "`/leaderboard-unique <boss> [cm]` - Top DPS (one per player)\n" +
+            "`/leaderboard-healer <boss> [cm]` - Top healer DPS\n" +
             "`/boss <boss>` - Stats for a specific boss",
             inline: false);
 
@@ -387,6 +388,56 @@ public class StatsCommands : InteractionModuleBase<SocketInteractionContext>
             var boonLines = uniqueBoonDps
                 .Select((entry, i) => $"**{i + 1}.** {entry.AccountName} ({entry.Profession}) - **{entry.Dps:N0}** DPS");
             embed.AddField("Top Boon DPS", string.Join("\n", boonLines));
+        }
+
+        await FollowupAsync(embed: embed.Build());
+    }
+
+    [SlashCommand("leaderboard-healer", "Show top DPS for healers on a boss")]
+    public async Task LeaderboardHealerAsync(
+        [Summary("boss", "Boss name to search for")] string bossSearch,
+        [Summary("cm", "Challenge Mode?")] bool isCM = false)
+    {
+        await DeferAsync();
+
+        // Find matching boss
+        var bosses = await _leaderboardService.GetBossListAsync();
+        var matchingBoss = bosses
+            .FirstOrDefault(b => b.BossName.Contains(bossSearch, StringComparison.OrdinalIgnoreCase));
+
+        if (matchingBoss == null)
+        {
+            var suggestions = bosses
+                .Where(b => b.BossName.Contains(bossSearch, StringComparison.OrdinalIgnoreCase) ||
+                           bossSearch.Split(' ').Any(word => b.BossName.Contains(word, StringComparison.OrdinalIgnoreCase)))
+                .Take(5)
+                .Select(b => b.BossName);
+
+            var message = suggestions.Any()
+                ? $"Boss not found. Did you mean: {string.Join(", ", suggestions)}?"
+                : "Boss not found. Try a different search term.";
+
+            await FollowupAsync(message, ephemeral: true);
+            return;
+        }
+
+        var topHealerDps = await _leaderboardService.GetTopHealerDpsForBossAsync(matchingBoss.TriggerId, isCM, 10);
+
+        var embed = new EmbedBuilder()
+            .WithTitle($"💚 {matchingBoss.BossName}{(isCM ? " (CM)" : "")} Healer Leaderboard")
+            .WithColor(Color.Green)
+            .WithCurrentTimestamp()
+            .WithFooter("Players with 1000+ Healing Power");
+
+        if (topHealerDps.Count == 0)
+        {
+            embed.WithDescription("No healer DPS records found for this boss yet.");
+        }
+        else
+        {
+            var healerLines = topHealerDps
+                .Select((entry, i) => $"**{i + 1}.** {entry.AccountName} ({entry.Profession}) - **{entry.Dps:N0}** DPS");
+            embed.AddField("Top Healer DPS", string.Join("\n", healerLines));
         }
 
         await FollowupAsync(embed: embed.Build());

@@ -1,6 +1,8 @@
 using LinqToDB;
 using LinqToDB.Data;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using GW2RaidStats.Infrastructure.Configuration;
 using GW2RaidStats.Infrastructure.Database;
 using GW2RaidStats.Infrastructure.Services;
 using GW2RaidStats.Infrastructure.Services.Import;
@@ -11,6 +13,8 @@ public static class ServiceExtensions
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, string connectionString)
     {
+        // Register StorageOptions from IOptions for services that need it
+        services.AddScoped(sp => sp.GetRequiredService<IOptions<StorageOptions>>().Value);
         // Register database connection factory
         services.AddScoped(_ =>
         {
@@ -33,6 +37,7 @@ public static class ServiceExtensions
         // Register import services
         services.AddScoped<LogImportService>();
         services.AddScoped<BulkImportService>();
+        services.AddScoped<RescanService>();
 
         // Register stats services
         services.AddScoped<StatsService>();

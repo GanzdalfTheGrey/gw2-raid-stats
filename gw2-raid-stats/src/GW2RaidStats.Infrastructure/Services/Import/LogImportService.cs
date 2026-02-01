@@ -193,10 +193,13 @@ public class LogImportService
                 QuicknessGeneration = quicknessGen,
                 AlacracityGeneration = alacrityGen,
 
-                // Healing stats
+                // Healing stats (from extension)
                 Healing = healingTotal,
                 HealingPowerHealing = healingPower,
                 Hps = hps,
+
+                // Character attribute - Healing Power stat (always available)
+                HealingPowerStat = eiPlayer.HealingPower,
 
                 CreatedAt = DateTimeOffset.UtcNow
             };

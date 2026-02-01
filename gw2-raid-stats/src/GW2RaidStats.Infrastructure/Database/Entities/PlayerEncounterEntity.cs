@@ -72,7 +72,7 @@ public class PlayerEncounterEntity
     [Column("alacrity_generation")]
     public decimal? AlacracityGeneration { get; set; }
 
-    // Healing stats
+    // Healing stats (from extension - requires arcdps healing extension)
     [Column("healing")]
     public int Healing { get; set; }
 
@@ -81,6 +81,10 @@ public class PlayerEncounterEntity
 
     [Column("hps")]
     public int Hps { get; set; }
+
+    // Character attribute - Healing Power stat (always available)
+    [Column("healing_power_stat")]
+    public int HealingPowerStat { get; set; }
 
     [Column("created_at"), NotNull]
     public DateTimeOffset CreatedAt { get; set; }

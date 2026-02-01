@@ -86,6 +86,19 @@ public class EIPlayer
     [JsonPropertyName("hasCommanderTag")]
     public bool HasCommanderTag { get; set; }
 
+    // Character attributes (stats)
+    [JsonPropertyName("healing")]
+    public int HealingPower { get; set; }
+
+    [JsonPropertyName("concentration")]
+    public int Concentration { get; set; }
+
+    [JsonPropertyName("condition")]
+    public int ConditionDamage { get; set; }
+
+    [JsonPropertyName("toughness")]
+    public int Toughness { get; set; }
+
     [JsonPropertyName("dpsAll")]
     public List<EIDpsStats>? DpsAll { get; set; }
 

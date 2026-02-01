@@ -14,6 +14,9 @@ public class LeaderboardService
     // Threshold for considering someone a boon support (generation % to squad)
     private const decimal BoonSupportThreshold = 10m;
 
+    // Threshold for considering someone a healer (healing power stat)
+    private const int HealerThreshold = 1000;
+
     // Filter out incomplete "late start" encounters
     private const string LateStartFilter = "Late start";
 
@@ -209,6 +212,79 @@ public class LeaderboardService
     }
 
     /// <summary>
+    /// Get top DPS records for healer players (those with 1000+ healing power)
+    /// </summary>
+    public async Task<List<LeaderboardEntry>> GetTopHealerDpsForBossAsync(
+        int triggerId,
+        bool isCM,
+        int limit = 10,
+        CancellationToken ct = default)
+    {
+        // Get included players (guild members) - only they can claim leaderboard spots
+        var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
+        var includedList = includedAccounts.ToList();
+
+        // Get top DPS player_encounters where the player was a healer (1000+ healing power)
+        var query = _db.PlayerEncounters
+            .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+            .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
+            .Where(x => x.e.TriggerId == triggerId && x.e.IsCM == isCM && x.e.Success)
+            .Where(x => !x.e.BossName.Contains(LateStartFilter)) // Exclude late start
+            .Where(x => AlwaysAllowedEncounters.Any(a => x.e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => x.e.BossName.Contains(i)))
+            .Where(x => x.pe.HealingPowerStat >= HealerThreshold);
+
+        // Only included players can claim leaderboard spots
+        if (includedList.Count > 0)
+        {
+            query = query.Where(x => includedList.Contains(x.p.AccountName));
+        }
+
+        var topEntries = await query
+            .OrderByDescending(x => x.pe.Dps)
+            .Take(limit)
+            .Select(x => new
+            {
+                x.pe.Id,
+                x.pe.EncounterId,
+                x.pe.Dps,
+                x.pe.CharacterName,
+                x.pe.Profession,
+                x.pe.SquadGroup,
+                x.p.AccountName,
+                x.e.EncounterTime,
+                x.e.BossName,
+                x.e.LogUrl,
+                x.pe.HealingPowerStat
+            })
+            .ToListAsync(ct);
+
+        // For each top entry, get the boon supports from their subgroup
+        var results = new List<LeaderboardEntry>();
+        foreach (var entry in topEntries)
+        {
+            var supports = await GetBoonSupportsForEncounterAsync(
+                entry.EncounterId, entry.SquadGroup ?? 1, includedAccounts, ct);
+
+            results.Add(new LeaderboardEntry(
+                entry.Id,
+                entry.EncounterId,
+                entry.AccountName,
+                entry.CharacterName,
+                entry.Profession,
+                entry.Dps,
+                entry.EncounterTime,
+                entry.BossName,
+                entry.LogUrl,
+                supports,
+                BoonType: null,
+                WasProvidingBoons: false
+            ));
+        }
+
+        return results;
+    }
+
+    /// <summary>
     /// Get boon supports (quickness and alacrity providers) for a player's subgroup in an encounter
     /// Non-included players (pugs) are anonymized as "Pug"
     /// </summary>
@@ -309,6 +385,7 @@ public class LeaderboardService
             // Get top DPS for this boss/mode
             var topDps = await GetTopDpsForBossAsync(boss.TriggerId, boss.IsCM, 1, ct);
             var topBoonDps = await GetTopBoonDpsForBossAsync(boss.TriggerId, boss.IsCM, 1, ct);
+            var topHealerDps = await GetTopHealerDpsForBossAsync(boss.TriggerId, boss.IsCM, 1, ct);
 
             results.Add(new BossRecord(
                 boss.TriggerId,
@@ -317,6 +394,7 @@ public class LeaderboardService
                 boss.KillCount,
                 topDps.FirstOrDefault(),
                 topBoonDps.FirstOrDefault(),
+                topHealerDps.FirstOrDefault(),
                 IsRaid: wing.HasValue,
                 Wing: wing,
                 EncounterOrder: encounterOrder
@@ -627,13 +705,15 @@ public class LeaderboardService
 
         var topDps = await GetTopDpsForBossAsync(triggerId, isCM, limit, ct);
         var topBoonDps = await GetTopBoonDpsForBossAsync(triggerId, isCM, limit, ct);
+        var topHealerDps = await GetTopHealerDpsForBossAsync(triggerId, isCM, limit, ct);
 
         return new BossLeaderboard(
             triggerId,
             bossName,
             isCM,
             topDps,
-            topBoonDps
+            topBoonDps,
+            topHealerDps
         );
     }
 }
@@ -671,7 +751,8 @@ public record BossLeaderboard(
     string BossName,
     bool IsCM,
     List<LeaderboardEntry> TopDps,
-    List<LeaderboardEntry> TopBoonDps
+    List<LeaderboardEntry> TopBoonDps,
+    List<LeaderboardEntry> TopHealerDps
 );
 
 public record BossRecord(
@@ -681,6 +762,7 @@ public record BossRecord(
     int KillCount,
     LeaderboardEntry? TopDps,
     LeaderboardEntry? TopBoonDps,
+    LeaderboardEntry? TopHealerDps,
     bool IsRaid,
     int? Wing = null,
     int EncounterOrder = 999
