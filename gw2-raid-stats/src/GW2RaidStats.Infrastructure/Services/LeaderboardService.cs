@@ -14,8 +14,8 @@ public class LeaderboardService
     // Threshold for considering someone a boon support (generation % to squad)
     private const decimal BoonSupportThreshold = 10m;
 
-    // Threshold for considering someone a healer (healing power stat)
-    private const int HealerThreshold = 1000;
+    // Threshold for considering someone a healer (healing power stat > 0 means they have healing gear)
+    private const int HealerStatThreshold = 1;
 
     // Filter out incomplete "late start" encounters
     private const string LateStartFilter = "Late start";
@@ -212,7 +212,7 @@ public class LeaderboardService
     }
 
     /// <summary>
-    /// Get top DPS records for healer players (those with 1000+ healing power)
+    /// Get top DPS records for healer players (those with healing power gear)
     /// </summary>
     public async Task<List<LeaderboardEntry>> GetTopHealerDpsForBossAsync(
         int triggerId,
@@ -224,14 +224,14 @@ public class LeaderboardService
         var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
         var includedList = includedAccounts.ToList();
 
-        // Get top DPS player_encounters where the player was a healer (1000+ healing power)
+        // Get top DPS player_encounters where the player was a healer (has healing power gear)
         var query = _db.PlayerEncounters
             .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
             .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
             .Where(x => x.e.TriggerId == triggerId && x.e.IsCM == isCM && x.e.Success)
             .Where(x => !x.e.BossName.Contains(LateStartFilter)) // Exclude late start
             .Where(x => AlwaysAllowedEncounters.Any(a => x.e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => x.e.BossName.Contains(i)))
-            .Where(x => x.pe.HealingPowerStat >= HealerThreshold);
+            .Where(x => x.pe.HealingPowerStat >= HealerStatThreshold);
 
         // Only included players can claim leaderboard spots
         if (includedList.Count > 0)
