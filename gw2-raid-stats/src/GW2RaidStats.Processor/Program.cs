@@ -1,5 +1,6 @@
 using GW2RaidStats.Infrastructure.Configuration;
 using GW2RaidStats.Infrastructure.Database;
+using GW2RaidStats.Infrastructure.Services;
 using GW2RaidStats.Infrastructure.Services.Import;
 using GW2RaidStats.Processor.Configuration;
 using GW2RaidStats.Processor.Services;
@@ -26,6 +27,9 @@ builder.Services.AddScoped<RaidStatsDb>(_ =>
     )));
 
 // Services
+builder.Services.AddScoped<SettingsService>();
+builder.Services.AddScoped<IncludedPlayerService>();
+builder.Services.AddScoped<RecordNotificationService>();
 builder.Services.AddScoped<LogImportService>();
 builder.Services.AddSingleton<Gw2EiRunner>();
 builder.Services.AddScoped<LogProcessor>();
