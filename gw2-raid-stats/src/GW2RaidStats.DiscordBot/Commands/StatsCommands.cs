@@ -176,7 +176,11 @@ public class StatsCommands : InteractionModuleBase<SocketInteractionContext>
         else
         {
             var dpsLines = leaderboard.TopDps
-                .Select((entry, i) => $"**{i + 1}.** {entry.AccountName} ({entry.Profession}) - **{entry.Dps:N0}** DPS");
+                .Select((entry, i) =>
+                {
+                    var boonMarker = entry.WasProvidingBoons ? " (boon)" : "";
+                    return $"**{i + 1}.** {entry.AccountName} ({entry.Profession}){boonMarker} - **{entry.Dps:N0}** DPS";
+                });
             embed.AddField("Top DPS", string.Join("\n", dpsLines));
         }
 
@@ -370,7 +374,11 @@ public class StatsCommands : InteractionModuleBase<SocketInteractionContext>
         else
         {
             var dpsLines = topDps
-                .Select((entry, i) => $"**{i + 1}.** {entry.AccountName} ({entry.Profession}) - **{entry.Dps:N0}** DPS");
+                .Select((entry, i) =>
+                {
+                    var boonMarker = entry.WasProvidingBoons ? " (boon)" : "";
+                    return $"**{i + 1}.** {entry.AccountName} ({entry.Profession}){boonMarker} - **{entry.Dps:N0}** DPS";
+                });
             embed.AddField("Top DPS", string.Join("\n", dpsLines));
         }
 

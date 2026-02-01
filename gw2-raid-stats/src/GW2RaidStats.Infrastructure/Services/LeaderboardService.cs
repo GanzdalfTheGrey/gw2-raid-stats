@@ -21,7 +21,11 @@ public class LeaderboardService
     private static readonly string[] IgnoredEncounters = ["Spirit Race", "Twisted Castle", "River of Souls", "Statues of Grenth", "Bandit Trio"];
 
     // Encounters that should ALWAYS be shown (never filtered) - for multi-target fights
-    private static readonly string[] AlwaysAllowedEncounters = ["Nikare", "Kenut"];
+    private static readonly string[] AlwaysAllowedEncounters = [
+        "Nikare", "Kenut",                          // Twin Largos
+        "Harvest Temple",                            // Harvest Temple (EoD)
+        "Captain Mai Trin", "Echo of Scarlet Briar" // Aetherblade Hideout
+    ];
 
     // Display name for non-included players (pugs)
     private const string PugDisplayName = "Pug";
@@ -94,7 +98,9 @@ public class LeaderboardService
                 x.p.AccountName,
                 x.e.EncounterTime,
                 x.e.BossName,
-                x.e.LogUrl
+                x.e.LogUrl,
+                x.pe.QuicknessGeneration,
+                x.pe.AlacracityGeneration
             })
             .ToListAsync(ct);
 
@@ -104,6 +110,9 @@ public class LeaderboardService
         {
             var supports = await GetBoonSupportsForEncounterAsync(
                 entry.EncounterId, entry.SquadGroup ?? 1, includedAccounts, ct);
+
+            var wasProvidingBoons = (entry.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
+                                    (entry.AlacracityGeneration ?? 0) >= BoonSupportThreshold;
 
             results.Add(new LeaderboardEntry(
                 entry.Id,
@@ -115,7 +124,8 @@ public class LeaderboardService
                 entry.EncounterTime,
                 entry.BossName,
                 entry.LogUrl,
-                supports
+                supports,
+                WasProvidingBoons: wasProvidingBoons
             ));
         }
 
@@ -383,7 +393,9 @@ public class LeaderboardService
                 x.p.AccountName,
                 x.e.EncounterTime,
                 x.e.BossName,
-                x.e.LogUrl
+                x.e.LogUrl,
+                x.pe.QuicknessGeneration,
+                x.pe.AlacracityGeneration
             })
             .ToListAsync(ct);
 
@@ -400,6 +412,9 @@ public class LeaderboardService
             var supports = await GetBoonSupportsForEncounterAsync(
                 entry.EncounterId, entry.SquadGroup ?? 1, includedAccounts, ct);
 
+            var wasProvidingBoons = (entry.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
+                                    (entry.AlacracityGeneration ?? 0) >= BoonSupportThreshold;
+
             results.Add(new LeaderboardEntry(
                 entry.Id,
                 entry.EncounterId,
@@ -410,7 +425,8 @@ public class LeaderboardService
                 entry.EncounterTime,
                 entry.BossName,
                 entry.LogUrl,
-                supports
+                supports,
+                WasProvidingBoons: wasProvidingBoons
             ));
         }
 
@@ -635,7 +651,8 @@ public record LeaderboardEntry(
     string BossName,
     string? LogUrl,
     List<BoonSupport> BoonSupports,
-    string? BoonType = null
+    string? BoonType = null,
+    bool WasProvidingBoons = false
 );
 
 public record BoonSupport(
