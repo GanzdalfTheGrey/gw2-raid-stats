@@ -212,7 +212,7 @@ public class LeaderboardService
     }
 
     /// <summary>
-    /// Get top DPS records for healer players (those with healing power gear)
+    /// Get top DPS records for healer players (those with healing power gear AND providing boons)
     /// </summary>
     public async Task<List<LeaderboardEntry>> GetTopHealerDpsForBossAsync(
         int triggerId,
@@ -224,14 +224,19 @@ public class LeaderboardService
         var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
         var includedList = includedAccounts.ToList();
 
-        // Get top DPS player_encounters where the player was a healer (has healing power gear)
+        // Get top DPS player_encounters where the player was a healer:
+        // - Has healing power gear (HealingPowerStat >= 1)
+        // - AND is providing boons (Quickness OR Alacrity >= 10%)
+        // This excludes DPS players who happen to have some healing gear
         var query = _db.PlayerEncounters
             .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
             .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
             .Where(x => x.e.TriggerId == triggerId && x.e.IsCM == isCM && x.e.Success)
             .Where(x => !x.e.BossName.Contains(LateStartFilter)) // Exclude late start
             .Where(x => AlwaysAllowedEncounters.Any(a => x.e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => x.e.BossName.Contains(i)))
-            .Where(x => x.pe.HealingPowerStat >= HealerStatThreshold);
+            .Where(x => x.pe.HealingPowerStat >= HealerStatThreshold)
+            .Where(x => (x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
+                        (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold);
 
         // Only included players can claim leaderboard spots
         if (includedList.Count > 0)

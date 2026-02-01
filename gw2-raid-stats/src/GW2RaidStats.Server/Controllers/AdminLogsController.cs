@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using GW2RaidStats.Infrastructure.Services;
 using GW2RaidStats.Infrastructure.Services.Import;
 
@@ -10,7 +11,7 @@ namespace GW2RaidStats.Server.Controllers;
 public class AdminLogsController : ControllerBase
 {
     private readonly LogSearchService _logSearchService;
-    private readonly RescanService _rescanService;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AdminLogsController> _logger;
 
     // Track rescan status
@@ -19,11 +20,11 @@ public class AdminLogsController : ControllerBase
 
     public AdminLogsController(
         LogSearchService logSearchService,
-        RescanService rescanService,
+        IServiceScopeFactory scopeFactory,
         ILogger<AdminLogsController> logger)
     {
         _logSearchService = logSearchService;
-        _rescanService = rescanService;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -90,13 +91,18 @@ public class AdminLogsController : ControllerBase
         _isRescanning = true;
         _lastRescanResult = null;
 
-        // Run in background without the HTTP request's cancellation token
+        // Run in background with its own scope (so DB context doesn't get disposed)
         _ = Task.Run(async () =>
         {
             try
             {
                 _logger.LogInformation("Starting background rescan...");
-                var result = await _rescanService.RescanAllAsync(progress: null, ct: default);
+
+                // Create a new scope for background work
+                using var scope = _scopeFactory.CreateScope();
+                var rescanService = scope.ServiceProvider.GetRequiredService<RescanService>();
+
+                var result = await rescanService.RescanAllAsync(progress: null, ct: default);
                 _lastRescanResult = result;
                 _logger.LogInformation("Rescan complete: {Updated} updated, {Skipped} skipped", result.Updated, result.Skipped);
             }
