@@ -143,7 +143,7 @@
                                                 @boss.TopDps.AccountName
                                             </MudLink>
                                             <MudText Typo="Typo.body2" Color="Color.Secondary">
-                                                @boss.TopDps.CharacterName - @boss.TopDps.Profession
+                                                @boss.TopDps.CharacterName - @boss.TopDps.Profession@(boss.TopDps.WasProvidingBoons ? " (boon)" : "")
                                             </MudText>
                                         </MudStack>
                                         <MudStack Spacing="0" AlignItems="AlignItems.End">
@@ -303,7 +303,8 @@
         string BossName,
         string? LogUrl,
         List<BoonSupport> BoonSupports,
-        string? BoonType = null
+        string? BoonType = null,
+        bool WasProvidingBoons = false
     );
 
     public record BoonSupport(

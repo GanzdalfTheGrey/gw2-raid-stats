@@ -130,7 +130,7 @@ else
                                     </MudLink>
                                 </MudStack>
                                 <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@player.Profession</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@player.Profession@(player.WasProvidingBoons ? " (boon)" : "")</MudText>
                                     <MudText Color="Color.Error"><strong>@player.Dps.ToString("N0")</strong></MudText>
                                 </MudStack>
                             </MudStack>
@@ -288,6 +288,7 @@ else
     public record BossTopDpsDto(
         string AccountName,
         int Dps,
-        string Profession
+        string Profession,
+        bool WasProvidingBoons = false
     );
 }

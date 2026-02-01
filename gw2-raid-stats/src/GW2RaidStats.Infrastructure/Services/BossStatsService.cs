@@ -93,13 +93,16 @@ public class BossStatsService
             topDpsQuery = topDpsQuery.Where(x => includedList.Contains(x.p.AccountName));
         }
 
+        const decimal BoonSupportThreshold = 10;
         var topDps = await topDpsQuery
             .OrderByDescending(x => x.pe.Dps)
             .Take(5)
             .Select(x => new BossTopDps(
                 x.p.AccountName,
                 x.pe.Dps,
-                x.pe.Profession
+                x.pe.Profession,
+                (x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
+                (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold
             ))
             .ToListAsync(ct);
 
@@ -169,5 +172,6 @@ public record BossEncounter(
 public record BossTopDps(
     string AccountName,
     int Dps,
-    string Profession
+    string Profession,
+    bool WasProvidingBoons = false
 );

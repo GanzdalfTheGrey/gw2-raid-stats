@@ -31,8 +31,16 @@ public static class WingMapping
     /// </summary>
     private static readonly HashSet<int> MultiTargetTriggerIds = new()
     {
+        // Twin Largos
         21105,          // Twin Largos (combined encounter)
-        21089, 21177    // Twin Largos - Nikare/Kenut individual triggers
+        21089, 21177,   // Twin Largos - Nikare/Kenut individual triggers
+
+        // Aetherblade Hideout (Mai Trin + Echo of Scarlet Briar)
+        24033,
+
+        // Harvest Temple (multiple dragon targets)
+        24375,          // Harvest Temple (normal mode)
+        43488           // Harvest Temple CM
     };
 
     /// <summary>
