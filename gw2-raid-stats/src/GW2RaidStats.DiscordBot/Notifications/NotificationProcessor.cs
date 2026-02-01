@@ -134,6 +134,7 @@ public class NotificationProcessor : BackgroundService
             "record_broken" => _serviceProvider.GetService<RecordNotificationHandler>(),
             "milestone" => _serviceProvider.GetService<MilestoneNotificationHandler>(),
             "htcm_progress" => _serviceProvider.GetService<HtcmProgressNotificationHandler>(),
+            "top_5" => _serviceProvider.GetService<Top5NotificationHandler>(),
             _ => null
         };
     }

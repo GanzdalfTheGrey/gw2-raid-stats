@@ -101,8 +101,8 @@ public class RecordNotificationService
 
     private async Task CheckDpsRecordsAsync(EncounterEntity encounter, List<string> includedAccounts, CancellationToken ct)
     {
-        // Get previous best DPS for this boss by any guild member (query once, not per player)
-        var previousBest = await _db.PlayerEncounters
+        // Get top 5 DPS for this boss (before this encounter) to check for placements
+        var previousTop5 = await _db.PlayerEncounters
             .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
             .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
             .Where(x => x.e.TriggerId == encounter.TriggerId
@@ -112,9 +112,11 @@ public class RecordNotificationService
                      && x.e.EncounterTime < encounter.EncounterTime)
             .Where(x => includedAccounts.Contains(x.p.AccountName))
             .OrderByDescending(x => x.pe.Dps)
-            .FirstOrDefaultAsync(ct);
+            .Take(5)
+            .ToListAsync(ct);
 
-        var previousBestDps = previousBest?.pe.Dps ?? 0;
+        var previousBestDps = previousTop5.FirstOrDefault()?.pe.Dps ?? 0;
+        var previousTop5Threshold = previousTop5.Count >= 5 ? previousTop5.Last().pe.Dps : 0;
 
         // Get player performances for this encounter, sorted by DPS descending
         var playerEncounters = await _db.PlayerEncounters
@@ -124,11 +126,16 @@ public class RecordNotificationService
             .OrderByDescending(x => x.pe.Dps)
             .ToListAsync(ct);
 
+        // Track who broke the record (so we don't double-notify for top 5)
+        var recordBreakers = new HashSet<string>();
+
         // Notify for ALL players who beat the previous record (highest DPS first)
         foreach (var current in playerEncounters)
         {
-            if (previousBest == null || current.pe.Dps > previousBestDps)
+            if (previousTop5.Count == 0 || current.pe.Dps > previousBestDps)
             {
+                recordBreakers.Add(current.p.AccountName);
+
                 var payload = new RecordPayload(
                     "DPS",
                     encounter.BossName,
@@ -136,11 +143,43 @@ public class RecordNotificationService
                     current.p.AccountName,
                     current.pe.Profession,
                     current.pe.Dps,
-                    previousBest?.pe.Dps,
+                    previousTop5.FirstOrDefault()?.pe.Dps,
                     encounter.LogUrl
                 );
 
                 await QueueNotificationAsync("record_broken", payload, ct);
+            }
+        }
+
+        // Check for top 5 placements (only if they didn't break the record)
+        foreach (var current in playerEncounters)
+        {
+            // Skip if they already broke the record
+            if (recordBreakers.Contains(current.p.AccountName))
+                continue;
+
+            // Check if they would place in top 5
+            if (current.pe.Dps > previousTop5Threshold)
+            {
+                // Calculate their rank (how many in previous top 5 they beat + 1)
+                var rank = previousTop5.Count(x => current.pe.Dps > x.pe.Dps) + 1;
+
+                // Only notify for positions 2-5 (1 is a record breaker)
+                if (rank >= 2 && rank <= 5)
+                {
+                    var payload = new Top5Payload(
+                        "DPS",
+                        encounter.BossName,
+                        encounter.IsCM,
+                        current.p.AccountName,
+                        current.pe.Profession,
+                        current.pe.Dps,
+                        rank,
+                        encounter.LogUrl
+                    );
+
+                    await QueueNotificationAsync("top_5", payload, ct);
+                }
             }
         }
     }
@@ -324,5 +363,16 @@ public class RecordNotificationService
         decimal BossHpRemaining,
         bool IsNewBestPhase,
         bool IsNewBestHp
+    );
+
+    private record Top5Payload(
+        string RecordType,
+        string BossName,
+        bool IsCM,
+        string PlayerName,
+        string Profession,
+        int Dps,
+        int Rank,
+        string? LogUrl
     );
 }

@@ -236,6 +236,41 @@ public class HtcmProgressNotificationHandler : INotificationHandler
     }
 }
 
+public class Top5NotificationHandler : INotificationHandler
+{
+    public async Task SendAsync(IMessageChannel channel, string payload, bool wallOfShameEnabled, CancellationToken ct)
+    {
+        var top5 = JsonSerializer.Deserialize<Top5Payload>(payload);
+        if (top5 == null) return;
+
+        var rankEmoji = top5.Rank switch
+        {
+            2 => "🥈",
+            3 => "🥉",
+            4 => "4️⃣",
+            5 => "5️⃣",
+            _ => "🏅"
+        };
+
+        var embed = new EmbedBuilder()
+            .WithTitle($"{rankEmoji} *toot* Top {top5.Rank}!")
+            .WithDescription($"**{top5.BossName}**{(top5.IsCM ? " (CM)" : "")} - {top5.RecordType}")
+            .WithColor(Color.LightOrange)
+            .WithCurrentTimestamp()
+            .AddField("Player", $"{top5.PlayerName} ({top5.Profession})", inline: true)
+            .AddField("DPS", $"{top5.Dps:N0}", inline: true)
+            .AddField("Rank", $"#{top5.Rank}", inline: true);
+
+        // Add log link if available
+        if (!string.IsNullOrEmpty(top5.LogUrl))
+        {
+            embed.WithUrl(top5.LogUrl);
+        }
+
+        await channel.SendMessageAsync(embed: embed.Build());
+    }
+}
+
 // Payload models for JSON deserialization
 public record RecordPayload(
     string RecordType,
@@ -260,4 +295,15 @@ public record HtcmProgressPayload(
     decimal BossHpRemaining,
     bool IsNewBestPhase,
     bool IsNewBestHp
+);
+
+public record Top5Payload(
+    string RecordType,
+    string BossName,
+    bool IsCM,
+    string PlayerName,
+    string Profession,
+    int Dps,
+    int Rank,
+    string? LogUrl
 );
