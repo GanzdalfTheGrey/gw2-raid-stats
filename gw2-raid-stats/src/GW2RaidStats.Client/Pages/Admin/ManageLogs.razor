@@ -37,11 +37,15 @@
     </MudStack>
     @if (_rescanResult != null)
     {
-        <MudAlert Severity="@(_rescanResult.Errors.Count > 0 ? Severity.Warning : Severity.Success)" Class="mt-3">
+        <MudAlert Severity="@(_rescanResult.Updated > 0 ? Severity.Success : (_rescanResult.Errors.Count > 0 ? Severity.Warning : Severity.Info))" Class="mt-3">
             Processed @_rescanResult.Processed logs: @_rescanResult.Updated updated, @_rescanResult.Skipped unchanged.
             @if (_rescanResult.Errors.Count > 0)
             {
                 <span> (@_rescanResult.Errors.Count errors)</span>
+            }
+            @if (!string.IsNullOrEmpty(_rescanResult.EncountersPath))
+            {
+                <br /><small>Scanned path: @_rescanResult.EncountersPath</small>
             }
         </MudAlert>
     }
@@ -585,7 +589,8 @@
         int Processed,
         int Updated,
         int Skipped,
-        List<string> Errors
+        List<string> Errors,
+        string? EncountersPath = null
     );
 
     private async Task RescanLogs()

@@ -39,6 +39,14 @@ public class RescanService
             .ToListAsync(ct);
 
         _logger.LogInformation("Found {Count} encounters with stored files to rescan", encounters.Count);
+        _logger.LogInformation("Encounters path: {Path}", _storageOptions.EncountersPath);
+
+        // Log first encounter path for debugging
+        if (encounters.Count > 0)
+        {
+            var samplePath = Path.Combine(_storageOptions.EncountersPath, encounters[0].FilesPath!, "report.json");
+            _logger.LogInformation("Sample path: {Path} (exists: {Exists})", samplePath, File.Exists(samplePath));
+        }
 
         var total = encounters.Count;
         var processed = 0;
@@ -49,18 +57,20 @@ public class RescanService
         foreach (var encounter in encounters)
         {
             ct.ThrowIfCancellationRequested();
+            processed++;
 
             try
             {
                 var jsonPath = Path.Combine(
                     _storageOptions.EncountersPath,
                     encounter.FilesPath!,
-                    "log.json");
+                    "report.json");
 
                 if (!File.Exists(jsonPath))
                 {
                     skipped++;
                     _logger.LogDebug("JSON not found for encounter {Id}: {Path}", encounter.Id, jsonPath);
+                    progress?.Report(new RescanProgress(processed, total, updated, skipped, errors.Count));
                     continue;
                 }
 
@@ -76,7 +86,6 @@ public class RescanService
                 _logger.LogWarning(ex, "Error rescanning encounter {Id}", encounter.Id);
             }
 
-            processed++;
             progress?.Report(new RescanProgress(processed, total, updated, skipped, errors.Count));
         }
 
@@ -84,7 +93,7 @@ public class RescanService
             "Rescan complete: {Processed} processed, {Updated} updated, {Skipped} skipped, {Errors} errors",
             processed, updated, skipped, errors.Count);
 
-        return new RescanResult(processed, updated, skipped, errors);
+        return new RescanResult(processed, updated, skipped, errors, _storageOptions.EncountersPath);
     }
 
     private async Task<bool> RescanEncounterAsync(Guid encounterId, string jsonPath, CancellationToken ct)
@@ -220,4 +229,5 @@ public record RescanResult(
     int Processed,
     int Updated,
     int Skipped,
-    List<string> Errors);
+    List<string> Errors,
+    string? EncountersPath = null);
