@@ -400,7 +400,10 @@ public class StatsService
     }
 
     /// <summary>
-    /// Get "wall of shame" stats for the most recent session
+    /// Get "wall of shame" stats for the most recent session.
+    /// Deaths are filtered to exclude:
+    /// - Deaths within 5 seconds of encounter end (likely squad wipe or /ff)
+    /// - Deaths without a preceding downed event (instant death via /ff command)
     /// </summary>
     public async Task<SessionShameStats?> GetSessionShameStatsAsync(CancellationToken ct = default)
     {
@@ -418,20 +421,72 @@ public class StatsService
         var sessionStart = new DateTimeOffset(sessionDate, encounterOffset);
         var sessionEnd = sessionStart.AddDays(1);
 
-        // Get encounter IDs for this session
-        var sessionEncounterIds = await _db.Encounters
+        // Get encounters for this session with their durations
+        var sessionEncounters = await _db.Encounters
             .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd)
-            .Select(e => e.Id)
+            .Select(e => new { e.Id, e.DurationMs })
             .ToListAsync(ct);
 
-        if (sessionEncounterIds.Count == 0) return null;
+        if (sessionEncounters.Count == 0) return null;
+
+        var sessionEncounterIds = sessionEncounters.Select(e => e.Id).ToList();
+        var encounterDurations = sessionEncounters.ToDictionary(e => e.Id, e => e.DurationMs);
 
         // Get included players (guild members)
         var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
         var includedList = includedAccounts.ToList();
 
-        // Get player stats aggregated for the session
-        var playerStats = await _db.PlayerEncounters
+        // Get all "Dead" and "Downed" mechanic events for the session
+        var mechanicEvents = await _db.MechanicEvents
+            .InnerJoin(_db.Players, (m, p) => m.PlayerId == p.Id, (m, p) => new { m, p })
+            .Where(x => sessionEncounterIds.Contains(x.m.EncounterId))
+            .Where(x => includedList.Contains(x.p.AccountName))
+            .Where(x => x.m.MechanicName == "Dead" || x.m.MechanicName == "Downed")
+            .Select(x => new
+            {
+                x.m.EncounterId,
+                x.m.PlayerId,
+                x.p.AccountName,
+                x.m.MechanicName,
+                x.m.EventTimeMs
+            })
+            .ToListAsync(ct);
+
+        // Filter deaths to only count "legitimate" ones
+        var deathEvents = mechanicEvents.Where(m => m.MechanicName == "Dead").ToList();
+        var downedEvents = mechanicEvents.Where(m => m.MechanicName == "Downed").ToList();
+
+        const int endOfFightThresholdMs = 5000; // Exclude deaths within 5 seconds of encounter end
+        const int downedLookbackMs = 15000; // Look for downed event within 15 seconds before death
+
+        var legitimateDeaths = deathEvents.Where(death =>
+        {
+            // Exclude deaths within 5 seconds of encounter end
+            if (encounterDurations.TryGetValue(death.EncounterId, out var durationMs))
+            {
+                if (death.EventTimeMs > durationMs - endOfFightThresholdMs)
+                    return false;
+            }
+
+            // Exclude deaths without a preceding downed event (/ff detection)
+            var hasDownedBefore = downedEvents.Any(downed =>
+                downed.EncounterId == death.EncounterId &&
+                downed.PlayerId == death.PlayerId &&
+                downed.EventTimeMs < death.EventTimeMs &&
+                downed.EventTimeMs >= death.EventTimeMs - downedLookbackMs);
+
+            return hasDownedBefore;
+        }).ToList();
+
+        // Count legitimate deaths per player
+        var deathsByPlayer = legitimateDeaths
+            .GroupBy(d => d.AccountName)
+            .Select(g => new { AccountName = g.Key, TotalDeaths = g.Count() })
+            .OrderByDescending(p => p.TotalDeaths)
+            .ToList();
+
+        // Get downs from PlayerEncounters (still use aggregate for downs)
+        var playerDowns = await _db.PlayerEncounters
             .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
             .Where(x => sessionEncounterIds.Contains(x.pe.EncounterId))
             .Where(x => includedList.Contains(x.p.AccountName))
@@ -439,22 +494,21 @@ public class StatsService
             .Select(g => new
             {
                 AccountName = g.Key,
-                TotalDeaths = g.Sum(x => x.pe.Deaths),
                 TotalDowns = g.Sum(x => x.pe.Downs)
             })
             .ToListAsync(ct);
 
-        if (playerStats.Count == 0) return null;
+        if (deathsByPlayer.Count == 0 && playerDowns.Count == 0) return null;
 
-        // Find the player with most deaths
-        var mostDeaths = playerStats.OrderByDescending(p => p.TotalDeaths).First();
-        var mostDowns = playerStats.OrderByDescending(p => p.TotalDowns).First();
+        // Find the player with most legitimate deaths
+        var mostDeaths = deathsByPlayer.FirstOrDefault();
+        var mostDowns = playerDowns.OrderByDescending(p => p.TotalDowns).FirstOrDefault();
 
         return new SessionShameStats(
-            MostDeathsPlayer: mostDeaths.AccountName,
-            MostDeathsCount: mostDeaths.TotalDeaths,
-            MostDownsPlayer: mostDowns.AccountName,
-            MostDownsCount: mostDowns.TotalDowns
+            MostDeathsPlayer: mostDeaths?.AccountName ?? "",
+            MostDeathsCount: mostDeaths?.TotalDeaths ?? 0,
+            MostDownsPlayer: mostDowns?.AccountName ?? "",
+            MostDownsCount: mostDowns?.TotalDowns ?? 0
         );
     }
 
