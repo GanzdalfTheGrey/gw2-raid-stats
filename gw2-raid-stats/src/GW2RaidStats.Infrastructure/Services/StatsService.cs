@@ -536,9 +536,9 @@ public class StatsService
         var sessionStart = new DateTimeOffset(sessionDate, encounterOffset);
         var sessionEnd = sessionStart.AddDays(1);
 
-        // Get encounter IDs for this session (only successful kills)
+        // Get encounter IDs for this session (all encounters including wipes)
         var sessionEncounterIds = await _db.Encounters
-            .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd && e.Success)
+            .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd)
             .Select(e => e.Id)
             .ToListAsync(ct);
 
