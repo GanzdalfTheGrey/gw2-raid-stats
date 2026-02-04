@@ -485,8 +485,8 @@ public class StatsService
             .OrderByDescending(p => p.TotalDeaths)
             .ToList();
 
-        // Get downs from PlayerEncounters (still use aggregate for downs)
-        var playerDowns = await _db.PlayerEncounters
+        // Get additional stats from PlayerEncounters (downs, CC, damage taken)
+        var playerStats = await _db.PlayerEncounters
             .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
             .Where(x => sessionEncounterIds.Contains(x.pe.EncounterId))
             .Where(x => includedList.Contains(x.p.AccountName))
@@ -494,21 +494,29 @@ public class StatsService
             .Select(g => new
             {
                 AccountName = g.Key,
-                TotalDowns = g.Sum(x => x.pe.Downs)
+                TotalDowns = g.Sum(x => x.pe.Downs),
+                TotalBreakbarDamage = g.Sum(x => (double)(x.pe.BreakbarDamage ?? 0)),
+                TotalDamageTaken = g.Sum(x => x.pe.DamageTaken)
             })
             .ToListAsync(ct);
 
-        if (deathsByPlayer.Count == 0 && playerDowns.Count == 0) return null;
+        if (deathsByPlayer.Count == 0 && playerStats.Count == 0) return null;
 
         // Find the player with most legitimate deaths
         var mostDeaths = deathsByPlayer.FirstOrDefault();
-        var mostDowns = playerDowns.OrderByDescending(p => p.TotalDowns).FirstOrDefault();
+        var mostDowns = playerStats.OrderByDescending(p => p.TotalDowns).FirstOrDefault();
+        var leastCc = playerStats.OrderBy(p => p.TotalBreakbarDamage).FirstOrDefault();
+        var mostDamageTaken = playerStats.OrderByDescending(p => p.TotalDamageTaken).FirstOrDefault();
 
         return new SessionShameStats(
             MostDeathsPlayer: mostDeaths?.AccountName ?? "",
             MostDeathsCount: mostDeaths?.TotalDeaths ?? 0,
             MostDownsPlayer: mostDowns?.AccountName ?? "",
-            MostDownsCount: mostDowns?.TotalDowns ?? 0
+            MostDownsCount: mostDowns?.TotalDowns ?? 0,
+            LeastCcPlayer: leastCc?.AccountName ?? "",
+            LeastCcValue: leastCc != null ? (int)leastCc.TotalBreakbarDamage : 0,
+            MostDamageTakenPlayer: mostDamageTaken?.AccountName ?? "",
+            MostDamageTakenValue: mostDamageTaken?.TotalDamageTaken ?? 0
         );
     }
 
@@ -553,7 +561,9 @@ public class StatsService
                 TotalDeaths = g.Sum(x => x.pe.Deaths),
                 EncounterCount = g.Count(),
                 AvgQuickness = g.Average(x => (double)(x.pe.QuicknessGeneration ?? 0)),
-                AvgAlacrity = g.Average(x => (double)(x.pe.AlacracityGeneration ?? 0))
+                AvgAlacrity = g.Average(x => (double)(x.pe.AlacracityGeneration ?? 0)),
+                TotalBreakbarDamage = g.Sum(x => (double)(x.pe.BreakbarDamage ?? 0)),
+                TotalResurrects = g.Sum(x => x.pe.Resurrects)
             })
             .ToListAsync(ct);
 
@@ -563,22 +573,44 @@ public class StatsService
         var dpsPlayers = playerStats.Where(p => p.AvgQuickness < 10 && p.AvgAlacrity < 10).ToList();
         var topDps = dpsPlayers.OrderByDescending(p => p.AvgDps).FirstOrDefault();
 
-        // Top Support DPS (players with significant boon generation)
-        var supportPlayers = playerStats.Where(p => p.AvgQuickness >= 10 || p.AvgAlacrity >= 10).ToList();
-        var topSupport = supportPlayers.OrderByDescending(p => p.AvgDps).FirstOrDefault();
+        // Best Boon DPS (players with significant boon generation)
+        var boonPlayers = playerStats.Where(p => p.AvgQuickness >= 10 || p.AvgAlacrity >= 10).ToList();
+        var bestBoonDps = boonPlayers.OrderByDescending(p => p.AvgDps).FirstOrDefault();
+
+        // Best CC (most breakbar damage)
+        var bestCc = playerStats.OrderByDescending(p => p.TotalBreakbarDamage).FirstOrDefault();
+
+        // Most Resses
+        var mostResses = playerStats.OrderByDescending(p => p.TotalResurrects).FirstOrDefault();
 
         // Survivor (fewest deaths, min 3 encounters to qualify)
-        var survivor = playerStats
+        // Only award if there's a unique winner (no ties)
+        var eligibleSurvivors = playerStats
             .Where(p => p.EncounterCount >= 3)
             .OrderBy(p => p.TotalDeaths)
             .ThenByDescending(p => p.EncounterCount)
-            .FirstOrDefault();
+            .ToList();
+
+        var survivor = eligibleSurvivors.FirstOrDefault();
+        // Check for ties - if multiple players have the same death count as the winner, don't award
+        if (survivor != null)
+        {
+            var tiedCount = eligibleSurvivors.Count(p => p.TotalDeaths == survivor.TotalDeaths);
+            if (tiedCount > 1)
+            {
+                survivor = null; // No survivor award when there's a tie
+            }
+        }
 
         return new SessionMvpStats(
             TopDpsPlayer: topDps?.AccountName,
             TopDpsValue: topDps != null ? (int)topDps.AvgDps : null,
-            TopSupportPlayer: topSupport?.AccountName,
-            TopSupportDps: topSupport != null ? (int)topSupport.AvgDps : null,
+            BestBoonDpsPlayer: bestBoonDps?.AccountName,
+            BestBoonDpsValue: bestBoonDps != null ? (int)bestBoonDps.AvgDps : null,
+            BestCcPlayer: bestCc?.AccountName,
+            BestCcValue: bestCc != null ? (int)bestCc.TotalBreakbarDamage : null,
+            MostRessesPlayer: mostResses?.AccountName,
+            MostRessesCount: mostResses?.TotalResurrects,
             SurvivorPlayer: survivor?.AccountName,
             SurvivorDeaths: survivor?.TotalDeaths
         );
@@ -588,8 +620,12 @@ public class StatsService
 public record SessionMvpStats(
     string? TopDpsPlayer,
     int? TopDpsValue,
-    string? TopSupportPlayer,
-    int? TopSupportDps,
+    string? BestBoonDpsPlayer,
+    int? BestBoonDpsValue,
+    string? BestCcPlayer,
+    int? BestCcValue,
+    string? MostRessesPlayer,
+    int? MostRessesCount,
     string? SurvivorPlayer,
     int? SurvivorDeaths
 );
@@ -598,7 +634,11 @@ public record SessionShameStats(
     string MostDeathsPlayer,
     int MostDeathsCount,
     string MostDownsPlayer,
-    int MostDownsCount
+    int MostDownsCount,
+    string LeastCcPlayer,
+    int LeastCcValue,
+    string MostDamageTakenPlayer,
+    long MostDamageTakenValue
 );
 
 public record DashboardStats(

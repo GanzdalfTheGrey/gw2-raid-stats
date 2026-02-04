@@ -89,9 +89,17 @@ public class SessionNotificationHandler : INotificationHandler
             {
                 mvpLines.Add($"⚔️ Top DPS: **{mvpStats.TopDpsPlayer}** ({mvpStats.TopDpsValue:N0} avg)");
             }
-            if (mvpStats.TopSupportPlayer != null)
+            if (mvpStats.BestBoonDpsPlayer != null)
             {
-                mvpLines.Add($"🛡️ Top Support: **{mvpStats.TopSupportPlayer}** ({mvpStats.TopSupportDps:N0} avg)");
+                mvpLines.Add($"🎵 Best Boon DPS: **{mvpStats.BestBoonDpsPlayer}** ({mvpStats.BestBoonDpsValue:N0} avg)");
+            }
+            if (mvpStats.BestCcPlayer != null && mvpStats.BestCcValue > 0)
+            {
+                mvpLines.Add($"💥 Best CC: **{mvpStats.BestCcPlayer}** ({mvpStats.BestCcValue:N0})");
+            }
+            if (mvpStats.MostRessesPlayer != null && mvpStats.MostRessesCount > 0)
+            {
+                mvpLines.Add($"🩹 Most Resses: **{mvpStats.MostRessesPlayer}** ({mvpStats.MostRessesCount})");
             }
             if (mvpStats.SurvivorPlayer != null)
             {
@@ -117,6 +125,14 @@ public class SessionNotificationHandler : INotificationHandler
                 if (shameStats.MostDownsCount > 0)
                 {
                     shameLines.Add($"🦵 Most Downs: **{shameStats.MostDownsPlayer}** ({shameStats.MostDownsCount})");
+                }
+                if (!string.IsNullOrEmpty(shameStats.LeastCcPlayer))
+                {
+                    shameLines.Add($"🪶 Least CC: **{shameStats.LeastCcPlayer}** ({shameStats.LeastCcValue:N0})");
+                }
+                if (shameStats.MostDamageTakenValue > 0)
+                {
+                    shameLines.Add($"🎯 Most Damage Taken: **{shameStats.MostDamageTakenPlayer}** ({shameStats.MostDamageTakenValue:N0})");
                 }
                 if (shameLines.Count > 0)
                 {
