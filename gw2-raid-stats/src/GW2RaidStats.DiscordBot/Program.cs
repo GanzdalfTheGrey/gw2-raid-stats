@@ -50,6 +50,7 @@ var host = Host.CreateDefaultBuilder(args)
 
         // Bot services
         services.AddScoped<DiscordConfigService>();
+        services.AddScoped<PatchNotesService>();
 
         // Notification handlers
         services.AddScoped<SessionNotificationHandler>();

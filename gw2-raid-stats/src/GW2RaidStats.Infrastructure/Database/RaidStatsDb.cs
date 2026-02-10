@@ -20,4 +20,5 @@ public class RaidStatsDb : DataConnection
     public ITable<DiscordConfigEntity> DiscordConfigs => this.GetTable<DiscordConfigEntity>();
     public ITable<DiscordUserLinkEntity> DiscordUserLinks => this.GetTable<DiscordUserLinkEntity>();
     public ITable<NotificationQueueEntity> NotificationQueue => this.GetTable<NotificationQueueEntity>();
+    public ITable<AppVersionEntity> AppVersions => this.GetTable<AppVersionEntity>();
 }

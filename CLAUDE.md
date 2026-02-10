@@ -113,3 +113,27 @@ Queue folders for log processing:
 - `WingMapping.cs` contains boss/wing ID mappings for GW2 raid encounters
 - Leaderboards explicitly filter to guild members only (no pugs)
 - "Recap" features generate Spotify Wrapped-style yearly summaries
+
+## Changelog & Versioning
+
+**IMPORTANT:** When making changes to this project, update `gw2-raid-stats/CHANGELOG.md`:
+
+1. Add changes under the appropriate heading (`### Added`, `### Fixed`, `### Changed`, `### Removed`)
+2. When the user says they're checking in / committing, create a new version entry at the top
+3. Use semantic versioning: `MAJOR.MINOR.PATCH`
+   - MAJOR: Breaking changes
+   - MINOR: New features (backwards compatible)
+   - PATCH: Bug fixes
+
+Example format:
+```markdown
+## [1.1.0] - 2025-02-15
+
+### Added
+- New feature description
+
+### Fixed
+- Bug fix description
+```
+
+The Discord bot automatically broadcasts new versions to configured guilds on startup.

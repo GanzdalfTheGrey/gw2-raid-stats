@@ -1,6 +1,7 @@
 using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -81,6 +82,23 @@ public class DiscordBotService : BackgroundService
             // Register globally (takes up to an hour to propagate)
             _logger.LogInformation("Registering commands globally");
             await _interactionService.RegisterCommandsGloballyAsync();
+        }
+
+        // Check for new version and broadcast patch notes
+        await CheckForNewVersionAsync();
+    }
+
+    private async Task CheckForNewVersionAsync()
+    {
+        try
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var patchNotesService = scope.ServiceProvider.GetRequiredService<PatchNotesService>();
+            await patchNotesService.CheckAndBroadcastNewVersionAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to check for new version");
         }
     }
 

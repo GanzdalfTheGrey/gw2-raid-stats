@@ -32,6 +32,9 @@ RUN adduser --disabled-password --gecos '' --uid 1000 appuser
 # Copy published app
 COPY --from=build /app/publish .
 
+# Copy changelog for patch notes feature
+COPY CHANGELOG.md .
+
 # Set ownership
 RUN chown -R appuser:appuser /app
 
