@@ -19,6 +19,7 @@ tools/
 # Documentation
 *.md
 !README.md
+!CHANGELOG.md
 
 # Misc
 *.log
