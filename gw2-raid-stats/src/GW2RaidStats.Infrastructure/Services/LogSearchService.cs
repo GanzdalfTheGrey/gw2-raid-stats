@@ -69,7 +69,7 @@ public class LogSearchService
             "bossname" => request.SortDescending ? query.OrderByDescending(e => e.BossName) : query.OrderBy(e => e.BossName),
             "duration" => request.SortDescending ? query.OrderByDescending(e => e.DurationMs) : query.OrderBy(e => e.DurationMs),
             "success" => request.SortDescending ? query.OrderByDescending(e => e.Success) : query.OrderBy(e => e.Success),
-            _ => request.SortDescending ? query.OrderBy(e => e.EncounterTime) : query.OrderByDescending(e => e.EncounterTime) // Default: newest first
+            _ => request.SortDescending ? query.OrderByDescending(e => e.EncounterTime) : query.OrderBy(e => e.EncounterTime) // Default: newest first
         };
 
         // Apply pagination

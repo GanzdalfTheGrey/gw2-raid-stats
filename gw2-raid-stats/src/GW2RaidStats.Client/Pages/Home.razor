@@ -52,19 +52,19 @@
 <MudGrid Class="mt-4">
     <MudItem xs="12" md="8">
         <MudPaper Class="pa-4" Elevation="2">
-            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
-                <MudText Typo="Typo.h6">
-                    Previous Session
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start" Class="mb-3" Wrap="Wrap.Wrap" Spacing="2">
+                <MudStack Spacing="0">
+                    <MudText Typo="Typo.h6">Previous Session</MudText>
                     @if (_previousSession != null)
                     {
-                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
                             @_previousSession.SessionTime.LocalDateTime.ToString("dddd, MMMM d, yyyy")
                         </MudText>
                     }
-                </MudText>
+                </MudStack>
                 @if (_previousSession != null)
                 {
-                    <MudStack Row="true" Spacing="3" AlignItems="AlignItems.Center">
+                    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
                         <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
                             @_previousSession.TotalAttempts attempts
                         </MudChip>
@@ -82,7 +82,8 @@
                                    Color="Color.Primary"
                                    StartIcon="@Icons.Material.Filled.Download"
                                    Href="/api/reports/download-session"
-                                   Target="_blank">
+                                   Target="_blank"
+                                   Style="white-space: nowrap;">
                             Download All
                         </MudButton>
                     </MudStack>

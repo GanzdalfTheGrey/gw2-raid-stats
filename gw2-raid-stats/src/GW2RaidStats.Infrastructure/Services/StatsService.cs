@@ -536,13 +536,16 @@ public class StatsService
         var sessionStart = new DateTimeOffset(sessionDate, encounterOffset);
         var sessionEnd = sessionStart.AddDays(1);
 
-        // Get encounter IDs for this session (all encounters including wipes)
-        var sessionEncounterIds = await _db.Encounters
+        // Get encounters for this session with their durations
+        var sessionEncounters = await _db.Encounters
             .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd)
-            .Select(e => e.Id)
+            .Select(e => new { e.Id, e.DurationMs })
             .ToListAsync(ct);
 
-        if (sessionEncounterIds.Count == 0) return null;
+        if (sessionEncounters.Count == 0) return null;
+
+        var sessionEncounterIds = sessionEncounters.Select(e => e.Id).ToList();
+        var encounterDurations = sessionEncounters.ToDictionary(e => e.Id, e => e.DurationMs);
 
         // Get included players (guild members)
         var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
@@ -558,7 +561,6 @@ public class StatsService
             {
                 AccountName = g.Key,
                 AvgDps = g.Average(x => (double)x.pe.Dps),
-                TotalDeaths = g.Sum(x => x.pe.Deaths),
                 EncounterCount = g.Count(),
                 AvgQuickness = g.Average(x => (double)(x.pe.QuicknessGeneration ?? 0)),
                 AvgAlacrity = g.Average(x => (double)(x.pe.AlacracityGeneration ?? 0)),
@@ -566,6 +568,50 @@ public class StatsService
                 TotalResurrects = g.Sum(x => x.pe.Resurrects)
             })
             .ToListAsync(ct);
+
+        // Get legitimate deaths (same filtering as wall of shame)
+        // Excludes deaths within 5 seconds of encounter end and deaths without preceding downed event
+        var mechanicEvents = await _db.MechanicEvents
+            .InnerJoin(_db.Players, (m, p) => m.PlayerId == p.Id, (m, p) => new { m, p })
+            .Where(x => sessionEncounterIds.Contains(x.m.EncounterId))
+            .Where(x => includedList.Contains(x.p.AccountName))
+            .Where(x => x.m.MechanicName == "Dead" || x.m.MechanicName == "Downed")
+            .Select(x => new
+            {
+                x.m.EncounterId,
+                x.m.PlayerId,
+                x.p.AccountName,
+                x.m.MechanicName,
+                x.m.EventTimeMs
+            })
+            .ToListAsync(ct);
+
+        var deathEvents = mechanicEvents.Where(m => m.MechanicName == "Dead").ToList();
+        var downedEvents = mechanicEvents.Where(m => m.MechanicName == "Downed").ToList();
+
+        const int endOfFightThresholdMs = 5000;
+        const int downedLookbackMs = 15000;
+
+        var legitimateDeaths = deathEvents.Where(death =>
+        {
+            if (encounterDurations.TryGetValue(death.EncounterId, out var durationMs))
+            {
+                if (death.EventTimeMs > durationMs - endOfFightThresholdMs)
+                    return false;
+            }
+
+            var hasDownedBefore = downedEvents.Any(downed =>
+                downed.EncounterId == death.EncounterId &&
+                downed.PlayerId == death.PlayerId &&
+                downed.EventTimeMs < death.EventTimeMs &&
+                downed.EventTimeMs >= death.EventTimeMs - downedLookbackMs);
+
+            return hasDownedBefore;
+        }).ToList();
+
+        var deathsByPlayer = legitimateDeaths
+            .GroupBy(d => d.AccountName)
+            .ToDictionary(g => g.Key, g => g.Count());
 
         if (playerStats.Count == 0) return null;
 
@@ -583,11 +629,18 @@ public class StatsService
         // Most Resses
         var mostResses = playerStats.OrderByDescending(p => p.TotalResurrects).FirstOrDefault();
 
-        // Survivor (fewest deaths, min 3 encounters to qualify)
+        // Survivor (fewest legitimate deaths, min 3 encounters to qualify)
+        // Uses same death filtering as wall of shame (excludes /gg and end-of-fight deaths)
         // Only award if there's a unique winner (no ties)
         var eligibleSurvivors = playerStats
             .Where(p => p.EncounterCount >= 3)
-            .OrderBy(p => p.TotalDeaths)
+            .Select(p => new
+            {
+                p.AccountName,
+                p.EncounterCount,
+                LegitimateDeaths = deathsByPlayer.GetValueOrDefault(p.AccountName, 0)
+            })
+            .OrderBy(p => p.LegitimateDeaths)
             .ThenByDescending(p => p.EncounterCount)
             .ToList();
 
@@ -595,7 +648,7 @@ public class StatsService
         // Check for ties - if multiple players have the same death count as the winner, don't award
         if (survivor != null)
         {
-            var tiedCount = eligibleSurvivors.Count(p => p.TotalDeaths == survivor.TotalDeaths);
+            var tiedCount = eligibleSurvivors.Count(p => p.LegitimateDeaths == survivor.LegitimateDeaths);
             if (tiedCount > 1)
             {
                 survivor = null; // No survivor award when there's a tie
@@ -612,7 +665,7 @@ public class StatsService
             MostRessesPlayer: mostResses?.AccountName,
             MostRessesCount: mostResses?.TotalResurrects,
             SurvivorPlayer: survivor?.AccountName,
-            SurvivorDeaths: survivor?.TotalDeaths
+            SurvivorDeaths: survivor?.LegitimateDeaths
         );
     }
 }

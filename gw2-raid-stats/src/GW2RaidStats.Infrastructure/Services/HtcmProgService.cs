@@ -48,19 +48,39 @@ public class HtcmProgService
     /// </summary>
     public async Task<List<HtcmSession>> GetAvailableSessionsAsync(CancellationToken ct = default)
     {
-        var sessions = await _db.Encounters
+        // Load encounters first, then group in memory to properly correlate phase name with phase index
+        var encounters = await _db.Encounters
             .Where(e => e.TriggerId == HtcmTriggerId && e.IsCM && e.DurationMs >= MinDurationMs)
-            .GroupBy(e => e.EncounterTime.Date)
-            .Select(g => new HtcmSession(
-                g.Key,
-                g.Count(),
-                g.Max(e => e.FurthestPhaseIndex) ?? 0,
-                g.Max(e => e.FurthestPhase) ?? "Unknown",
-                g.Min(e => e.BossHealthPercentRemaining) ?? 100,
-                g.Any(e => e.Success)
-            ))
-            .OrderByDescending(s => s.Date)
+            .Select(e => new {
+                e.EncounterTime,
+                e.FurthestPhase,
+                e.FurthestPhaseIndex,
+                e.BossHealthPercentRemaining,
+                e.Success
+            })
             .ToListAsync(ct);
+
+        var sessions = encounters
+            .GroupBy(e => e.EncounterTime.Date)
+            .Select(g =>
+            {
+                var bestPhaseIndex = g.Max(e => e.FurthestPhaseIndex) ?? 0;
+                var bestPhase = g
+                    .Where(e => e.FurthestPhaseIndex == bestPhaseIndex)
+                    .Select(e => e.FurthestPhase)
+                    .FirstOrDefault() ?? "Unknown";
+
+                return new HtcmSession(
+                    g.Key,
+                    g.Count(),
+                    bestPhaseIndex,
+                    bestPhase,
+                    g.Min(e => e.BossHealthPercentRemaining) ?? 100,
+                    g.Any(e => e.Success)
+                );
+            })
+            .OrderByDescending(s => s.Date)
+            .ToList();
 
         return sessions;
     }
@@ -200,15 +220,22 @@ public class HtcmProgService
             .ToList();
 
         // Calculate session stats
-        var bestPull = pulls.OrderBy(p => p.BossHpRemaining).First();
+        // Best phase = furthest phase reached (by phase index)
+        var bestPhaseIndex = pulls.Max(p => p.FurthestPhaseIndex);
+        var bestPhase = pulls
+            .Where(p => p.FurthestPhaseIndex == bestPhaseIndex)
+            .Select(p => p.FurthestPhase)
+            .First();
+        // Best HP = lowest boss HP remaining
+        var bestHpRemaining = pulls.Min(p => p.BossHpRemaining);
         var totalDuration = TimeSpan.FromMilliseconds(encounters.Sum(e => e.DurationMs));
 
         return new HtcmSessionDetail(
             date,
             pulls.Count,
-            bestPull.FurthestPhase,
-            bestPull.FurthestPhaseIndex,
-            bestPull.BossHpRemaining,
+            bestPhase,
+            bestPhaseIndex,
+            bestHpRemaining,
             totalDuration,
             pulls.Average(p => p.Duration.TotalSeconds),
             (int)pulls.Average(p => p.SquadDps),
@@ -260,15 +287,24 @@ public class HtcmProgService
         var sessionPoints = encounters
             .GroupBy(e => e.EncounterTime.Date)
             .OrderBy(g => g.Key)
-            .Select((g, i) => new HtcmSessionProgressionPoint(
-                i + 1,
-                g.Key,
-                g.Min(e => e.BossHealthPercentRemaining) ?? 100,
-                g.Max(e => e.FurthestPhaseIndex) ?? 0,
-                g.Max(e => e.FurthestPhase) ?? "Unknown",
-                g.Count(),
-                g.Any(e => e.Success)
-            ))
+            .Select((g, i) =>
+            {
+                var maxPhaseIndex = g.Max(e => e.FurthestPhaseIndex) ?? 0;
+                var maxPhase = g
+                    .Where(e => e.FurthestPhaseIndex == maxPhaseIndex)
+                    .Select(e => e.FurthestPhase)
+                    .FirstOrDefault() ?? "Unknown";
+
+                return new HtcmSessionProgressionPoint(
+                    i + 1,
+                    g.Key,
+                    g.Min(e => e.BossHealthPercentRemaining) ?? 100,
+                    maxPhaseIndex,
+                    maxPhase,
+                    g.Count(),
+                    g.Any(e => e.Success)
+                );
+            })
             .ToList();
 
         // Calculate overall stats
