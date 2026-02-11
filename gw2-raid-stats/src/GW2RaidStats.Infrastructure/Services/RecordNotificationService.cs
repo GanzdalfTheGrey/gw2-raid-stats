@@ -284,24 +284,33 @@ public class RecordNotificationService
 
     private async Task CheckHtcmProgressAsync(EncounterEntity encounter, CancellationToken ct)
     {
-        if (encounter.FurthestPhaseIndex == null && encounter.BossHealthPercentRemaining == null)
+        if (encounter.FurthestPhase == null && encounter.BossHealthPercentRemaining == null)
             return;
 
-        // Get previous best phase and HP
-        var previousBest = await _db.Encounters
+        // Get previous encounters to find the best using canonical phase ordering
+        var previousEncounters = await _db.Encounters
             .Where(e => e.TriggerId == HtcmTriggerId
                      && e.IsCM
                      && e.Id != encounter.Id
-                     && e.EncounterTime < encounter.EncounterTime)
-            .OrderByDescending(e => e.FurthestPhaseIndex)
-            .ThenBy(e => e.BossHealthPercentRemaining)
-            .FirstOrDefaultAsync(ct);
+                     && e.EncounterTime < encounter.EncounterTime
+                     && e.FurthestPhase != null)
+            .Select(e => new { e.FurthestPhase, e.BossHealthPercentRemaining })
+            .ToListAsync(ct);
 
-        var isNewBestPhase = previousBest == null ||
-            (encounter.FurthestPhaseIndex ?? 0) > (previousBest.FurthestPhaseIndex ?? 0);
+        // Find the previous best using canonical phase ordering
+        var previousBestPhaseIndex = previousEncounters.Count > 0
+            ? previousEncounters.Max(e => HtcmProgService.GetCanonicalPhaseIndex(e.FurthestPhase))
+            : 0;
+        var previousBestHp = previousEncounters.Count > 0
+            ? previousEncounters.Min(e => e.BossHealthPercentRemaining ?? 100)
+            : 100m;
 
-        var isNewBestHp = previousBest == null ||
-            (encounter.BossHealthPercentRemaining ?? 100) < (previousBest.BossHealthPercentRemaining ?? 100);
+        // Compare current encounter using canonical ordering
+        var currentPhaseIndex = HtcmProgService.GetCanonicalPhaseIndex(encounter.FurthestPhase);
+        var isNewBestPhase = currentPhaseIndex > previousBestPhaseIndex;
+
+        var isNewBestHp = previousEncounters.Count == 0 ||
+            (encounter.BossHealthPercentRemaining ?? 100) < previousBestHp;
 
         // Only notify if this is actual progress
         if (isNewBestPhase || isNewBestHp)

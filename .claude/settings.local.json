@@ -23,7 +23,10 @@
       "Bash(head:*)",
       "Bash(dotnet clean:*)",
       "WebSearch",
-      "WebFetch(domain:baaron4.github.io)"
+      "WebFetch(domain:baaron4.github.io)",
+      "Bash(done)",
+      "Bash(while read f)",
+      "Bash(do echo '=== $f ===')"
     ],
     "deny": [],
     "ask": []

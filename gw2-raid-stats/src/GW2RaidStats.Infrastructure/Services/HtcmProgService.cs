@@ -17,6 +17,83 @@ public class HtcmProgService
     // Minimum fight duration to count (30 seconds)
     private const int MinDurationMs = 30000;
 
+    // Canonical phase order for HTCM progression
+    // This maps phase names to their canonical progression index
+    // Higher index = further into the fight = better progression
+    private static readonly Dictionary<string, int> CanonicalPhaseOrder = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Full Fight is a meta-phase, not a real progression point
+        { "Full Fight", 0 },
+
+        // Phase 1: First purification and first three dragons
+        { "Purification 1", 100 },
+        { "Heart 1 Breakbar 1", 110 },
+        { "Heart 1 Breakbar 2", 111 },
+        { "Heart 1 Breakbar 3", 112 },
+        { "Jormag", 200 },
+        { "Primordus", 300 },
+        { "Kralkatorrik", 400 },
+
+        // Phase 2: Void Time Caster (mini-boss)
+        { "Void Time Caster Breakbar 1", 450 },
+        { "Void Time Caster Breakbar 2", 451 },
+        { "Purification 2", 500 },
+        { "Void Time Caster", 550 },
+        { "Heart 2 Breakbar 1", 560 },
+        { "Heart 2 Breakbar 2", 561 },
+        { "Heart 2 Breakbar 3", 562 },
+
+        // Phase 3: Mordremoth and Zhaitan with Void Giants
+        { "Mordremoth", 600 },
+        { "Void Giant 1", 650 },
+        { "Void Giant 1 Breakbar 1", 651 },
+        { "Void Giant 1 Breakbar 2", 652 },
+        { "Void Giant 2", 660 },
+        { "Void Giant 2 Breakbar 1", 661 },
+        { "Void Giant 2 Breakbar 2", 662 },
+        { "Zhaitan", 700 },
+
+        // Phase 4: Soo-Won phases
+        { "Purification 3", 750 },
+        { "Heart 3 Breakbar 1", 760 },
+        { "Heart 3 Breakbar 2", 761 },
+        { "Heart 3 Breakbar 3", 762 },
+        { "Soo-Won 1", 800 },
+        { "Void Amalgamate", 850 },
+        { "Void Amalgamate Breakbar 1", 851 },
+        { "Void Amalgamate Breakbar 2", 852 },
+        { "Soo-Won 2", 900 },
+
+        // Success/completion
+        { "Success", 1000 }
+    };
+
+    /// <summary>
+    /// Gets the canonical progression index for a phase name.
+    /// Higher values indicate further progression into the fight.
+    /// </summary>
+    public static int GetCanonicalPhaseIndex(string? phaseName)
+    {
+        if (string.IsNullOrEmpty(phaseName))
+            return 0;
+
+        // Try exact match first
+        if (CanonicalPhaseOrder.TryGetValue(phaseName, out var index))
+            return index;
+
+        // Handle partial matches for phase variants we might not have listed
+        // This allows for some flexibility if Elite Insights adds new breakbar phases
+        foreach (var (pattern, value) in CanonicalPhaseOrder)
+        {
+            if (phaseName.StartsWith(pattern, StringComparison.OrdinalIgnoreCase))
+                return value;
+        }
+
+        // If we can't match, log it for debugging and return a low value
+        // Unknown phases should not be considered "best"
+        return 1; // Better than "Full Fight" but worse than any known phase
+    }
+
     // Key mechanics to track for HTCM
     // Note: These are the short names from Elite Insights mechanics data
     public static readonly string[] TrackedMechanics =
@@ -64,17 +141,17 @@ public class HtcmProgService
             .GroupBy(e => e.EncounterTime.Date)
             .Select(g =>
             {
-                var bestPhaseIndex = g.Max(e => e.FurthestPhaseIndex) ?? 0;
-                var bestPhase = g
-                    .Where(e => e.FurthestPhaseIndex == bestPhaseIndex)
-                    .Select(e => e.FurthestPhase)
-                    .FirstOrDefault() ?? "Unknown";
+                // Use canonical phase ordering to determine best progression
+                var bestEntry = g
+                    .Select(e => new { e.FurthestPhase, CanonicalIndex = GetCanonicalPhaseIndex(e.FurthestPhase) })
+                    .OrderByDescending(x => x.CanonicalIndex)
+                    .First();
 
                 return new HtcmSession(
                     g.Key,
                     g.Count(),
-                    bestPhaseIndex,
-                    bestPhase,
+                    bestEntry.CanonicalIndex,
+                    bestEntry.FurthestPhase ?? "Unknown",
                     g.Min(e => e.BossHealthPercentRemaining) ?? 100,
                     g.Any(e => e.Success)
                 );
@@ -220,12 +297,13 @@ public class HtcmProgService
             .ToList();
 
         // Calculate session stats
-        // Best phase = furthest phase reached (by phase index)
-        var bestPhaseIndex = pulls.Max(p => p.FurthestPhaseIndex);
-        var bestPhase = pulls
-            .Where(p => p.FurthestPhaseIndex == bestPhaseIndex)
-            .Select(p => p.FurthestPhase)
+        // Best phase = furthest phase reached (using canonical phase ordering)
+        var bestPull = pulls
+            .Select(p => new { Pull = p, CanonicalIndex = GetCanonicalPhaseIndex(p.FurthestPhase) })
+            .OrderByDescending(x => x.CanonicalIndex)
             .First();
+        var bestPhaseIndex = bestPull.CanonicalIndex;
+        var bestPhase = bestPull.Pull.FurthestPhase;
         // Best HP = lowest boss HP remaining
         var bestHpRemaining = pulls.Min(p => p.BossHpRemaining);
         var totalDuration = TimeSpan.FromMilliseconds(encounters.Sum(e => e.DurationMs));
@@ -273,47 +351,48 @@ public class HtcmProgService
                 new List<HtcmSessionProgressionPoint>()
             );
 
-        // Build progression points for each pull
+        // Build progression points for each pull (using canonical phase ordering)
         var pullPoints = encounters.Select((e, i) => new HtcmProgressionPoint(
             i + 1,
             e.EncounterTime,
             e.BossHealthPercentRemaining ?? 100,
             e.FurthestPhase ?? "Unknown",
-            e.FurthestPhaseIndex ?? 0,
+            GetCanonicalPhaseIndex(e.FurthestPhase),
             e.Success
         )).ToList();
 
-        // Build session-level progression
+        // Build session-level progression (using canonical phase ordering)
         var sessionPoints = encounters
             .GroupBy(e => e.EncounterTime.Date)
             .OrderBy(g => g.Key)
             .Select((g, i) =>
             {
-                var maxPhaseIndex = g.Max(e => e.FurthestPhaseIndex) ?? 0;
-                var maxPhase = g
-                    .Where(e => e.FurthestPhaseIndex == maxPhaseIndex)
-                    .Select(e => e.FurthestPhase)
-                    .FirstOrDefault() ?? "Unknown";
+                // Find the best phase using canonical ordering
+                var bestEntry = g
+                    .Select(e => new { e.FurthestPhase, CanonicalIndex = GetCanonicalPhaseIndex(e.FurthestPhase) })
+                    .OrderByDescending(x => x.CanonicalIndex)
+                    .First();
 
                 return new HtcmSessionProgressionPoint(
                     i + 1,
                     g.Key,
                     g.Min(e => e.BossHealthPercentRemaining) ?? 100,
-                    maxPhaseIndex,
-                    maxPhase,
+                    bestEntry.CanonicalIndex,
+                    bestEntry.FurthestPhase ?? "Unknown",
                     g.Count(),
                     g.Any(e => e.Success)
                 );
             })
             .ToList();
 
-        // Calculate overall stats
+        // Calculate overall stats (using canonical phase ordering)
         var bestHp = encounters.Min(e => e.BossHealthPercentRemaining) ?? 100;
-        var bestPhaseIndex = encounters.Max(e => e.FurthestPhaseIndex) ?? 0;
-        var bestPhase = encounters
-            .Where(e => e.FurthestPhaseIndex == bestPhaseIndex)
-            .Select(e => e.FurthestPhase)
-            .FirstOrDefault() ?? "Unknown";
+        var overallBest = encounters
+            .Select(e => new { e.FurthestPhase, CanonicalIndex = GetCanonicalPhaseIndex(e.FurthestPhase) })
+            .OrderByDescending(x => x.CanonicalIndex)
+            .First();
+        var bestPhaseIndex = overallBest.CanonicalIndex;
+        var bestPhase = overallBest.FurthestPhase ?? "Unknown";
         var firstAttempt = encounters.Min(e => e.EncounterTime);
 
         return new HtcmProgressionData(

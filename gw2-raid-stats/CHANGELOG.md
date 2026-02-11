@@ -5,6 +5,11 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] - 2025-02-10
+
+### Fixed
+- HTCM Prog best phase now uses canonical phase ordering (Zhaitan is correctly ranked higher than Void Giant phases)
+
 ## [1.9.0] - 2025-02-10
 
 ### Added
@@ -15,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Survivor award now correctly excludes /gg deaths (matches Wall of Shame logic)
 - Logs view now shows most recent first by default
-- HTCM Prog best phase now correctly tracks furthest phase reached (was using alphabetical sort)
+- HTCM Prog best phase now correctly correlates phase name with phase index
 - Session summary header layout improvements for smaller screens
 
 ## [1.8.0] - 2025-02-04
