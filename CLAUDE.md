@@ -106,6 +106,7 @@ Queue folders for log processing:
 - Configuration classes use `*Options` suffix
 - Controllers follow RESTful patterns at `/api/` routes
 - Swagger available at `/swagger` in development
+- **Admin pages must be wrapped in `<AdminAuth>` component** - All pages under `/admin/*` require password protection. Wrap content in `<AdminAuth>...</AdminAuth>` tags.
 
 ## Domain Knowledge
 
