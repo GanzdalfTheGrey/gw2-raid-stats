@@ -208,16 +208,16 @@ public class EIStatsAll
     public int Wasted { get; set; }
 
     [JsonPropertyName("timeWasted")]
-    public decimal TimeWasted { get; set; }
+    public decimal? TimeWasted { get; set; }
 
     [JsonPropertyName("saved")]
     public int Saved { get; set; }
 
     [JsonPropertyName("timeSaved")]
-    public decimal TimeSaved { get; set; }
+    public decimal? TimeSaved { get; set; }
 
     [JsonPropertyName("stackDist")]
-    public decimal StackDist { get; set; }
+    public decimal? StackDist { get; set; }
 }
 
 public class EIMechanic

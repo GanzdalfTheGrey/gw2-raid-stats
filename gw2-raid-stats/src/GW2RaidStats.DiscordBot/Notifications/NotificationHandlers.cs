@@ -323,3 +323,40 @@ public record Top5Payload(
     int Rank,
     string? LogUrl
 );
+
+public class AchievementNotificationHandler : INotificationHandler
+{
+    public async Task SendAsync(IMessageChannel channel, string payload, bool wallOfShameEnabled, CancellationToken ct)
+    {
+        var achievement = JsonSerializer.Deserialize<AchievementPayload>(payload);
+        if (achievement == null) return;
+
+        var embed = new EmbedBuilder()
+            .WithCurrentTimestamp();
+
+        if (achievement.IsGuildAchievement)
+        {
+            embed.WithTitle("🏆 Guild Achievement Unlocked!")
+                .WithDescription($"**{achievement.AchievementName}**")
+                .WithColor(Color.Purple);
+        }
+        else
+        {
+            embed.WithTitle("🎖️ Achievement Unlocked!")
+                .WithDescription($"**{achievement.PlayerName}** earned **{achievement.AchievementName}**")
+                .WithColor(Color.Gold);
+        }
+
+        embed.AddField("Description", achievement.Description, inline: false);
+
+        await channel.SendMessageAsync(embed: embed.Build());
+    }
+}
+
+public record AchievementPayload(
+    string? PlayerName,
+    string AchievementCode,
+    string AchievementName,
+    string Description,
+    bool IsGuildAchievement
+);

@@ -1,0 +1,264 @@
+@page "/admin/achievements"
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+
+<PageTitle>GW2 Raid Stats - Manage Achievements</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Manage Achievements</MudText>
+
+<MudPaper Class="pa-4" Elevation="2">
+    <MudText Typo="Typo.h6" Class="mb-3">Retroactive Backfill</MudText>
+    <MudText Class="mb-3">
+        This will scan all historical data and award achievements to players who have already earned them.
+        This operation is safe to run multiple times - it will not duplicate achievements.
+    </MudText>
+
+    <MudAlert Severity="Severity.Info" Class="mb-3">
+        Note: Retroactive achievements will NOT send Discord notifications to avoid spam.
+    </MudAlert>
+
+    @if (_status != null && _status.IsRunning)
+    {
+        <MudProgressLinear Color="Color.Primary" Value="@(_status.Progress?.PercentComplete ?? 0)" Max="100" Class="mb-2" />
+        <MudText Class="mb-2">
+            Progress: @(_status.Progress?.Processed ?? 0) / @(_status.Progress?.Total ?? 0) players
+            (@(_status.Progress?.PercentComplete.ToString("F1") ?? "0")%)
+        </MudText>
+        <MudText Class="mb-2">
+            Achievements awarded: @(_status.Progress?.Awarded ?? 0)
+        </MudText>
+    }
+    else if (_status?.Result != null)
+    {
+        <MudAlert Severity="Severity.Success" Class="mb-3">
+            Backfill complete! Processed @_status.Result.PlayersProcessed players,
+            awarded @_status.Result.AchievementsAwarded achievements.
+        </MudAlert>
+
+        @if (_status.Result.Errors.Count > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-3">
+                @_status.Result.Errors.Count error(s) occurred during backfill.
+            </MudAlert>
+            <MudExpansionPanels>
+                <MudExpansionPanel Text="View Errors">
+                    @foreach (var error in _status.Result.Errors)
+                    {
+                        <MudText>@error</MudText>
+                    }
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+        }
+    }
+
+    <MudStack Row="true" Spacing="2" Class="mt-4">
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   OnClick="StartBackfill"
+                   Disabled="@(_status?.IsRunning == true)">
+            @if (_status?.IsRunning == true)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Running...</span>
+            }
+            else
+            {
+                <span>Start Backfill</span>
+            }
+        </MudButton>
+
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Default"
+                   OnClick="RefreshStatus">
+            Refresh Status
+        </MudButton>
+
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Error"
+                   OnClick="ClearAchievements"
+                   Disabled="@(_status?.IsRunning == true)">
+            Clear All Achievements
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+<MudPaper Class="pa-4 mt-4" Elevation="2">
+    <MudText Typo="Typo.h6" Class="mb-3">Achievement Statistics</MudText>
+
+    @if (_loadingStats)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+    }
+    else if (_stats != null)
+    {
+        <MudGrid>
+            <MudItem xs="12" md="4">
+                <MudText><strong>Personal achievements defined:</strong> @_stats.TotalPersonal</MudText>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudText><strong>Guild achievements defined:</strong> @_stats.TotalGuild</MudText>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudText><strong>Total achievements awarded:</strong> @_stats.TotalAchievementsAwarded</MudText>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudText><strong>Unique personal unlocked:</strong> @_stats.EarnedPersonalUnique</MudText>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudText><strong>Guild achievements unlocked:</strong> @_stats.EarnedGuild</MudText>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudText><strong>Players with achievements:</strong> @_stats.PlayersWithAchievements</MudText>
+            </MudItem>
+        </MudGrid>
+    }
+</MudPaper>
+
+@code {
+    private BackfillStatus? _status;
+    private AchievementStatsResponse? _stats;
+    private bool _loadingStats = true;
+    private System.Threading.Timer? _pollingTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(
+            RefreshStatus(),
+            LoadStats()
+        );
+    }
+
+    private async Task LoadStats()
+    {
+        _loadingStats = true;
+        try
+        {
+            _stats = await Http.GetFromJsonAsync<AchievementStatsResponse>("api/achievements/stats");
+        }
+        catch { }
+        finally
+        {
+            _loadingStats = false;
+        }
+    }
+
+    private async Task StartBackfill()
+    {
+        try
+        {
+            var response = await Http.PostAsync("api/admin/achievements/backfill", null);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Backfill started", Severity.Success);
+                StartPolling();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Failed to start backfill: {error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+
+        await RefreshStatus();
+    }
+
+    private async Task ClearAchievements()
+    {
+        try
+        {
+            var response = await Http.DeleteAsync("api/admin/achievements/clear");
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("All achievements cleared", Severity.Success);
+                await LoadStats();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Failed to clear achievements: {error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RefreshStatus()
+    {
+        try
+        {
+            _status = await Http.GetFromJsonAsync<BackfillStatus>("api/admin/achievements/backfill/status");
+            StateHasChanged();
+
+            if (_status?.IsRunning == true)
+            {
+                StartPolling();
+            }
+            else
+            {
+                StopPolling();
+                await LoadStats();
+            }
+        }
+        catch { }
+    }
+
+    private void StartPolling()
+    {
+        StopPolling();
+        _pollingTimer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                await RefreshStatus();
+            });
+        }, null, 2000, 2000);
+    }
+
+    private void StopPolling()
+    {
+        _pollingTimer?.Dispose();
+        _pollingTimer = null;
+    }
+
+    public void Dispose()
+    {
+        StopPolling();
+    }
+
+    // DTOs
+    public record BackfillStatus(
+        bool IsRunning,
+        BackfillProgress? Progress,
+        BackfillResult? Result);
+
+    public record BackfillProgress(
+        int Processed,
+        int Total,
+        int Awarded,
+        int Errors)
+    {
+        public double PercentComplete => Total > 0 ? (double)Processed / Total * 100 : 0;
+    }
+
+    public record BackfillResult(
+        int PlayersProcessed,
+        int AchievementsAwarded,
+        List<string> Errors);
+
+    public record AchievementStatsResponse(
+        int TotalPersonal,
+        int TotalGuild,
+        int EarnedPersonalUnique,
+        int EarnedGuild,
+        int PlayersWithAchievements,
+        int TotalAchievementsAwarded,
+        List<RarestAchievementDto> RarestAchievements);
+
+    public record RarestAchievementDto(string Code, string Name, int EarnedCount);
+}

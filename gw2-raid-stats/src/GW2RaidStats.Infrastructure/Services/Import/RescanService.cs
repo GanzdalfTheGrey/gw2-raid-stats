@@ -155,7 +155,7 @@ public class RescanService
             // Find matching player_encounter by character name
             var playerEncounter = await _db.PlayerEncounters
                 .Where(pe => pe.EncounterId == encounterId && pe.CharacterName == eiPlayer.Name)
-                .Select(pe => new { pe.Id, pe.HealingPowerStat })
+                .Select(pe => new { pe.Id, pe.HealingPowerStat, pe.QuicknessGeneration, pe.AlacracityGeneration, pe.Role })
                 .FirstOrDefaultAsync(ct);
 
             if (playerEncounter == null)
@@ -167,6 +167,23 @@ public class RescanService
                 await _db.PlayerEncounters
                     .Where(pe => pe.Id == playerEncounter.Id)
                     .Set(pe => pe.HealingPowerStat, eiPlayer.HealingPower)
+                    .UpdateAsync(ct);
+
+                anyUpdated = true;
+            }
+
+            // Check if role needs updating (null means not set)
+            if (playerEncounter.Role == null)
+            {
+                var healingPower = playerEncounter.HealingPowerStat > 0 ? playerEncounter.HealingPowerStat : eiPlayer.HealingPower;
+                var role = LogImportService.CalculateRole(
+                    healingPower,
+                    playerEncounter.QuicknessGeneration,
+                    playerEncounter.AlacracityGeneration);
+
+                await _db.PlayerEncounters
+                    .Where(pe => pe.Id == playerEncounter.Id)
+                    .Set(pe => pe.Role, role)
                     .UpdateAsync(ct);
 
                 anyUpdated = true;

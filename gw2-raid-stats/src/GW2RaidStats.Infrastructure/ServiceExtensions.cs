@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using GW2RaidStats.Infrastructure.Configuration;
 using GW2RaidStats.Infrastructure.Database;
 using GW2RaidStats.Infrastructure.Services;
+using GW2RaidStats.Infrastructure.Services.Achievements;
 using GW2RaidStats.Infrastructure.Services.Import;
 
 namespace GW2RaidStats.Infrastructure;
@@ -54,6 +55,10 @@ public static class ServiceExtensions
         services.AddScoped<MechanicSearchService>();
         services.AddScoped<HtcmProgService>();
         services.AddScoped<RecordNotificationService>();
+
+        // Achievement services
+        services.AddScoped<AchievementService>();
+        services.AddScoped<AchievementBackfillService>();
 
         return services;
     }

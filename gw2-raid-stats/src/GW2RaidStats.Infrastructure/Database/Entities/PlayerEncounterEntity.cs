@@ -86,6 +86,11 @@ public class PlayerEncounterEntity
     [Column("healing_power_stat")]
     public int HealingPowerStat { get; set; }
 
+    // Role classification for Wing Master achievement tracking
+    // Values: heal_alac, heal_quick, dps_alac, dps_quick, pure_dps
+    [Column("role")]
+    public string? Role { get; set; }
+
     [Column("created_at"), NotNull]
     public DateTimeOffset CreatedAt { get; set; }
 

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using LinqToDB.Data;
 using GW2RaidStats.Core.EliteInsights;
 using GW2RaidStats.Infrastructure.Database;
+using GW2RaidStats.Infrastructure.Services.Achievements;
 using Microsoft.Extensions.Logging;
 
 namespace GW2RaidStats.Infrastructure.Services.Import;
@@ -12,12 +13,18 @@ public class BulkImportService
     private readonly Func<RaidStatsDb> _dbFactory;
     private readonly IncludedPlayerService _includedPlayerService;
     private readonly ILogger<BulkImportService> _logger;
+    private readonly ILogger<AchievementService> _achievementLogger;
 
-    public BulkImportService(Func<RaidStatsDb> dbFactory, IncludedPlayerService includedPlayerService, ILogger<BulkImportService> logger)
+    public BulkImportService(
+        Func<RaidStatsDb> dbFactory,
+        IncludedPlayerService includedPlayerService,
+        ILogger<BulkImportService> logger,
+        ILogger<AchievementService> achievementLogger)
     {
         _dbFactory = dbFactory;
         _includedPlayerService = includedPlayerService;
         _logger = logger;
+        _achievementLogger = achievementLogger;
     }
 
     public async Task<BulkImportResult> ImportDirectoryAsync(
@@ -75,10 +82,11 @@ public class BulkImportService
 
             try
             {
-                // Each parallel task gets its own DB connection
+                // Each parallel task gets its own DB connection and services
                 using var db = _dbFactory();
                 var recordNotificationService = new RecordNotificationService(db, _includedPlayerService);
-                var importService = new LogImportService(db, recordNotificationService);
+                var achievementService = new AchievementService(db, _includedPlayerService, _achievementLogger);
+                var importService = new LogImportService(db, recordNotificationService, achievementService);
 
                 result = await importService.ImportLogFromFileAsync(filePath, token);
                 results.Add(result);

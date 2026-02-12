@@ -1,0 +1,259 @@
+@page "/achievements"
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@using System.Text.Json
+
+<PageTitle>GW2 Raid Stats - Guild Achievements</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-2">Guild Achievements</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else if (_guildAchievements != null)
+{
+    <MudStack Row="true" Spacing="3" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudProgressCircular Color="Color.Primary" Size="Size.Large" Value="@GetCompletionPercent()">
+            <CenterTemplate>
+                <MudText Typo="Typo.body2">@_guildAchievements.Count(a => a.IsEarned)/@_guildAchievements.Count</MudText>
+            </CenterTemplate>
+        </MudProgressCircular>
+        <MudText Typo="Typo.body1" Color="Color.Secondary">Achievements Unlocked</MudText>
+    </MudStack>
+
+    @foreach (var category in _guildAchievements.GroupBy(a => a.Category))
+    {
+        <MudText Typo="Typo.h6" Class="mt-4 mb-2">@FormatCategory(category.Key)</MudText>
+        <MudGrid Spacing="3">
+            @foreach (var achievement in category)
+            {
+                var isFlawless = IsFlawlessWingAchievement(achievement.Code);
+                var isExpanded = _expandedAchievement == achievement.Code;
+
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Style="height: 100%;">
+                        <MudCardContent>
+                            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Start">
+                                <MudAvatar Size="Size.Large"
+                                           Color="@(achievement.IsEarned ? Color.Success : Color.Default)"
+                                           Class="@(achievement.IsEarned ? "" : "grayscale")">
+                                    <MudIcon Icon="@GetAchievementIcon(achievement.Code)" Size="Size.Medium" />
+                                </MudAvatar>
+                                <MudStack Spacing="0" Style="flex: 1; min-width: 0;">
+                                    <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">@achievement.Name</MudText>
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary" Style="font-size: 0.8rem;">
+                                        @achievement.Description
+                                    </MudText>
+                                </MudStack>
+                            </MudStack>
+                        </MudCardContent>
+                        <MudCardActions Class="pt-0">
+                            @if (achievement.IsEarned)
+                            {
+                                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Style="width: 100%;" Justify="Justify.SpaceBetween">
+                                    <MudStack Spacing="0">
+                                        @if (achievement.CompletionCount > 1)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
+                                                @achievement.CompletionCount x
+                                            </MudChip>
+                                        }
+                                        <MudText Typo="Typo.caption" Color="Color.Success">
+                                            @if (achievement.LastAchievedAt.HasValue && achievement.CompletionCount > 1)
+                                            {
+                                                @:Latest: @achievement.LastAchievedAt.Value.LocalDateTime.ToString("MMM d, yyyy")
+                                            }
+                                            else if (achievement.AchievedAt.HasValue)
+                                            {
+                                                @achievement.AchievedAt.Value.LocalDateTime.ToString("MMM d, yyyy")
+                                            }
+                                        </MudText>
+                                    </MudStack>
+                                    <MudStack Row="true" Spacing="1">
+                                        @if (isFlawless)
+                                        {
+                                            <MudIconButton Icon="@(isExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                                                           Size="Size.Small"
+                                                           OnClick="@(() => ToggleExpand(achievement.Code))" />
+                                        }
+                                        else if (TryGetEncounterId(achievement.LastContext ?? achievement.Context, out var encounterId))
+                                        {
+                                            <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                           Size="Size.Small"
+                                                           Href="@($"/api/reports/{encounterId}/view")"
+                                                           Target="_blank" />
+                                        }
+                                    </MudStack>
+                                </MudStack>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                                    Locked
+                                </MudText>
+                            }
+                        </MudCardActions>
+                        @* Flawless wing expanded details *@
+                        @if (isExpanded && isFlawless && achievement.IsEarned)
+                        {
+                            var bosses = GetFlawlessBosses(achievement.LastContext ?? achievement.Context);
+                            <MudDivider />
+                            <MudCardContent Class="pt-2 pb-2">
+                                <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                                    @foreach (var boss in bosses)
+                                    {
+                                        <MudButton Size="Size.Small"
+                                                   Variant="Variant.Text"
+                                                   Color="Color.Success"
+                                                   EndIcon="@Icons.Material.Filled.OpenInNew"
+                                                   Href="@($"/api/reports/{boss.EncounterId}/view")"
+                                                   Target="_blank"
+                                                   Style="text-transform: none; font-size: 0.75rem;">
+                                            @boss.BossName
+                                        </MudButton>
+                                    }
+                                </MudStack>
+                            </MudCardContent>
+                        }
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+}
+
+<style>
+    .grayscale {
+        filter: grayscale(100%);
+        opacity: 0.6;
+    }
+</style>
+
+@code {
+    private bool _loading = true;
+    private List<GuildAchievementDto>? _guildAchievements;
+    private string? _expandedAchievement;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _loading = true;
+        try
+        {
+            _guildAchievements = await Http.GetFromJsonAsync<List<GuildAchievementDto>>("api/achievements/guild");
+        }
+        catch { }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private double GetCompletionPercent()
+    {
+        if (_guildAchievements == null || _guildAchievements.Count == 0) return 0;
+        return (double)_guildAchievements.Count(a => a.IsEarned) / _guildAchievements.Count * 100;
+    }
+
+    private string FormatCategory(string category)
+    {
+        return category switch
+        {
+            "WingMaster" => "Wing Master",
+            "SpecDiversity" => "Spec Diversity",
+            "FunRare" => "Fun & Rare",
+            _ => category
+        };
+    }
+
+    private string GetAchievementIcon(string code)
+    {
+        return code switch
+        {
+            // Flawless wings
+            var c when c.StartsWith("flawless_wing_") => Icons.Material.Filled.Shield,
+
+            // Composition achievements
+            "one_trick_guild" => Icons.Material.Filled.People,
+            "heavy_metal" => Icons.Material.Filled.Security,
+            "cloth_squad" => Icons.Material.Filled.AutoAwesome,
+            "leather_lovers" => Icons.Material.Filled.Visibility,
+            "no_duplicates" => Icons.Material.Filled.Diversity3,
+            "rainbow_squad" => Icons.Material.Filled.Palette,
+
+            // Performance
+            "bench_warmers" => Icons.Material.Filled.Groups,
+            "untouchable" => Icons.Material.Filled.HealthAndSafety,
+            "the_comeback" => Icons.Material.Filled.Replay,
+            "record_breakers" => Icons.Material.Filled.MilitaryTech,
+
+            _ => Icons.Material.Filled.EmojiEvents
+        };
+    }
+
+    private bool TryGetEncounterId(string? context, out Guid encounterId)
+    {
+        encounterId = Guid.Empty;
+        if (string.IsNullOrEmpty(context)) return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(context);
+            if (doc.RootElement.TryGetProperty("encounter_id", out var prop) &&
+                prop.TryGetGuid(out encounterId))
+            {
+                return true;
+            }
+        }
+        catch { }
+
+        return false;
+    }
+
+    private bool IsFlawlessWingAchievement(string code) => code.StartsWith("flawless_wing_");
+
+    private void ToggleExpand(string code)
+    {
+        _expandedAchievement = _expandedAchievement == code ? null : code;
+    }
+
+    private List<FlawlessBossDto> GetFlawlessBosses(string? context)
+    {
+        if (string.IsNullOrEmpty(context)) return new();
+
+        try
+        {
+            using var doc = JsonDocument.Parse(context);
+            if (doc.RootElement.TryGetProperty("bosses", out var bossesArray))
+            {
+                var result = new List<FlawlessBossDto>();
+                foreach (var boss in bossesArray.EnumerateArray())
+                {
+                    var encounterId = boss.GetProperty("encounter_id").GetGuid();
+                    var bossName = boss.GetProperty("boss_name").GetString() ?? "Unknown";
+                    result.Add(new FlawlessBossDto(encounterId, bossName));
+                }
+                return result;
+            }
+        }
+        catch { }
+
+        return new();
+    }
+
+    public record FlawlessBossDto(Guid EncounterId, string BossName);
+
+    // DTOs
+    public record GuildAchievementDto(
+        string Code,
+        string Name,
+        string Description,
+        string Category,
+        DateTimeOffset? AchievedAt,
+        bool IsEarned,
+        string? Context,
+        int CompletionCount,
+        DateTimeOffset? LastAchievedAt,
+        string? LastContext);
+}

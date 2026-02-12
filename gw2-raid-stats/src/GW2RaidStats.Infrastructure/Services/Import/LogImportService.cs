@@ -7,6 +7,7 @@ using GW2RaidStats.Core;
 using GW2RaidStats.Core.EliteInsights;
 using GW2RaidStats.Infrastructure.Database;
 using GW2RaidStats.Infrastructure.Database.Entities;
+using GW2RaidStats.Infrastructure.Services.Achievements;
 
 namespace GW2RaidStats.Infrastructure.Services.Import;
 
@@ -14,15 +15,20 @@ public class LogImportService
 {
     private readonly RaidStatsDb _db;
     private readonly RecordNotificationService _recordNotificationService;
+    private readonly AchievementService _achievementService;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
 
-    public LogImportService(RaidStatsDb db, RecordNotificationService recordNotificationService)
+    public LogImportService(
+        RaidStatsDb db,
+        RecordNotificationService recordNotificationService,
+        AchievementService achievementService)
     {
         _db = db;
         _recordNotificationService = recordNotificationService;
+        _achievementService = achievementService;
     }
 
     public async Task<ImportResult> ImportLogAsync(Stream jsonStream, string fileName, CancellationToken ct = default)
@@ -87,6 +93,9 @@ public class LogImportService
             {
                 await _recordNotificationService.CheckAndQueueRecordNotificationsAsync(encounterId, ct);
             }
+
+            // Check for achievements (for all encounters - some track progress on wipes)
+            await _achievementService.CheckAfterEncounterAsync(encounterId, notify: true, ct);
 
             return new ImportResult(true, encounterId, fileName, log.FightName, null, WasDuplicate: false);
         }
@@ -201,6 +210,9 @@ public class LogImportService
                 // Character attribute - Healing Power stat (always available)
                 HealingPowerStat = eiPlayer.HealingPower,
 
+                // Role classification for achievement tracking
+                Role = CalculateRole(eiPlayer.HealingPower, quicknessGen, alacrityGen),
+
                 CreatedAt = DateTimeOffset.UtcNow
             };
 
@@ -303,7 +315,7 @@ public class LogImportService
             return player;
         }
 
-        // Create new player
+        // Create new player - handle race condition with retry
         player = new PlayerEntity
         {
             Id = Guid.NewGuid(),
@@ -312,8 +324,17 @@ public class LogImportService
             CreatedAt = DateTimeOffset.UtcNow
         };
 
-        await _db.InsertAsync(player, token: ct);
-        return player;
+        try
+        {
+            await _db.InsertAsync(player, token: ct);
+            return player;
+        }
+        catch (Npgsql.PostgresException ex) when (ex.SqlState == "23505") // unique_violation
+        {
+            // Another worker inserted this player first - fetch it
+            return await _db.Players
+                .FirstAsync(p => p.AccountName == accountName, ct);
+        }
     }
 
     private static string ComputeHash(byte[] data)
@@ -439,6 +460,32 @@ public class LogImportService
         }
 
         return (furthestPhase, furthestPhaseIndex, bossHpRemaining);
+    }
+
+    /// <summary>
+    /// Calculate the player's role based on healing power and boon generation.
+    /// Roles: heal_alac, heal_quick, dps_alac, dps_quick, pure_dps
+    /// </summary>
+    public static string CalculateRole(int healingPowerStat, decimal? quicknessGen, decimal? alacrityGen)
+    {
+        const decimal BoonThreshold = 10m;
+        const int HealerStatThreshold = 1;
+
+        var isHealer = healingPowerStat >= HealerStatThreshold &&
+                       ((quicknessGen ?? 0) >= BoonThreshold || (alacrityGen ?? 0) >= BoonThreshold);
+        var hasAlacrity = (alacrityGen ?? 0) >= BoonThreshold;
+        var hasQuickness = (quicknessGen ?? 0) >= BoonThreshold;
+
+        if (isHealer && hasAlacrity)
+            return "heal_alac";
+        if (isHealer && hasQuickness)
+            return "heal_quick";
+        if (hasAlacrity)
+            return "dps_alac";
+        if (hasQuickness)
+            return "dps_quick";
+
+        return "pure_dps";
     }
 
     private static DateTimeOffset ParseEncounterTime(EliteInsightsLog log)

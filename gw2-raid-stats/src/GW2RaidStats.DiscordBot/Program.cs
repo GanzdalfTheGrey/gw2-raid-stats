@@ -58,6 +58,7 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddScoped<MilestoneNotificationHandler>();
         services.AddScoped<HtcmProgressNotificationHandler>();
         services.AddScoped<Top5NotificationHandler>();
+        services.AddScoped<AchievementNotificationHandler>();
 
         // Background services
         services.AddHostedService<DiscordBotService>();

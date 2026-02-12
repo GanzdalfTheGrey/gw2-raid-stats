@@ -11,6 +11,8 @@ public static class WingMapping
         "Twisted Castle",
         "River of Souls",  // This is an event, not a boss
         "Statues of Grenth", // Wing 5 event (Broken King, Eater of Souls, Eyes)
+        "Statue",  // Individual W5 statue fights (Broken King, Eater of Souls, Eyes)
+        "Statue of Darkness", // Wing 5 Dhuum pre-event
         "Bandit Trio" // Wing 2 event (Berg, Zane, Narella)
     };
 

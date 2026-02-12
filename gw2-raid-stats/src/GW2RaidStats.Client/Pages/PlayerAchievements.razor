@@ -1,0 +1,430 @@
+@page "/players/{AccountName}/achievements"
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@using System.Text.Json
+
+<PageTitle>GW2 Raid Stats - @AccountName Achievements</PageTitle>
+
+<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h4">@AccountName - Achievements</MudText>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack"
+               Href="@($"/players/{Uri.EscapeDataString(AccountName)}")">
+        Back to Profile
+    </MudButton>
+</MudStack>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else if (_achievements == null)
+{
+    <MudAlert Severity="Severity.Error">Unable to load achievements.</MudAlert>
+}
+else
+{
+    <MudStack Row="true" Spacing="3" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudProgressCircular Color="Color.Primary" Size="Size.Large" Value="@GetCompletionPercent()">
+            <CenterTemplate>
+                <MudText Typo="Typo.body2">@_achievements.TotalEarned/@_achievements.TotalAvailable</MudText>
+            </CenterTemplate>
+        </MudProgressCircular>
+        <MudText Typo="Typo.body1" Color="Color.Secondary">Achievements Earned</MudText>
+    </MudStack>
+
+    @if (_definitions != null)
+    {
+        @foreach (var category in _definitions.Personal.GroupBy(a => a.Category))
+        {
+            var categoryAchievements = category.ToList();
+            var earnedInCategory = categoryAchievements.Count(a => _earnedLookup.ContainsKey(a.Code));
+
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mt-4 mb-2">
+                <MudText Typo="Typo.h6">@FormatCategory(category.Key)</MudText>
+                <MudChip T="string" Size="Size.Small" Color="@(earnedInCategory == categoryAchievements.Count ? Color.Success : Color.Default)">
+                    @earnedInCategory / @categoryAchievements.Count
+                </MudChip>
+            </MudStack>
+
+            <MudGrid Spacing="3">
+                @foreach (var achievement in categoryAchievements)
+                {
+                    var isEarned = _earnedLookup.TryGetValue(achievement.Code, out var earned);
+                    var progress = _achievements.InProgress.FirstOrDefault(p => p.Code == achievement.Code);
+                    var isExpanded = _expandedAchievement == achievement.Code;
+                    var hasDetails = HasExpandableDetails(achievement.Code);
+
+                    <MudItem xs="12" sm="6" md="4" lg="3">
+                        <MudCard Elevation="2" Style="height: 100%;">
+                            <MudCardContent>
+                                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Start">
+                                    <MudAvatar Size="Size.Large"
+                                               Color="@(isEarned ? Color.Success : Color.Default)"
+                                               Class="@(isEarned ? "" : "grayscale")">
+                                        <MudIcon Icon="@GetAchievementIcon(achievement.Code)" Size="Size.Medium" />
+                                    </MudAvatar>
+                                    <MudStack Spacing="0" Style="flex: 1; min-width: 0;">
+                                        <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">@achievement.Name</MudText>
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary" Style="font-size: 0.8rem;">
+                                            @achievement.Description
+                                        </MudText>
+                                    </MudStack>
+                                </MudStack>
+                            </MudCardContent>
+
+                            <MudCardActions Class="pt-0">
+                                @if (isEarned && earned != null)
+                                {
+                                    <MudStack Spacing="0" Style="width: 100%;">
+                                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                                            <MudStack Spacing="0">
+                                                <MudText Typo="Typo.caption" Color="Color.Success">
+                                                    @earned.AchievedAt.LocalDateTime.ToString("MMM d, yyyy")
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Style="font-size: 0.7rem;">
+                                                    @earned.EarnedCount / @earned.TotalIncludedPlayers players
+                                                </MudText>
+                                            </MudStack>
+                                            @if (TryGetEncounterId(earned.Context, out var encounterId))
+                                            {
+                                                <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                               Size="Size.Small"
+                                                               Href="@($"/api/reports/{encounterId}/view")"
+                                                               Target="_blank" />
+                                            }
+                                        </MudStack>
+                                    </MudStack>
+                                }
+                                else if (progress != null)
+                                {
+                                    <MudStack Spacing="1" Style="width: 100%;">
+                                        <MudText Typo="Typo.caption" Color="Color.Info" Style="font-size: 0.75rem;">
+                                            @progress.ProgressText
+                                        </MudText>
+                                        <MudProgressLinear Value="@progress.Current" Max="@progress.Required"
+                                                           Color="Color.Info" Size="Size.Small" Rounded="true" />
+                                        @if (hasDetails)
+                                        {
+                                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Info"
+                                                       OnClick="@(() => ToggleDetails(achievement.Code))"
+                                                       Style="align-self: flex-start; padding: 0; min-width: auto;">
+                                                @(isExpanded ? "Hide" : "Details")
+                                            </MudButton>
+                                        }
+                                    </MudStack>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                                        Locked
+                                    </MudText>
+                                }
+                            </MudCardActions>
+
+                            @* Expandable details for Wing Master *@
+                            @if (isExpanded && achievement.Code.StartsWith("wing_") && achievement.Code.EndsWith("_master"))
+                            {
+                                var wmDetail = _wingMasterProgress?.FirstOrDefault(w => w.Code == achievement.Code);
+                                if (wmDetail != null)
+                                {
+                                    <MudDivider />
+                                    <MudCardContent Class="pt-2 pb-2" Style="max-height: 200px; overflow-y: auto;">
+                                        @foreach (var boss in wmDetail.Bosses)
+                                        {
+                                            var bossCompleted = boss.Roles.All(r => r.Completed);
+                                            <div style="margin-bottom: 6px;">
+                                                <MudText Typo="Typo.caption" Style="font-weight: 600;">
+                                                    @(bossCompleted ? "✓" : "✗") @boss.BossName
+                                                </MudText>
+                                                <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                                                    @foreach (var role in boss.Roles)
+                                                    {
+                                                        <MudChip T="string" Size="Size.Small"
+                                                                 Color="@(role.Completed ? Color.Success : Color.Error)"
+                                                                 Variant="Variant.Filled"
+                                                                 Style="font-size: 0.65rem; height: 20px;">
+                                                            @role.RoleDisplayName
+                                                        </MudChip>
+                                                    }
+                                                </MudStack>
+                                            </div>
+                                        }
+                                    </MudCardContent>
+                                }
+                            }
+
+                            @* Expandable details for Completion achievements *@
+                            @if (isExpanded && IsCompletionAchievement(achievement.Code))
+                            {
+                                var compDetail = _completionProgress?.FirstOrDefault(c => c.Code == achievement.Code);
+                                if (compDetail != null)
+                                {
+                                    <MudDivider />
+                                    <MudCardContent Class="pt-2 pb-2" Style="max-height: 200px; overflow-y: auto;">
+                                        @foreach (var wingGroup in compDetail.Bosses.GroupBy(b => b.Wing))
+                                        {
+                                            <div style="margin-bottom: 6px;">
+                                                <MudText Typo="Typo.caption" Style="font-weight: 600;">
+                                                    Wing @wingGroup.Key
+                                                </MudText>
+                                                <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                                                    @foreach (var boss in wingGroup)
+                                                    {
+                                                        <MudChip T="string" Size="Size.Small"
+                                                                 Color="@(boss.Completed ? Color.Success : Color.Error)"
+                                                                 Variant="Variant.Filled"
+                                                                 Style="font-size: 0.65rem; height: 20px;">
+                                                            @boss.BossName
+                                                        </MudChip>
+                                                    }
+                                                </MudStack>
+                                            </div>
+                                        }
+                                    </MudCardContent>
+                                }
+                            }
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+    }
+}
+
+<style>
+    .grayscale {
+        filter: grayscale(100%);
+        opacity: 0.6;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public string AccountName { get; set; } = "";
+
+    private bool _loading = true;
+    private PlayerAchievementsResponse? _achievements;
+    private AchievementDefinitionsResponse? _definitions;
+    private List<WingMasterDetailedProgressDto>? _wingMasterProgress;
+    private List<CompletionDetailedProgressDto>? _completionProgress;
+    private Dictionary<string, PlayerAchievementDto> _earnedLookup = new();
+    private string? _expandedAchievement;
+
+    private static readonly HashSet<string> CompletionAchievementCodes = new()
+    {
+        "completion", "legendary_raider", "wing_8_clear", "wing_8_cm_clear"
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        try
+        {
+            var achievementsTask = Http.GetFromJsonAsync<PlayerAchievementsResponse>(
+                $"api/achievements/player/{Uri.EscapeDataString(AccountName)}");
+            var definitionsTask = Http.GetFromJsonAsync<AchievementDefinitionsResponse>(
+                "api/achievements/definitions");
+            var wingMasterTask = Http.GetFromJsonAsync<List<WingMasterDetailedProgressDto>>(
+                $"api/achievements/player/{Uri.EscapeDataString(AccountName)}/wing-master");
+            var completionTask = Http.GetFromJsonAsync<List<CompletionDetailedProgressDto>>(
+                $"api/achievements/player/{Uri.EscapeDataString(AccountName)}/completion");
+
+            await Task.WhenAll(achievementsTask, definitionsTask, wingMasterTask, completionTask);
+
+            _achievements = await achievementsTask;
+            _definitions = await definitionsTask;
+            _wingMasterProgress = await wingMasterTask;
+            _completionProgress = await completionTask;
+
+            _earnedLookup = _achievements?.Earned.ToDictionary(a => a.Code) ?? new();
+        }
+        catch { }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private double GetCompletionPercent()
+    {
+        if (_achievements == null || _achievements.TotalAvailable == 0) return 0;
+        return (double)_achievements.TotalEarned / _achievements.TotalAvailable * 100;
+    }
+
+    private void ToggleDetails(string code)
+    {
+        _expandedAchievement = _expandedAchievement == code ? null : code;
+    }
+
+    private bool IsCompletionAchievement(string code) => CompletionAchievementCodes.Contains(code);
+
+    private bool HasExpandableDetails(string code)
+    {
+        if (code.StartsWith("wing_") && code.EndsWith("_master"))
+        {
+            return _wingMasterProgress?.Any(w => w.Code == code) == true;
+        }
+        if (IsCompletionAchievement(code))
+        {
+            return _completionProgress?.Any(c => c.Code == code) == true;
+        }
+        return false;
+    }
+
+    private string FormatCategory(string category)
+    {
+        return category switch
+        {
+            "WingMaster" => "Wing Master",
+            "SpecDiversity" => "Spec Diversity",
+            "FunRare" => "Fun & Rare",
+            _ => category
+        };
+    }
+
+    private string GetAchievementIcon(string code)
+    {
+        return code switch
+        {
+            // Wing Master
+            var c when c.StartsWith("wing_") && c.EndsWith("_master") => Icons.Material.Filled.WorkspacePremium,
+
+            // Milestones
+            "first_kill" => Icons.Material.Filled.Flag,
+            "veteran" => Icons.Material.Filled.Star,
+            "centurion" => Icons.Material.Filled.MilitaryTech,
+            "dedicated" => Icons.Material.Filled.Favorite,
+
+            // Completion
+            "completion" => Icons.Material.Filled.CheckCircle,
+            "legendary_raider" => Icons.Material.Filled.Diamond,
+            "wing_8_clear" => Icons.Material.Filled.Castle,
+            "wing_8_cm_clear" => Icons.Material.Filled.Whatshot,
+
+            // Performance
+            "the_carry" => Icons.Material.Filled.FitnessCenter,
+            "immortal" => Icons.Material.Filled.Shield,
+            "clutch_player" => Icons.Material.Filled.Bolt,
+            "speed_demon" => Icons.Material.Filled.Speed,
+
+            // Records
+            "record_holder" => Icons.Material.Filled.EmojiEvents,
+            "former_champion" => Icons.Material.Filled.History,
+
+            // Spec Diversity
+            "versatile" => Icons.Material.Filled.Shuffle,
+            "jack_of_all_trades" => Icons.Material.Filled.Diversity1,
+            "master_of_one" => Icons.Material.Filled.Gavel,
+            "class_completionist" => Icons.Material.Filled.School,
+
+            // Support
+            "guardian_angel" => Icons.Material.Filled.HealthAndSafety,
+            "cc_champion" => Icons.Material.Filled.Compress,
+            "the_enabler" => Icons.Material.Filled.Handshake,
+
+            // Dedication
+            "session_warrior" => Icons.Material.Filled.Timer,
+            "keeping_up" => Icons.Material.Filled.TrendingUp,
+
+            // Social
+            "dynamic_duo" => Icons.Material.Filled.People,
+            "trio" => Icons.Material.Filled.Groups,
+            "guild_pride" => Icons.Material.Filled.Mood,
+
+            _ => Icons.Material.Filled.EmojiEvents
+        };
+    }
+
+    private bool TryGetEncounterId(string? context, out Guid encounterId)
+    {
+        encounterId = Guid.Empty;
+        if (string.IsNullOrEmpty(context)) return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(context);
+            if (doc.RootElement.TryGetProperty("encounter_id", out var prop) &&
+                prop.TryGetGuid(out encounterId))
+            {
+                return true;
+            }
+        }
+        catch { }
+
+        return false;
+    }
+
+    // DTOs
+    public record PlayerAchievementsResponse(
+        int TotalEarned,
+        int TotalAvailable,
+        List<PlayerAchievementDto> Earned,
+        List<AchievementProgressDto> InProgress
+    );
+
+    public record PlayerAchievementDto(
+        string Code,
+        string Name,
+        string Description,
+        string Category,
+        DateTimeOffset AchievedAt,
+        string? Context,
+        int EarnedCount,
+        int TotalIncludedPlayers
+    );
+
+    public record AchievementProgressDto(
+        string Code,
+        string Name,
+        string Description,
+        string Category,
+        int Current,
+        int Required,
+        string ProgressText
+    );
+
+    public record AchievementDefinitionsResponse(
+        List<AchievementDefinitionDto> Personal,
+        List<AchievementDefinitionDto> Guild);
+
+    public record AchievementDefinitionDto(
+        string Code,
+        string Name,
+        string Description,
+        string Category);
+
+    public record WingMasterDetailedProgressDto(
+        string Code,
+        string Name,
+        string Description,
+        int WingNumber,
+        int Completed,
+        int Total,
+        List<WingMasterBossProgressDto> Bosses);
+
+    public record WingMasterBossProgressDto(
+        int TriggerId,
+        string BossName,
+        List<WingMasterRoleProgressDto> Roles);
+
+    public record WingMasterRoleProgressDto(
+        string RoleCode,
+        string RoleDisplayName,
+        bool Completed);
+
+    public record CompletionDetailedProgressDto(
+        string Code,
+        string Name,
+        string Description,
+        int Completed,
+        int Total,
+        List<CompletionBossProgressDto> Bosses);
+
+    public record CompletionBossProgressDto(
+        int TriggerId,
+        string BossName,
+        int? Wing,
+        bool Completed);
+}
