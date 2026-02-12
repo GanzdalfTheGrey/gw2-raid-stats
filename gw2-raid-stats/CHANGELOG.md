@@ -5,7 +5,7 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.10.1] - 2025-02-12
+## [1.10.2] - 2025-02-12
 
 ### Added
 - Mechanics page now shows which boss each mechanic comes from
@@ -22,10 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Logs page now displays properly on smaller screens
-- Mechanic Lookup page now displays properly on smaller screens
-- Removed checkmark indicator from Personal Bests toggle on player profile
 - Wing 8 CM Clear achievement now correctly tracks CM trigger IDs (Godsquall Decima, etc.)
 - Wing 3 boss trigger IDs corrected: KC=16235, Xera=16246 (were swapped/incorrect)
+
+## [1.10.1] - 2025-02-12
+
+### Fixed
+- Mechanic Lookup page now displays properly on smaller screens
+- Removed checkmark indicator from Personal Bests toggle on player profile
 
 ## [1.10.0] - 2025-02-12
 
