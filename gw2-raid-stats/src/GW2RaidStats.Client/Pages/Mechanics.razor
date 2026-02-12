@@ -11,8 +11,8 @@
         Search
     </MudText>
 
-    <MudGrid>
-        <MudItem xs="12" sm="6" md="4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="6" lg="4">
             <MudAutocomplete T="MechanicInfoDto"
                              Label="Mechanic"
                              @bind-Value="_selectedMechanic"
@@ -33,20 +33,20 @@
                 </ItemTemplate>
             </MudAutocomplete>
         </MudItem>
-        <MudItem xs="6" sm="3" md="2">
+        <MudItem xs="6" md="3" lg="2">
             <MudDatePicker Label="From Date"
                            @bind-Date="_fromDate"
                            Variant="Variant.Outlined"
                            Clearable="true" />
         </MudItem>
-        <MudItem xs="6" sm="3" md="2">
+        <MudItem xs="6" md="3" lg="2">
             <MudDatePicker Label="To Date"
                            @bind-Date="_toDate"
                            Variant="Variant.Outlined"
                            Clearable="true" />
         </MudItem>
-        <MudItem xs="12" sm="12" md="4">
-            <MudStack Row="true" Spacing="2" Class="mt-1">
+        <MudItem xs="12" lg="4">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Style="height: 100%;">
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
                            StartIcon="@Icons.Material.Filled.Search"
@@ -73,17 +73,17 @@
 @if (_searchResult != null)
 {
     <MudPaper Class="pa-4" Elevation="2">
-        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
-            <MudStack Spacing="0">
-                <MudText Typo="Typo.h6">@(_searchResult.MechanicFullName ?? _searchResult.MechanicName)</MudText>
-                @if (!string.IsNullOrEmpty(_searchResult.Description))
-                {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">@_searchResult.Description</MudText>
-                }
+        <MudStack Row="false" Spacing="2" Class="mb-4">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start" Wrap="Wrap.Wrap" Spacing="2">
+                <MudText Typo="Typo.h6" Style="word-break: break-word;">@(_searchResult.MechanicFullName ?? _searchResult.MechanicName)</MudText>
+                <MudChip T="string" Color="Color.Primary" Size="Size.Medium">
+                    @_searchResult.TotalCount.ToString("N0") total
+                </MudChip>
             </MudStack>
-            <MudChip T="string" Color="Color.Primary" Size="Size.Large">
-                @_searchResult.TotalCount.ToString("N0") total
-            </MudChip>
+            @if (!string.IsNullOrEmpty(_searchResult.Description))
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">@_searchResult.Description</MudText>
+            }
         </MudStack>
 
         @if (_searchResult.PlayerStats.Count == 0)
@@ -95,12 +95,13 @@
             <MudTable Items="@_searchResult.PlayerStats"
                       Dense="true"
                       Hover="true"
-                      Striped="true">
+                      Striped="true"
+                      Breakpoint="Breakpoint.Sm">
                 <HeaderContent>
-                    <MudTh Style="width: 60px;">Rank</MudTh>
+                    <MudTh>Rank</MudTh>
                     <MudTh>Player</MudTh>
-                    <MudTh Style="width: 150px;">Count</MudTh>
-                    <MudTh Style="width: 200px;">Percentage</MudTh>
+                    <MudTh>Count</MudTh>
+                    <MudTh Class="d-none d-sm-table-cell">Share</MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd DataLabel="Rank">
@@ -112,17 +113,22 @@
                         </MudLink>
                     </MudTd>
                     <MudTd DataLabel="Count">
-                        <MudChip T="string" Size="Size.Small" Color="Color.Primary">@context.Count.ToString("N0")</MudChip>
+                        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                            <MudText>@context.Count.ToString("N0")</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-sm-none">
+                                (@GetPercentage(context).ToString("F1")%)
+                            </MudText>
+                        </MudStack>
                     </MudTd>
-                    <MudTd DataLabel="Percentage">
-                        <MudProgressLinear Color="Color.Primary"
-                                           Value="@GetPercentage(context)"
-                                           Class="my-1"
-                                           Style="height: 20px; border-radius: 4px;">
-                            <MudText Typo="Typo.caption" Style="position: absolute; width: 100%; text-align: center; color: white;">
+                    <MudTd DataLabel="Share" Class="d-none d-sm-table-cell">
+                        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="min-width: 120px;">
+                            <MudProgressLinear Color="Color.Primary"
+                                               Value="@GetPercentage(context)"
+                                               Style="height: 16px; border-radius: 4px; flex: 1;" />
+                            <MudText Typo="Typo.caption" Style="min-width: 45px;">
                                 @GetPercentage(context).ToString("F1")%
                             </MudText>
-                        </MudProgressLinear>
+                        </MudStack>
                     </MudTd>
                 </RowTemplate>
             </MudTable>
@@ -151,23 +157,27 @@ else if (!_loading)
                       Dense="true"
                       Hover="true"
                       Striped="true"
+                      Breakpoint="Breakpoint.Sm"
                       OnRowClick="@(args => SelectMechanic(args.Item))">
                 <HeaderContent>
                     <MudTh>Mechanic</MudTh>
-                    <MudTh>Description</MudTh>
-                    <MudTh Style="width: 120px;">Total Count</MudTh>
+                    <MudTh Class="d-none d-md-table-cell">Description</MudTh>
+                    <MudTh>Count</MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd DataLabel="Mechanic">
                         <MudStack Spacing="0">
-                            <MudText>@(context.MechanicFullName ?? context.MechanicName)</MudText>
+                            <MudText Style="word-break: break-word;">@(context.MechanicFullName ?? context.MechanicName)</MudText>
                             <MudText Typo="Typo.caption" Color="Color.Secondary">@context.MechanicName</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-md-none">
+                                @(context.Description ?? "")
+                            </MudText>
                         </MudStack>
                     </MudTd>
-                    <MudTd DataLabel="Description">
+                    <MudTd DataLabel="Description" Class="d-none d-md-table-cell">
                         <MudText Typo="Typo.body2" Color="Color.Secondary">@(context.Description ?? "-")</MudText>
                     </MudTd>
-                    <MudTd DataLabel="Total Count">
+                    <MudTd DataLabel="Count">
                         <MudChip T="string" Size="Size.Small" Color="Color.Default">@context.TotalCount.ToString("N0")</MudChip>
                     </MudTd>
                 </RowTemplate>
