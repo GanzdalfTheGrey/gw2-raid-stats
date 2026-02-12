@@ -929,21 +929,37 @@ public class AchievementService
             }
         }
 
-        // Wing 8 CM Clear - uses separate CM trigger IDs (26957, 26956, 26952)
+        // Wing 8 CM Clear - Greer/Ura use same trigger ID as NM (check IsCM), Decima has separate CM ID (26867)
         if (!await HasAchievementAsync(playerId, "wing_8_cm_clear", ct))
         {
-            var w8CmBosses = AchievementDefinitions.Wing8CMBosses;
-            var firstW8CmKillsByBoss = await _db.PlayerEncounters
+            // Check for CM kills of each W8 boss
+            // Greer CM: trigger 26725 with IsCM=true
+            // Decima CM: trigger 26867 (unique CM trigger)
+            // Ura CM: trigger 26712 with IsCM=true
+            var greerCmKill = await _db.PlayerEncounters
                 .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
                 .Where(x => x.pe.PlayerId == playerId && x.e.Success)
-                .Where(x => w8CmBosses.Contains(x.e.TriggerId))
-                .GroupBy(x => x.e.TriggerId)
-                .Select(g => new { BossId = g.Key, FirstKill = g.Min(x => x.e.EncounterTime) })
-                .ToListAsync(ct);
+                .Where(x => x.e.TriggerId == 26725 && x.e.IsCM)
+                .Select(x => (DateTimeOffset?)x.e.EncounterTime)
+                .MinAsync(ct);
 
-            if (w8CmBosses.All(b => firstW8CmKillsByBoss.Any(fk => fk.BossId == b)))
+            var decimaCmKill = await _db.PlayerEncounters
+                .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+                .Where(x => x.pe.PlayerId == playerId && x.e.Success)
+                .Where(x => x.e.TriggerId == 26867)
+                .Select(x => (DateTimeOffset?)x.e.EncounterTime)
+                .MinAsync(ct);
+
+            var uraCmKill = await _db.PlayerEncounters
+                .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+                .Where(x => x.pe.PlayerId == playerId && x.e.Success)
+                .Where(x => x.e.TriggerId == 26712 && x.e.IsCM)
+                .Select(x => (DateTimeOffset?)x.e.EncounterTime)
+                .MinAsync(ct);
+
+            if (greerCmKill.HasValue && decimaCmKill.HasValue && uraCmKill.HasValue)
             {
-                var achievedAt = firstW8CmKillsByBoss.Max(fk => fk.FirstKill);
+                var achievedAt = new[] { greerCmKill.Value, decimaCmKill.Value, uraCmKill.Value }.Max();
                 await AwardAchievementAsync(playerId, "wing_8_cm_clear", null, notify, ct, achievedAt);
             }
         }
@@ -1622,9 +1638,10 @@ public class AchievementService
             .ToHashSet();
 
         // Get all successful CM kills for this player
+        // Include IsCM=true OR Decima CM trigger (26867) which has unique ID
         var killedCMTriggerIds = (await _db.PlayerEncounters
             .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
-            .Where(x => x.pe.PlayerId == playerId && x.e.Success && x.e.IsCM)
+            .Where(x => x.pe.PlayerId == playerId && x.e.Success && (x.e.IsCM || x.e.TriggerId == 26867))
             .Select(x => x.e.TriggerId)
             .ToListAsync(ct))
             .ToHashSet();

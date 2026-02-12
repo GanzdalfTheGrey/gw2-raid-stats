@@ -107,10 +107,10 @@ public static class WingMapping
         21964 => 7,  // Cardinal Sabir
         22000 => 7,  // Qadim the Peerless
 
-        // Wing 8 - Mount Balrior (NM and CM trigger IDs)
-        26725 or 26957 => 8,  // Greer / Massive Greer (CM)
-        26774 or 26956 => 8,  // Decima / Godsquall Decima (CM)
-        26712 or 26952 => 8,  // Ura / Ura the Adorned (CM)
+        // Wing 8 - Mount Balrior (Greer/Ura same ID for NM+CM, Decima has separate CM ID)
+        26725 => 8,  // Greer (NM and CM use same ID)
+        26774 or 26867 => 8,  // Decima NM / Godsquall Decima CM
+        26712 => 8,  // Ura (NM and CM use same ID)
 
         _ => null    // Strikes, fractals, etc.
     };
@@ -172,10 +172,10 @@ public static class WingMapping
         21964 => 2,  // Cardinal Sabir
         22000 => 3,  // Qadim the Peerless
 
-        // Wing 8 (NM and CM)
-        26725 or 26957 => 1,  // Greer / Massive Greer
-        26774 or 26956 => 2,  // Decima / Godsquall Decima
-        26712 or 26952 => 3,  // Ura / Ura the Adorned
+        // Wing 8 (Greer/Ura same ID for NM+CM, Decima has separate CM ID)
+        26725 => 1,  // Greer (NM and CM)
+        26774 or 26867 => 2,  // Decima NM / Godsquall Decima CM
+        26712 => 3,  // Ura (NM and CM)
 
         _ => 999     // Unknown encounters sort last
     };

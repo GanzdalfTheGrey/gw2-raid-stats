@@ -122,7 +122,8 @@ public static class AchievementDefinitions
     /// <summary>
     /// Wing 8 CM trigger IDs
     /// </summary>
-    public static readonly int[] Wing8CMBosses = new[] { 26957, 26956, 26952 }; // Greer CM, Decima CM, Ura CM
+    // Wing 8 CM trigger IDs - Greer and Ura use same ID as NM (with IsCM flag), Decima has separate CM ID
+    public static readonly int[] Wing8CMBosses = new[] { 26725, 26867, 26712 }; // Greer CM, Decima CM, Ura CM
 
     /// <summary>
     /// Bosses in Wings 1-7 that have CM versions (Wing 1, 2 have no CMs; Xera has no CM)
@@ -195,10 +196,8 @@ public static class AchievementDefinitions
         { 26725, "Greer" },
         { 26774, "Decima" },
         { 26712, "Ura" },
-        // Wing 8 (CM)
-        { 26957, "Greer CM" },
-        { 26956, "Decima CM" },
-        { 26952, "Ura CM" }
+        // Wing 8 (CM) - Greer/Ura use same ID as NM, Decima has unique CM ID
+        { 26867, "Decima CM" }
     };
 
     /// <summary>

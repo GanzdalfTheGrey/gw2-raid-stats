@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Logs page now displays properly on smaller screens
-- Wing 8 CM Clear achievement now correctly tracks CM trigger IDs (Godsquall Decima, etc.)
+- Wing 8 CM Clear achievement fixed: Greer/Ura use NM ID with IsCM flag, Decima CM=26867
 - Wing 3 boss trigger IDs corrected: KC=16235, Xera=16246 (were swapped/incorrect)
 
 ## [1.10.1] - 2025-02-12
