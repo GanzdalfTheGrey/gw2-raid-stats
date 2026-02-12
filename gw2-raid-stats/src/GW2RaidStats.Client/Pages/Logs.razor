@@ -12,60 +12,79 @@
         Filters
     </MudText>
 
-    <MudGrid>
+    <MudGrid Spacing="2">
         <MudItem xs="12" sm="6" md="3">
-            <MudAutocomplete T="string"
-                             Label="Boss Name"
-                             @bind-Value="_bossNameFilter"
-                             SearchFunc="SearchBossNames"
-                             Clearable="true"
-                             Variant="Variant.Outlined"
-                             Dense="true"
-                             ResetValueOnEmptyText="true" />
-        </MudItem>
-        <MudItem xs="12" sm="6" md="2">
-            <MudSelect T="int?" Label="Wing" @bind-Value="_wingFilter" Clearable="true" Variant="Variant.Outlined" Dense="true">
+            <MudSelect T="int?"
+                       Label="Wing"
+                       Value="_wingFilter"
+                       ValueChanged="OnWingFilterChanged"
+                       Clearable="true"
+                       Variant="Variant.Outlined"
+                       Dense="true">
                 @foreach (var wing in _availableWings)
                 {
-                    <MudSelectItem Value="@((int?)wing)">Wing @wing</MudSelectItem>
+                    <MudSelectItem Value="@((int?)wing)">Wing @wing - @GetWingName(wing)</MudSelectItem>
                 }
             </MudSelect>
         </MudItem>
-        <MudItem xs="6" sm="3" md="2">
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="string"
+                       Label="Boss"
+                       @bind-Value="_bossNameFilter"
+                       Clearable="true"
+                       Variant="Variant.Outlined"
+                       Dense="true"
+                       MaxHeight="300">
+                @foreach (var boss in FilteredBosses)
+                {
+                    <MudSelectItem Value="@boss.Name">
+                        @if (_wingFilter == null)
+                        {
+                            <span>W@(boss.Wing) - @boss.Name</span>
+                        }
+                        else
+                        {
+                            @boss.Name
+                        }
+                    </MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="4" md="2">
             <MudSelect T="bool?" Label="Mode" @bind-Value="_isCMFilter" Clearable="true" Variant="Variant.Outlined" Dense="true">
                 <MudSelectItem Value="@((bool?)false)">Normal</MudSelectItem>
                 <MudSelectItem Value="@((bool?)true)">CM</MudSelectItem>
             </MudSelect>
         </MudItem>
-        <MudItem xs="6" sm="3" md="2">
+        <MudItem xs="6" sm="4" md="2">
             <MudSelect T="bool?" Label="Result" @bind-Value="_successFilter" Clearable="true" Variant="Variant.Outlined" Dense="true">
                 <MudSelectItem Value="@((bool?)true)">Kill</MudSelectItem>
                 <MudSelectItem Value="@((bool?)false)">Wipe</MudSelectItem>
             </MudSelect>
         </MudItem>
-        <MudItem xs="12" sm="6" md="3">
+        <MudItem xs="12" sm="4" md="2">
             <MudTextField @bind-Value="_recordedByFilter"
                           Label="Recorded By"
                           Variant="Variant.Outlined"
                           Dense="true"
                           Clearable="true" />
         </MudItem>
-        <MudItem xs="6" sm="3" md="2">
-            <MudDatePicker Label="From Date"
+        <MudItem xs="6" md="2">
+            <MudDatePicker Label="From"
                            @bind-Date="_fromDate"
                            Variant="Variant.Outlined"
                            Dense="true"
                            Clearable="true" />
         </MudItem>
-        <MudItem xs="6" sm="3" md="2">
-            <MudDatePicker Label="To Date"
+        <MudItem xs="6" md="2">
+            <MudDatePicker Label="To"
                            @bind-Date="_toDate"
                            Variant="Variant.Outlined"
                            Dense="true"
                            Clearable="true" />
         </MudItem>
-        <MudItem xs="12" sm="6" md="4">
-            <MudStack Row="true" Spacing="2">
+        <MudItem xs="12" md="4">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Style="height: 100%;">
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
                            StartIcon="@Icons.Material.Filled.Search"
@@ -98,13 +117,13 @@
     }
     else
     {
-        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3" Wrap="Wrap.Wrap" Spacing="2">
             <MudText Typo="Typo.subtitle1" Color="Color.Secondary">
                 Found @_searchResult.TotalCount.ToString("N0") logs
             </MudText>
             <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
-                <MudText Typo="Typo.caption" Color="Color.Secondary">Page size:</MudText>
-                <MudSelect T="int" Value="_pageSize" ValueChanged="OnPageSizeChanged" Dense="true" Style="width: 80px;" Variant="Variant.Outlined">
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-none d-sm-block">Page size:</MudText>
+                <MudSelect T="int" Value="_pageSize" ValueChanged="OnPageSizeChanged" Dense="true" Style="width: 70px;" Variant="Variant.Outlined">
                     <MudSelectItem Value="10">10</MudSelectItem>
                     <MudSelectItem Value="25">25</MudSelectItem>
                     <MudSelectItem Value="50">50</MudSelectItem>
@@ -118,22 +137,19 @@
                   Hover="true"
                   Striped="true"
                   Loading="@_loading"
-                  LoadingProgressColor="Color.Primary">
+                  LoadingProgressColor="Color.Primary"
+                  Breakpoint="Breakpoint.Sm">
             <HeaderContent>
-                <MudTh Style="width: 50px;"></MudTh>
-                <MudTh>
-                    <MudTableSortLabel SortLabel="bossname" T="LogEntryDto">Boss</MudTableSortLabel>
-                </MudTh>
+                <MudTh Class="d-none d-md-table-cell" Style="width: 50px;"></MudTh>
+                <MudTh>Boss</MudTh>
                 <MudTh>Result</MudTh>
-                <MudTh>
-                    <MudTableSortLabel SortLabel="duration" T="LogEntryDto">Duration</MudTableSortLabel>
-                </MudTh>
+                <MudTh Class="d-none d-sm-table-cell">Duration</MudTh>
                 <MudTh>Date</MudTh>
-                <MudTh>Recorded By</MudTh>
+                <MudTh Class="d-none d-lg-table-cell">Recorded By</MudTh>
                 <MudTh>Log</MudTh>
             </HeaderContent>
             <RowTemplate>
-                <MudTd DataLabel="">
+                <MudTd DataLabel="" Class="d-none d-md-table-cell">
                     @if (!string.IsNullOrEmpty(context.IconUrl))
                     {
                         <MudAvatar Size="Size.Small">
@@ -142,21 +158,23 @@
                     }
                 </MudTd>
                 <MudTd DataLabel="Boss">
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
-                        <MudLink Href="@($"/bosses/{context.TriggerId}?isCM={context.IsCM}")">
-                            @context.BossName
-                        </MudLink>
-                        @if (context.IsCM)
-                        {
-                            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">CM</MudChip>
-                        }
-                        @if (context.IsLegendaryCM)
-                        {
-                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined">LCM</MudChip>
-                        }
+                    <MudStack Spacing="0">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Wrap="Wrap.Wrap">
+                            <MudLink Href="@($"/bosses/{context.TriggerId}?isCM={context.IsCM}")" Style="word-break: break-word;">
+                                @context.BossName
+                            </MudLink>
+                            @if (context.IsCM)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">CM</MudChip>
+                            }
+                            @if (context.IsLegendaryCM)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined">LCM</MudChip>
+                            }
+                        </MudStack>
                         @if (context.Wing.HasValue)
                         {
-                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">W@(context.Wing)</MudChip>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Wing @context.Wing</MudText>
                         }
                     </MudStack>
                 </MudTd>
@@ -170,9 +188,12 @@
                         <MudChip T="string" Size="Size.Small" Color="Color.Error">Wipe</MudChip>
                     }
                 </MudTd>
-                <MudTd DataLabel="Duration">@FormatDuration(context.DurationSeconds)</MudTd>
-                <MudTd DataLabel="Date">@context.EncounterTime.LocalDateTime.ToString("MMM d, yyyy HH:mm")</MudTd>
-                <MudTd DataLabel="Recorded By">@(context.RecordedBy ?? "-")</MudTd>
+                <MudTd DataLabel="Duration" Class="d-none d-sm-table-cell">@FormatDuration(context.DurationSeconds)</MudTd>
+                <MudTd DataLabel="Date">
+                    <MudText Typo="Typo.body2">@context.EncounterTime.LocalDateTime.ToString("MMM d")</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.EncounterTime.LocalDateTime.ToString("HH:mm")</MudText>
+                </MudTd>
+                <MudTd DataLabel="Recorded By" Class="d-none d-lg-table-cell">@(context.RecordedBy ?? "-")</MudTd>
                 <MudTd DataLabel="Log">
                     <MudStack Row="true" Spacing="0">
                         <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
@@ -207,8 +228,50 @@
 @code {
     private bool _loading = true;
     private LogSearchResultDto? _searchResult;
-    private List<string> _availableBossNames = new();
-    private List<int> _availableWings = new();
+    private List<int> _availableWings = new() { 1, 2, 3, 4, 5, 6, 7, 8 };
+
+    // Static boss data with wing information
+    private static readonly List<BossInfo> AllBosses = new()
+    {
+        // Wing 1
+        new(1, "Vale Guardian"),
+        new(1, "Gorseval the Multifarious"),
+        new(1, "Sabetha the Saboteur"),
+        // Wing 2
+        new(2, "Slothasor"),
+        new(2, "Matthias Gabrel"),
+        // Wing 3
+        new(3, "Keep Construct"),
+        new(3, "Xera"),
+        // Wing 4
+        new(4, "Cairn the Indomitable"),
+        new(4, "Mursaat Overseer"),
+        new(4, "Samarog"),
+        new(4, "Deimos"),
+        // Wing 5
+        new(5, "Soulless Horror"),
+        new(5, "Dhuum"),
+        // Wing 6
+        new(6, "Conjured Amalgamate"),
+        new(6, "Twin Largos"),
+        new(6, "Qadim"),
+        // Wing 7
+        new(7, "Cardinal Adina"),
+        new(7, "Cardinal Sabir"),
+        new(7, "Qadim the Peerless"),
+        // Wing 8 (NM)
+        new(8, "Greer"),
+        new(8, "Decima"),
+        new(8, "Ura"),
+        // Wing 8 (CM)
+        new(8, "Massive Greer"),
+        new(8, "Godsquall Decima"),
+        new(8, "Ura the Adorned"),
+    };
+
+    private IEnumerable<BossInfo> FilteredBosses => _wingFilter.HasValue
+        ? AllBosses.Where(b => b.Wing == _wingFilter.Value)
+        : AllBosses;
 
     // Filter values
     private string? _bossNameFilter;
@@ -225,37 +288,35 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadFilterOptionsAsync();
         await SearchLogs();
     }
 
-    private async Task LoadFilterOptionsAsync()
+    private void OnWingFilterChanged(int? value)
     {
-        try
+        _wingFilter = value;
+        // Clear boss filter if it's not in the new wing
+        if (_wingFilter.HasValue && !string.IsNullOrEmpty(_bossNameFilter))
         {
-            var bossNamesTask = Http.GetFromJsonAsync<List<string>>("api/logs/boss-names");
-            var wingsTask = Http.GetFromJsonAsync<List<int>>("api/logs/wings");
-
-            await Task.WhenAll(bossNamesTask, wingsTask);
-
-            _availableBossNames = bossNamesTask.Result ?? new();
-            _availableWings = wingsTask.Result ?? new();
-        }
-        catch
-        {
-            _availableBossNames = new();
-            _availableWings = new();
+            var bossInWing = AllBosses.Any(b => b.Wing == _wingFilter.Value && b.Name == _bossNameFilter);
+            if (!bossInWing)
+            {
+                _bossNameFilter = null;
+            }
         }
     }
 
-    private Task<IEnumerable<string>> SearchBossNames(string value, CancellationToken ct)
+    private static string GetWingName(int wing) => wing switch
     {
-        if (string.IsNullOrEmpty(value))
-            return Task.FromResult<IEnumerable<string>>(_availableBossNames);
-
-        return Task.FromResult<IEnumerable<string>>(_availableBossNames
-            .Where(n => n.Contains(value, StringComparison.OrdinalIgnoreCase)));
-    }
+        1 => "Spirit Vale",
+        2 => "Salvation Pass",
+        3 => "Stronghold",
+        4 => "Bastion",
+        5 => "Hall of Chains",
+        6 => "Mythwright",
+        7 => "Ahdashim",
+        8 => "Mt. Balrior",
+        _ => ""
+    };
 
     private async Task SearchLogs()
     {
@@ -360,4 +421,6 @@
         string? LogUrl,
         string? IconUrl
     );
+
+    public record BossInfo(int Wing, string Name);
 }

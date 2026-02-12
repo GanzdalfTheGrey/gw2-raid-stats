@@ -16,20 +16,40 @@ public class MechanicSearchService
     }
 
     /// <summary>
-    /// Get all distinct mechanics from the database with counts
+    /// Get all distinct mechanics from the database with counts and boss info
     /// </summary>
     public async Task<List<MechanicInfo>> GetAllMechanicsAsync(CancellationToken ct = default)
     {
-        var mechanics = await _db.MechanicEvents
-            .GroupBy(m => new { m.MechanicName, m.MechanicFullName, m.Description })
-            .Select(g => new MechanicInfo(
+        // Get mechanics with their most common boss
+        var mechanicsWithBoss = await _db.MechanicEvents
+            .InnerJoin(_db.Encounters, (m, e) => m.EncounterId == e.Id, (m, e) => new { m, e })
+            .GroupBy(x => new { x.m.MechanicName, x.m.MechanicFullName, x.m.Description, x.e.BossName })
+            .Select(g => new
+            {
                 g.Key.MechanicName,
                 g.Key.MechanicFullName,
                 g.Key.Description,
-                g.Count()
-            ))
-            .OrderByDescending(m => m.TotalCount)
+                g.Key.BossName,
+                Count = g.Count()
+            })
             .ToListAsync(ct);
+
+        // Group by mechanic and pick the boss with the most occurrences
+        var mechanics = mechanicsWithBoss
+            .GroupBy(m => new { m.MechanicName, m.MechanicFullName, m.Description })
+            .Select(g =>
+            {
+                var topBoss = g.OrderByDescending(x => x.Count).First();
+                return new MechanicInfo(
+                    g.Key.MechanicName,
+                    g.Key.MechanicFullName,
+                    g.Key.Description,
+                    g.Sum(x => x.Count),
+                    topBoss.BossName
+                );
+            })
+            .OrderByDescending(m => m.TotalCount)
+            .ToList();
 
         return mechanics;
     }
@@ -44,16 +64,26 @@ public class MechanicSearchService
         DateTimeOffset? toDate,
         CancellationToken ct = default)
     {
-        // Get mechanic info
-        var mechanicInfo = await _db.MechanicEvents
-            .Where(m => m.MechanicName == mechanicName)
-            .Select(m => new { m.MechanicName, m.MechanicFullName, m.Description })
-            .FirstOrDefaultAsync(ct);
+        // Get mechanic info with most common boss
+        var mechanicWithBoss = await _db.MechanicEvents
+            .InnerJoin(_db.Encounters, (m, e) => m.EncounterId == e.Id, (m, e) => new { m, e })
+            .Where(x => x.m.MechanicName == mechanicName)
+            .GroupBy(x => new { x.m.MechanicName, x.m.MechanicFullName, x.m.Description, x.e.BossName })
+            .Select(g => new
+            {
+                g.Key.MechanicName,
+                g.Key.MechanicFullName,
+                g.Key.Description,
+                g.Key.BossName,
+                Count = g.Count()
+            })
+            .ToListAsync(ct);
 
-        if (mechanicInfo == null)
+        if (mechanicWithBoss.Count == 0)
         {
             return new MechanicSearchResult(
                 mechanicName,
+                null,
                 null,
                 null,
                 fromDate,
@@ -62,6 +92,15 @@ public class MechanicSearchService
                 new List<MechanicPlayerStat>()
             );
         }
+
+        var topBossEntry = mechanicWithBoss.OrderByDescending(x => x.Count).First();
+        var mechanicInfo = new
+        {
+            topBossEntry.MechanicName,
+            topBossEntry.MechanicFullName,
+            topBossEntry.Description,
+            topBossEntry.BossName
+        };
 
         // Get included players (guild members) - only they appear in mechanics stats
         var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
@@ -140,6 +179,7 @@ public class MechanicSearchService
             mechanicInfo.MechanicName,
             mechanicInfo.MechanicFullName,
             mechanicInfo.Description,
+            mechanicInfo.BossName,
             fromDate,
             toDate,
             totalCount,
@@ -152,13 +192,15 @@ public record MechanicInfo(
     string MechanicName,
     string? MechanicFullName,
     string? Description,
-    int TotalCount
+    int TotalCount,
+    string? BossName
 );
 
 public record MechanicSearchResult(
     string MechanicName,
     string? MechanicFullName,
     string? Description,
+    string? BossName,
     DateTimeOffset? FromDate,
     DateTimeOffset? ToDate,
     int TotalCount,

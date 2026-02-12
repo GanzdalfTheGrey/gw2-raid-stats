@@ -12,7 +12,22 @@
     </MudText>
 
     <MudGrid Spacing="2">
-        <MudItem xs="12" md="6" lg="4">
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="string"
+                       Label="Boss"
+                       Value="_bossFilter"
+                       ValueChanged="OnBossFilterChanged"
+                       Clearable="true"
+                       Variant="Variant.Outlined"
+                       Dense="true"
+                       MaxHeight="300">
+                @foreach (var boss in AvailableBosses)
+                {
+                    <MudSelectItem Value="@boss">@boss</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
             <MudAutocomplete T="MechanicInfoDto"
                              Label="Mechanic"
                              @bind-Value="_selectedMechanic"
@@ -27,25 +42,25 @@
                     <MudStack Spacing="0">
                         <MudText>@(mechanic.MechanicFullName ?? mechanic.MechanicName)</MudText>
                         <MudText Typo="Typo.caption" Color="Color.Secondary">
-                            @mechanic.MechanicName - @mechanic.TotalCount.ToString("N0") total
+                            @(mechanic.BossName ?? "Unknown") - @mechanic.TotalCount.ToString("N0") total
                         </MudText>
                     </MudStack>
                 </ItemTemplate>
             </MudAutocomplete>
         </MudItem>
-        <MudItem xs="6" md="3" lg="2">
-            <MudDatePicker Label="From Date"
+        <MudItem xs="6" sm="4" md="2">
+            <MudDatePicker Label="From"
                            @bind-Date="_fromDate"
                            Variant="Variant.Outlined"
                            Clearable="true" />
         </MudItem>
-        <MudItem xs="6" md="3" lg="2">
-            <MudDatePicker Label="To Date"
+        <MudItem xs="6" sm="4" md="2">
+            <MudDatePicker Label="To"
                            @bind-Date="_toDate"
                            Variant="Variant.Outlined"
                            Clearable="true" />
         </MudItem>
-        <MudItem xs="12" lg="4">
+        <MudItem xs="12" sm="4" md="2">
             <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Style="height: 100%;">
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
@@ -75,7 +90,27 @@
     <MudPaper Class="pa-4" Elevation="2">
         <MudStack Row="false" Spacing="2" Class="mb-4">
             <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start" Wrap="Wrap.Wrap" Spacing="2">
-                <MudText Typo="Typo.h6" Style="word-break: break-word;">@(_searchResult.MechanicFullName ?? _searchResult.MechanicName)</MudText>
+                <MudStack Spacing="0">
+                    <MudText Typo="Typo.h6" Style="word-break: break-word;">@(_searchResult.MechanicFullName ?? _searchResult.MechanicName)</MudText>
+                    @if (!string.IsNullOrEmpty(_searchResult.BossName))
+                    {
+                        var wikiUrl = GetWikiUrl(_searchResult.BossName);
+                        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Boss:</MudText>
+                            @if (wikiUrl != null)
+                            {
+                                <MudLink Href="@wikiUrl" Target="_blank" Typo="Typo.body2">
+                                    @_searchResult.BossName
+                                    <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" Style="font-size: 0.8rem; vertical-align: middle;" />
+                                </MudLink>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2">@_searchResult.BossName</MudText>
+                            }
+                        </MudStack>
+                    }
+                </MudStack>
                 <MudChip T="string" Color="Color.Primary" Size="Size.Medium">
                     @_searchResult.TotalCount.ToString("N0") total
                 </MudChip>
@@ -142,17 +177,27 @@ else if (!_loading && _hasSearched)
 else if (!_loading)
 {
     <MudPaper Class="pa-4" Elevation="2">
-        <MudText Typo="Typo.h6" Class="mb-3">Available Mechanics</MudText>
+        <MudText Typo="Typo.h6" Class="mb-3">
+            Available Mechanics
+            @if (!string.IsNullOrEmpty(_bossFilter))
+            {
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Style="display: inline;"> - @_bossFilter</MudText>
+            }
+        </MudText>
         @if (_allMechanics.Count == 0)
         {
             <MudAlert Severity="Severity.Info">No mechanics found. Import some logs to see mechanics data.</MudAlert>
         }
+        else if (!FilteredMechanics.Any())
+        {
+            <MudAlert Severity="Severity.Info">No mechanics found for this boss.</MudAlert>
+        }
         else
         {
             <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
-                @_allMechanics.Count mechanics tracked across all encounters. Select one above to search.
+                @FilteredMechanics.Count() mechanics@(string.IsNullOrEmpty(_bossFilter) ? " tracked across all encounters" : $" for {_bossFilter}"). Select one above to search.
             </MudText>
-            <MudTable Items="@_allMechanics.Take(20)"
+            <MudTable Items="@FilteredMechanics.Take(20)"
                       T="MechanicInfoDto"
                       Dense="true"
                       Hover="true"
@@ -161,7 +206,8 @@ else if (!_loading)
                       OnRowClick="@(args => SelectMechanic(args.Item))">
                 <HeaderContent>
                     <MudTh>Mechanic</MudTh>
-                    <MudTh Class="d-none d-md-table-cell">Description</MudTh>
+                    <MudTh Class="d-none d-sm-table-cell">Boss</MudTh>
+                    <MudTh Class="d-none d-lg-table-cell">Description</MudTh>
                     <MudTh>Count</MudTh>
                 </HeaderContent>
                 <RowTemplate>
@@ -169,12 +215,36 @@ else if (!_loading)
                         <MudStack Spacing="0">
                             <MudText Style="word-break: break-word;">@(context.MechanicFullName ?? context.MechanicName)</MudText>
                             <MudText Typo="Typo.caption" Color="Color.Secondary">@context.MechanicName</MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-md-none">
-                                @(context.Description ?? "")
-                            </MudText>
+                            @if (!string.IsNullOrEmpty(context.BossName))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Info" Class="d-sm-none">
+                                    @context.BossName
+                                </MudText>
+                            }
                         </MudStack>
                     </MudTd>
-                    <MudTd DataLabel="Description" Class="d-none d-md-table-cell">
+                    <MudTd DataLabel="Boss" Class="d-none d-sm-table-cell">
+                        @if (!string.IsNullOrEmpty(context.BossName))
+                        {
+                            var wikiUrl = GetWikiUrl(context.BossName);
+                            @if (wikiUrl != null)
+                            {
+                                <MudLink Href="@wikiUrl" Target="_blank" Typo="Typo.body2">
+                                    @context.BossName
+                                    <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" Style="font-size: 0.8rem; vertical-align: middle;" />
+                                </MudLink>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2">@context.BossName</MudText>
+                            }
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">-</MudText>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Description" Class="d-none d-lg-table-cell">
                         <MudText Typo="Typo.body2" Color="Color.Secondary">@(context.Description ?? "-")</MudText>
                     </MudTd>
                     <MudTd DataLabel="Count">
@@ -182,10 +252,10 @@ else if (!_loading)
                     </MudTd>
                 </RowTemplate>
             </MudTable>
-            @if (_allMechanics.Count > 20)
+            @if (FilteredMechanics.Count() > 20)
             {
                 <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
-                    Showing top 20 of @_allMechanics.Count mechanics. Use the search above to find others.
+                    Showing top 20 of @FilteredMechanics.Count() mechanics. Use the search above to find others.
                 </MudText>
             }
         }
@@ -197,9 +267,22 @@ else if (!_loading)
     private bool _hasSearched = false;
     private List<MechanicInfoDto> _allMechanics = new();
     private MechanicInfoDto? _selectedMechanic;
+    private string? _bossFilter;
     private DateTime? _fromDate;
     private DateTime? _toDate;
     private MechanicSearchResultDto? _searchResult;
+
+    // Get unique boss names for the filter dropdown
+    private IEnumerable<string> AvailableBosses => _allMechanics
+        .Where(m => !string.IsNullOrEmpty(m.BossName))
+        .Select(m => m.BossName!)
+        .Distinct()
+        .OrderBy(b => b);
+
+    // Filter mechanics by boss for the table
+    private IEnumerable<MechanicInfoDto> FilteredMechanics => string.IsNullOrEmpty(_bossFilter)
+        ? _allMechanics
+        : _allMechanics.Where(m => m.BossName == _bossFilter);
 
     protected override async Task OnInitializedAsync()
     {
@@ -223,12 +306,26 @@ else if (!_loading)
         }
     }
 
+    private void OnBossFilterChanged(string? value)
+    {
+        _bossFilter = value;
+        // Clear selected mechanic if it's not from the selected boss
+        if (!string.IsNullOrEmpty(_bossFilter) && _selectedMechanic != null && _selectedMechanic.BossName != _bossFilter)
+        {
+            _selectedMechanic = null;
+        }
+    }
+
     private Task<IEnumerable<MechanicInfoDto>> SearchMechanics(string value, CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(value))
-            return Task.FromResult<IEnumerable<MechanicInfoDto>>(_allMechanics.Take(20));
+        var mechanics = string.IsNullOrEmpty(_bossFilter)
+            ? _allMechanics
+            : _allMechanics.Where(m => m.BossName == _bossFilter);
 
-        var results = _allMechanics
+        if (string.IsNullOrEmpty(value))
+            return Task.FromResult(mechanics.Take(20));
+
+        var results = mechanics
             .Where(m =>
                 (m.MechanicName?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false) ||
                 (m.MechanicFullName?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false) ||
@@ -279,6 +376,7 @@ else if (!_loading)
     private void ClearFilters()
     {
         _selectedMechanic = null;
+        _bossFilter = null;
         _fromDate = null;
         _toDate = null;
         _searchResult = null;
@@ -296,18 +394,58 @@ else if (!_loading)
         return (double)player.Count / _searchResult.TotalCount * 100;
     }
 
+    private static string? GetWikiUrl(string? bossName)
+    {
+        if (string.IsNullOrEmpty(bossName)) return null;
+
+        // Map boss names to their wiki page names
+        var wikiName = bossName switch
+        {
+            "Vale Guardian" => "Vale_Guardian",
+            "Gorseval the Multifarious" => "Gorseval_the_Multifarious",
+            "Sabetha the Saboteur" => "Sabetha_the_Saboteur",
+            "Slothasor" => "Slothasor",
+            "Matthias Gabrel" => "Matthias_Gabrel",
+            "Keep Construct" => "Keep_Construct",
+            "Xera" => "Xera",
+            "Cairn the Indomitable" => "Cairn_the_Indomitable",
+            "Mursaat Overseer" => "Mursaat_Overseer",
+            "Samarog" => "Samarog",
+            "Deimos" => "Deimos_(raid)",
+            "Soulless Horror" => "Soulless_Horror",
+            "Desmina" => "Soulless_Horror",
+            "Dhuum" => "Dhuum",
+            "Conjured Amalgamate" => "Conjured_Amalgamate",
+            "Twin Largos" => "Twin_Largos",
+            "Nikare" => "Twin_Largos",
+            "Kenut" => "Twin_Largos",
+            "Qadim" => "Qadim",
+            "Cardinal Adina" => "Cardinal_Adina",
+            "Cardinal Sabir" => "Cardinal_Sabir",
+            "Qadim the Peerless" => "Qadim_the_Peerless",
+            "Greer" or "Greer, the Blightbringer" or "Massive Greer" => "Greer,_the_Blightbringer",
+            "Decima" or "Decima, the Stormsinger" or "Godsquall Decima" => "Decima,_the_Stormsinger",
+            "Ura" or "Ura, the Drowning" or "Ura the Adorned" => "Ura,_the_Drowning",
+            _ => bossName.Replace(" ", "_")
+        };
+
+        return $"https://wiki.guildwars2.com/wiki/{wikiName}";
+    }
+
     // DTOs
     public record MechanicInfoDto(
         string MechanicName,
         string? MechanicFullName,
         string? Description,
-        int TotalCount
+        int TotalCount,
+        string? BossName
     );
 
     public record MechanicSearchResultDto(
         string MechanicName,
         string? MechanicFullName,
         string? Description,
+        string? BossName,
         DateTimeOffset? FromDate,
         DateTimeOffset? ToDate,
         int TotalCount,

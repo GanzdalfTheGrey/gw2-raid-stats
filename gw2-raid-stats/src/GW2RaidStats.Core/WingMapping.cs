@@ -80,10 +80,10 @@ public static class WingMapping
         16137 or 16115 => 2,  // Matthias Gabrel (both possible IDs)
 
         // Wing 3 - Stronghold of the Faithful
-        16235 => 3,  // Escort
-        16246 => 3,  // Keep Construct
+        16235 => 3,  // Keep Construct
+        16246 => 3,  // Xera
         16286 => 3,  // Twisted Castle (event)
-        16253 => 3,  // Xera
+        16253 => 3,  // Unknown W3 (legacy?)
 
         // Wing 4 - Bastion of the Penitent
         17194 => 4,  // Cairn
@@ -146,10 +146,10 @@ public static class WingMapping
         16137 or 16115 => 3,  // Matthias
 
         // Wing 3
-        16235 => 1,  // Escort
-        16246 => 2,  // Keep Construct
+        16235 => 2,  // Keep Construct
+        16246 => 4,  // Xera
         16286 => 3,  // Twisted Castle
-        16253 => 4,  // Xera
+        16253 => 5,  // Unknown W3 (legacy?)
 
         // Wing 4
         17194 => 1,  // Cairn

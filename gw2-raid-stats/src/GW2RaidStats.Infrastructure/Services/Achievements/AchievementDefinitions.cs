@@ -74,6 +74,17 @@ public static class AchievementDefinitions
         new("no_duplicates", "No Duplicates", "Complete a boss with 10 different elite specs (no repeats)", GuildAchievementCategory.Composition),
         new("rainbow_squad", "Rainbow Squad", "Complete a boss with at least one of each profession (9 classes)", GuildAchievementCategory.Composition),
 
+        // Profession-Specific Composition (9)
+        new("all_elementalist", "Oops All Downstate", "Complete a wing with all players on Elementalist", GuildAchievementCategory.Composition),
+        new("all_necromancer", "Shroud Squad", "Complete a wing with all players on Necromancer", GuildAchievementCategory.Composition),
+        new("all_mesmer", "The Clone Wars", "Complete a wing with all players on Mesmer", GuildAchievementCategory.Composition),
+        new("all_guardian", "Blue Man Group", "Complete a wing with all players on Guardian", GuildAchievementCategory.Composition),
+        new("all_warrior", "Box of Crayons", "Complete a wing with all players on Warrior", GuildAchievementCategory.Composition),
+        new("all_revenant", "Channel Surfers", "Complete a wing with all players on Revenant", GuildAchievementCategory.Composition),
+        new("all_engineer", "Over-Engineered", "Complete a wing with all players on Engineer", GuildAchievementCategory.Composition),
+        new("all_ranger", "Nature Documentary", "Complete a wing with all players on Ranger", GuildAchievementCategory.Composition),
+        new("all_thief", "Pickpocket Convention", "Complete a wing with all players on Thief", GuildAchievementCategory.Composition),
+
         // Performance Challenges
         new("flawless_wing_1", "Flawless Wing 1", "Complete Wing 1 with 0 squad deaths in a single session", GuildAchievementCategory.Performance),
         new("flawless_wing_2", "Flawless Wing 2", "Complete Wing 2 with 0 squad deaths in a single session", GuildAchievementCategory.Performance),
@@ -100,7 +111,7 @@ public static class AchievementDefinitions
     {
         { 1, new[] { 15438, 15429, 15375 } },           // VG, Gorseval, Sabetha
         { 2, new[] { 16123, 16137 } },                   // Slothasor, Matthias (canonical ID)
-        { 3, new[] { 16235, 16253 } },                   // Keep Construct, Xera (skip Escort, TC)
+        { 3, new[] { 16235, 16246 } },                   // Keep Construct, Xera (skip Escort, TC)
         { 4, new[] { 17194, 17172, 17188, 17154 } },     // Cairn, MO, Samarog, Deimos
         { 5, new[] { 19767, 19450 } },                   // Soulless Horror, Dhuum
         { 6, new[] { 43974, 21105, 20934 } },            // CA, Twin Largos, Qadim
@@ -163,7 +174,7 @@ public static class AchievementDefinitions
         { 16115, "Matthias" },  // Alternate trigger ID
         // Wing 3
         { 16235, "Keep Construct" },
-        { 16253, "Xera" },
+        { 16246, "Xera" },
         // Wing 4
         { 17194, "Cairn" },
         { 17172, "Mursaat Overseer" },

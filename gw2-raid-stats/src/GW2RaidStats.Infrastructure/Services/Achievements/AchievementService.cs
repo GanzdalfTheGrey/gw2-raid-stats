@@ -929,19 +929,19 @@ public class AchievementService
             }
         }
 
-        // Wing 8 CM Clear
+        // Wing 8 CM Clear - uses separate CM trigger IDs (26957, 26956, 26952)
         if (!await HasAchievementAsync(playerId, "wing_8_cm_clear", ct))
         {
-            var w8Bosses = AchievementDefinitions.WingMasterBosses[8];
+            var w8CmBosses = AchievementDefinitions.Wing8CMBosses;
             var firstW8CmKillsByBoss = await _db.PlayerEncounters
                 .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
-                .Where(x => x.pe.PlayerId == playerId && x.e.Success && x.e.IsCM)
-                .Where(x => w8Bosses.Contains(x.e.TriggerId))
+                .Where(x => x.pe.PlayerId == playerId && x.e.Success)
+                .Where(x => w8CmBosses.Contains(x.e.TriggerId))
                 .GroupBy(x => x.e.TriggerId)
                 .Select(g => new { BossId = g.Key, FirstKill = g.Min(x => x.e.EncounterTime) })
                 .ToListAsync(ct);
 
-            if (w8Bosses.All(b => firstW8CmKillsByBoss.Any(fk => fk.BossId == b)))
+            if (w8CmBosses.All(b => firstW8CmKillsByBoss.Any(fk => fk.BossId == b)))
             {
                 var achievedAt = firstW8CmKillsByBoss.Max(fk => fk.FirstKill);
                 await AwardAchievementAsync(playerId, "wing_8_cm_clear", null, notify, ct, achievedAt);
@@ -1123,6 +1123,32 @@ public class AchievementService
                 boss = encounter.BossName,
                 profession = baseProfessions.First()
             }, notify, ct, encounter.EncounterTime);
+
+            // Also award the profession-specific achievement
+            var profession = baseProfessions.First();
+            var professionAchievementCode = profession?.ToLowerInvariant() switch
+            {
+                "elementalist" => "all_elementalist",
+                "necromancer" => "all_necromancer",
+                "mesmer" => "all_mesmer",
+                "guardian" => "all_guardian",
+                "warrior" => "all_warrior",
+                "revenant" => "all_revenant",
+                "engineer" => "all_engineer",
+                "ranger" => "all_ranger",
+                "thief" => "all_thief",
+                _ => null
+            };
+
+            if (professionAchievementCode != null)
+            {
+                await AwardGuildAchievementAsync(professionAchievementCode, new
+                {
+                    encounter_id = encounter.Id,
+                    boss = encounter.BossName,
+                    profession = profession
+                }, notify, ct, encounter.EncounterTime);
+            }
         }
 
         // Heavy Metal - only heavy armor

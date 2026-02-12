@@ -26,7 +26,8 @@
       "WebFetch(domain:baaron4.github.io)",
       "Bash(done)",
       "Bash(while read f)",
-      "Bash(do echo '=== $f ===')"
+      "Bash(do echo '=== $f ===')",
+      "WebFetch(domain:wiki.guildwars2.com)"
     ],
     "deny": [],
     "ask": []

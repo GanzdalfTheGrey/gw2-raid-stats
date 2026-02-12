@@ -7,9 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.10.1] - 2025-02-12
 
+### Added
+- Mechanics page now shows which boss each mechanic comes from
+- Mechanics page: Boss filter dropdown to filter mechanics by boss
+- Boss names on Mechanics page link to their GW2 Wiki pages
+- 9 new profession-specific guild achievements (one for each class):
+  - Oops All Downstate (Elementalist), Shroud Squad (Necromancer), The Clone Wars (Mesmer)
+  - Blue Man Group (Guardian), Box of Crayons (Warrior), Channel Surfers (Revenant)
+  - Over-Engineered (Engineer), Nature Documentary (Ranger), Pickpocket Convention (Thief)
+
+### Changed
+- Logs page: Boss dropdown now filters by selected wing
+- Logs page: Wing dropdown shows wing names (e.g., "Wing 1 - Spirit Vale")
+
 ### Fixed
+- Logs page now displays properly on smaller screens
 - Mechanic Lookup page now displays properly on smaller screens
 - Removed checkmark indicator from Personal Bests toggle on player profile
+- Wing 8 CM Clear achievement now correctly tracks CM trigger IDs (Godsquall Decima, etc.)
+- Wing 3 boss trigger IDs corrected: KC=16235, Xera=16246 (were swapped/incorrect)
 
 ## [1.10.0] - 2025-02-12
 
