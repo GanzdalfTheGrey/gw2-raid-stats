@@ -5,6 +5,31 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2025-02-12
+
+### Added
+- **Achievement System** - Track personal and guild accomplishments
+  - 30 Personal Achievements across 9 categories:
+    - **Wing Master** (8): Complete all bosses in a wing on every role
+    - **Milestones** (4): First Kill, Veteran (50), Centurion (100), Dedicated (25 sessions)
+    - **Completion** (4): Clear all bosses in Wings 1-7, Legendary Raider (all CMs), Wing 8 clears
+    - **Performance** (4): The Carry (30%+ squad DPS), Immortal (10 deathless kills), Clutch Player, Speed Demon
+    - **Records** (2): Record Holder, Former Champion
+    - **Spec Diversity** (4): Versatile (10 specs on one boss), Jack of All Trades (20), Master of One (100 kills on one spec), Class Completionist (all 4 elite specs for a profession on one boss)
+    - **Support** (3): Guardian Angel (most resurrects), CC Champion (most breakbar), The Enabler (highest boon DPS)
+    - **Dedication** (2): Session Warrior (10+ kills in session), Keeping Up (beat personal best 5 times)
+    - **Social** (3): Dynamic Duo (50 kills with same partner), Trio, Guild Pride (all guild members)
+  - 14 Guild Achievements:
+    - **Flawless Wings** (8): Clear entire wing with 0 deaths
+    - **Composition** (6): One Trick Guild, Heavy Metal, Cloth Squad, Leather Lovers, No Duplicates, Rainbow Squad
+    - **Performance** (4): Bench Warmers, Untouchable, The Comeback, Record Breakers
+  - Card-based UI with icons, progress circles, and visual feedback
+  - Progress tracking for incomplete achievements
+  - Expandable details for Wing Master and Completion achievements
+  - Achievement rarity display (X/Y players earned)
+  - Links to encounter logs from achievements
+- Admin panel for running achievement backfill
+
 ## [1.9.1] - 2025-02-10
 
 ### Fixed
