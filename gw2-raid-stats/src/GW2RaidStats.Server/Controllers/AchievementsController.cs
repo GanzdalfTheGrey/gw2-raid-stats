@@ -11,16 +11,16 @@ namespace GW2RaidStats.Server.Controllers;
 [Route("api/achievements")]
 public class AchievementsController : ControllerBase
 {
-    private readonly AchievementService _achievementService;
+    private readonly AchievementQueryService _queryService;
     private readonly IncludedPlayerService _includedPlayerService;
     private readonly RaidStatsDb _db;
 
     public AchievementsController(
-        AchievementService achievementService,
+        AchievementQueryService queryService,
         IncludedPlayerService includedPlayerService,
         RaidStatsDb db)
     {
-        _achievementService = achievementService;
+        _queryService = queryService;
         _includedPlayerService = includedPlayerService;
         _db = db;
     }
@@ -65,8 +65,8 @@ public class AchievementsController : ControllerBase
         if (player == null)
             return NotFound(new { message = "Player not found" });
 
-        var earned = await _achievementService.GetPlayerAchievementsAsync(player.Id, ct);
-        var progress = await _achievementService.GetProgressAsync(player.Id, ct);
+        var earned = await _queryService.GetPlayerAchievementsAsync(player.Id, ct);
+        var progress = await _queryService.GetProgressAsync(player.Id, ct);
 
         return Ok(new PlayerAchievementsResponse(
             earned.Count,
@@ -89,7 +89,7 @@ public class AchievementsController : ControllerBase
         if (player == null)
             return NotFound(new { message = "Player not found" });
 
-        var progress = await _achievementService.GetProgressAsync(player.Id, ct);
+        var progress = await _queryService.GetProgressAsync(player.Id, ct);
         return Ok(progress);
     }
 
@@ -107,7 +107,7 @@ public class AchievementsController : ControllerBase
         if (player == null)
             return NotFound(new { message = "Player not found" });
 
-        var progress = await _achievementService.GetWingMasterDetailedProgressAsync(player.Id, ct);
+        var progress = await _queryService.GetWingMasterDetailedProgressAsync(player.Id, ct);
         return Ok(progress);
     }
 
@@ -125,7 +125,7 @@ public class AchievementsController : ControllerBase
         if (player == null)
             return NotFound(new { message = "Player not found" });
 
-        var progress = await _achievementService.GetCompletionDetailedProgressAsync(player.Id, ct);
+        var progress = await _queryService.GetCompletionDetailedProgressAsync(player.Id, ct);
         return Ok(progress);
     }
 
@@ -135,7 +135,7 @@ public class AchievementsController : ControllerBase
     [HttpGet("guild")]
     public async Task<ActionResult<List<GuildAchievementDto>>> GetGuildAchievements(CancellationToken ct)
     {
-        var achievements = await _achievementService.GetGuildAchievementsAsync(ct);
+        var achievements = await _queryService.GetGuildAchievementsAsync(ct);
         return Ok(achievements);
     }
 

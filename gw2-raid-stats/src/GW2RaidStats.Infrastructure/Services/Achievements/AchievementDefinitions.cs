@@ -57,7 +57,17 @@ public static class AchievementDefinitions
         // Social (3)
         new("dynamic_duo", "Dynamic Duo", "Complete 50 bosses with the same party member", AchievementCategory.Social),
         new("trio", "Trio", "Complete 25 bosses with the same two party members", AchievementCategory.Social),
-        new("guild_pride", "Guild Pride", "Be part of a successful kill with only guild members (no pugs)", AchievementCategory.Social)
+        new("guild_pride", "Guild Pride", "Be part of a successful kill with only guild members (no pugs)", AchievementCategory.Social),
+
+        // Shame (8)
+        new("serial_downer", "Serial Downer", "Go downstate 5+ times in a single encounter without fully dying", AchievementCategory.Shame),
+        new("backpack", "Backpack", "Die within the first minute of a boss and still clear", AchievementCategory.Shame),
+        new("greedy", "Greedy", "Die to a boss under 10% HP", AchievementCategory.Shame),
+        new("pacifist", "Pacifist", "Do the least damage on a boss kill", AchievementCategory.Shame),
+        new("oil_change", "Fast Service Oil Change", "Be the first to step in oil on Deimos on a failed run", AchievementCategory.Shame),
+        new("breakfast_special", "Breakfast Special", "Get egged by Gorseval and die to Sabetha's flame wall in the same session", AchievementCategory.Shame),
+        new("glass_cannon", "Glass Cannon (Without the Cannon)", "Go down 3+ times while doing less DPS than a boon DPS", AchievementCategory.Shame),
+        new("just_gg", "Just GG Already", "Be the last one alive on a wipe for 5+ seconds", AchievementCategory.Shame)
     };
 
     /// <summary>
@@ -73,6 +83,14 @@ public static class AchievementDefinitions
         new("leather_lovers", "Leather Lovers", "Complete a boss with only medium armor classes (Thief, Ranger, Engineer)", GuildAchievementCategory.Composition),
         new("no_duplicates", "No Duplicates", "Complete a boss with 10 different elite specs (no repeats)", GuildAchievementCategory.Composition),
         new("rainbow_squad", "Rainbow Squad", "Complete a boss with at least one of each profession (9 classes)", GuildAchievementCategory.Composition),
+
+        // Core/Expansion Composition Challenges
+        new("core_memory", "Core Memory", "Complete an encounter with everyone on core classes (no elite specs)", GuildAchievementCategory.Composition),
+        new("core_2_duo", "Core 2 Duo", "Complete an entire wing with everyone on core classes only", GuildAchievementCategory.Composition),
+        new("chaos_strat", "Chaos Strat", "Complete an encounter with everyone in the same subgroup", GuildAchievementCategory.Composition),
+        new("chaos_dunk", "Chaos Dunk", "Complete an entire wing with everyone in the same subgroup", GuildAchievementCategory.Composition),
+        new("thorn_in_my_side", "Thorn in My Side", "Complete Wings 1-4 on only Heart of Thorns specializations", GuildAchievementCategory.Composition),
+        new("ring_of_fire", "Ring of Fire", "Complete Wings 5-7 on only Path of Fire specializations", GuildAchievementCategory.Composition),
 
         // Profession-Specific Composition (9)
         new("all_elementalist", "Oops All Downstate", "Complete a wing with all players on Elementalist", GuildAchievementCategory.Composition),
@@ -252,6 +270,76 @@ public static class AchievementDefinitions
     };
 
     /// <summary>
+    /// Heart of Thorns elite specs (expansion 1 - 2015)
+    /// </summary>
+    public static readonly HashSet<string> HotEliteSpecs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Dragonhunter", "Berserker", "Herald", "Scrapper", "Druid", "Daredevil", "Tempest", "Chronomancer", "Reaper"
+    };
+
+    /// <summary>
+    /// Path of Fire elite specs (expansion 2 - 2017)
+    /// </summary>
+    public static readonly HashSet<string> PofEliteSpecs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Firebrand", "Spellbreaker", "Renegade", "Holosmith", "Soulbeast", "Deadeye", "Weaver", "Mirage", "Scourge"
+    };
+
+    /// <summary>
+    /// End of Dragons elite specs (expansion 3 - 2022)
+    /// </summary>
+    public static readonly HashSet<string> EodEliteSpecs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Willbender", "Bladesworn", "Vindicator", "Mechanist", "Untamed", "Specter", "Catalyst", "Virtuoso", "Harbinger"
+    };
+
+    /// <summary>
+    /// Janthir Wilds elite specs (expansion 4 - 2025)
+    /// </summary>
+    public static readonly HashSet<string> JwEliteSpecs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Luminary", "Paragon", "Conduit", "Amalgam", "Galeshot", "Antiquary", "Evoker", "Troubadour", "Ritualist"
+    };
+
+    /// <summary>
+    /// Core professions (base classes with no elite spec)
+    /// </summary>
+    public static readonly HashSet<string> CoreProfessions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Guardian", "Warrior", "Revenant", "Engineer", "Ranger", "Thief", "Elementalist", "Mesmer", "Necromancer"
+    };
+
+    /// <summary>
+    /// Check if a profession/spec is a core class (not an elite spec)
+    /// </summary>
+    public static bool IsCoreProfession(string profession)
+    {
+        if (string.IsNullOrEmpty(profession))
+            return false;
+        return CoreProfessions.Contains(profession);
+    }
+
+    /// <summary>
+    /// Check if a profession/spec is a Heart of Thorns elite spec
+    /// </summary>
+    public static bool IsHotSpec(string profession)
+    {
+        if (string.IsNullOrEmpty(profession))
+            return false;
+        return HotEliteSpecs.Contains(profession);
+    }
+
+    /// <summary>
+    /// Check if a profession/spec is a Path of Fire elite spec
+    /// </summary>
+    public static bool IsPofSpec(string profession)
+    {
+        if (string.IsNullOrEmpty(profession))
+            return false;
+        return PofEliteSpecs.Contains(profession);
+    }
+
+    /// <summary>
     /// Maps elite spec/profession to base profession for counting
     /// </summary>
     public static string GetBaseProfession(string profession)
@@ -323,7 +411,8 @@ public enum AchievementCategory
     Support,
     Dedication,
     Growth,
-    Social
+    Social,
+    Shame
 }
 
 /// <summary>

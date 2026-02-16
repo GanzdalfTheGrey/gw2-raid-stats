@@ -11,19 +11,19 @@ namespace GW2RaidStats.Server.Controllers;
 public class AdminDiscordController : ControllerBase
 {
     private readonly RaidStatsDb _db;
-    private readonly AchievementService _achievementService;
+    private readonly AchievementOrchestrator _orchestrator;
 
-    public AdminDiscordController(RaidStatsDb db, AchievementService achievementService)
+    public AdminDiscordController(RaidStatsDb db, AchievementOrchestrator orchestrator)
     {
         _db = db;
-        _achievementService = achievementService;
+        _orchestrator = orchestrator;
     }
 
     [HttpPost("post-session-summary")]
     public async Task<IActionResult> PostSessionSummary(CancellationToken ct)
     {
         // Check for flawless wing achievements before posting summary
-        var flawlessAwarded = await _achievementService.CheckFlawlessWingsForTodayAsync(notify: true, ct);
+        var flawlessAwarded = await _orchestrator.CheckFlawlessWingsForTodayAsync(notify: true, ct);
 
         // Queue a session_complete notification
         var notification = new NotificationQueueEntity

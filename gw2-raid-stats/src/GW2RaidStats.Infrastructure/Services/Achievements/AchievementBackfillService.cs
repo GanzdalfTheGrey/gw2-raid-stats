@@ -13,18 +13,18 @@ namespace GW2RaidStats.Infrastructure.Services.Achievements;
 public class AchievementBackfillService
 {
     private readonly RaidStatsDb _db;
-    private readonly AchievementService _achievementService;
+    private readonly AchievementOrchestrator _orchestrator;
     private readonly IncludedPlayerService _includedPlayerService;
     private readonly ILogger<AchievementBackfillService> _logger;
 
     public AchievementBackfillService(
         RaidStatsDb db,
-        AchievementService achievementService,
+        AchievementOrchestrator orchestrator,
         IncludedPlayerService includedPlayerService,
         ILogger<AchievementBackfillService> logger)
     {
         _db = db;
-        _achievementService = achievementService;
+        _orchestrator = orchestrator;
         _includedPlayerService = includedPlayerService;
         _logger = logger;
     }
@@ -42,51 +42,73 @@ public class AchievementBackfillService
         var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
         var includedSet = includedAccounts.ToHashSet();
 
-        var players = await _db.Players
-            .Where(p => includedSet.Contains(p.AccountName))
-            .OrderBy(p => p.AccountName)
+        // Get all unique encounters that have at least one guild member
+        // This is much more efficient than looping through players then their encounters
+        var allEncounters = await _db.Encounters
+            .InnerJoin(_db.PlayerEncounters, (e, pe) => e.Id == pe.EncounterId, (e, pe) => new { e, pe })
+            .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.e, x.pe, p })
+            .Where(x => includedSet.Contains(x.p.AccountName))
+            .Select(x => new { x.e.Id, x.e.BossName, x.e.EncounterTime })
+            .Distinct()
+            .OrderBy(x => x.EncounterTime)
             .ToListAsync(ct);
 
-        _logger.LogInformation("Found {Count} guild members to process", players.Count);
+        // Filter out ignored encounters in memory (can't translate to SQL)
+        var encounters = allEncounters
+            .Where(x => !WingMapping.IsIgnoredEncounter(x.BossName))
+            .ToList();
+
+        _logger.LogInformation("Found {Count} encounters with guild members to process", encounters.Count);
 
         var totalAwarded = 0;
         var processed = 0;
         var errors = new List<string>();
 
-        foreach (var player in players)
+        // Count achievements before
+        var beforeCount = await _db.PlayerAchievements.CountAsync(ct);
+        var beforeGuildCount = await _db.GuildAchievements.CountAsync(ct);
+
+        foreach (var encounter in encounters)
         {
             ct.ThrowIfCancellationRequested();
             processed++;
 
             try
             {
-                var awarded = await _achievementService.CheckAllForPlayerAsync(player.Id, notify: false, ct);
-                totalAwarded += awarded;
-
-                if (awarded > 0)
-                {
-                    _logger.LogInformation("Awarded {Count} achievements to {Player}", awarded, player.AccountName);
-                }
+                // This checks ALL guild members in this encounter through ALL checkers
+                // Each encounter is processed exactly once
+                await _orchestrator.CheckAfterEncounterAsync(encounter.Id, notify: false, ct);
             }
             catch (Exception ex)
             {
-                errors.Add($"{player.AccountName}: {ex.Message}");
-                _logger.LogWarning(ex, "Error processing achievements for {Player}", player.AccountName);
+                errors.Add($"Encounter {encounter.Id}: {ex.Message}");
+                _logger.LogWarning(ex, "Error processing achievements for encounter {EncounterId}", encounter.Id);
             }
 
-            progress?.Report(new BackfillProgress(processed, players.Count, totalAwarded, errors.Count));
+            // Report progress every 100 encounters to avoid UI spam
+            if (processed % 100 == 0 || processed == encounters.Count)
+            {
+                progress?.Report(new BackfillProgress(processed, encounters.Count, totalAwarded, errors.Count));
+            }
         }
+
+        // Count achievements after per-encounter checks
+        var afterEncounterCount = await _db.PlayerAchievements.CountAsync(ct);
+        var afterEncounterGuildCount = await _db.GuildAchievements.CountAsync(ct);
+        totalAwarded = (afterEncounterCount - beforeCount) + (afterEncounterGuildCount - beforeGuildCount);
+
+        _logger.LogInformation("Per-encounter check complete: {Awarded} achievements awarded", totalAwarded);
 
         // Check Former Champion achievement (requires historical DPS record analysis)
         var formerChampionAwarded = await CheckFormerChampionAchievementAsync(ct);
         totalAwarded += formerChampionAwarded;
 
-        // Check guild achievements retroactively
-        var guildAwarded = await CheckAllGuildAchievementsAsync(ct);
-        totalAwarded += guildAwarded;
+        // Check multi-encounter guild achievements (flawless wings, wing compositions, etc.)
+        var multiEncounterAwarded = await CheckMultiEncounterGuildAchievementsAsync(ct);
+        totalAwarded += multiEncounterAwarded;
 
         _logger.LogInformation(
-            "Backfill complete: {Processed} players, {Awarded} achievements awarded, {Errors} errors",
+            "Backfill complete: {Processed} encounters, {Awarded} achievements awarded, {Errors} errors",
             processed, totalAwarded, errors.Count);
 
         return new BackfillResult(processed, totalAwarded, errors);
@@ -221,124 +243,28 @@ public class AchievementBackfillService
     }
 
     /// <summary>
-    /// Check all guild achievements retroactively
+    /// Check multi-encounter guild achievements that require session-level analysis.
+    /// Per-encounter guild achievements are now handled by GuildChallengeChecker and GuildMilestoneChecker.
     /// </summary>
-    private async Task<int> CheckAllGuildAchievementsAsync(CancellationToken ct)
+    private async Task<int> CheckMultiEncounterGuildAchievementsAsync(CancellationToken ct)
     {
-        _logger.LogInformation("Checking guild achievements retroactively");
+        _logger.LogInformation("Checking multi-encounter guild achievements");
 
         var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
         var includedSet = includedAccounts.ToHashSet();
 
         var awarded = 0;
 
-        // Get all successful encounters
-        var encounters = await _db.Encounters
-            .Where(e => e.Success)
-            .OrderBy(e => e.EncounterTime)
-            .ToListAsync(ct);
-
-        foreach (var encounter in encounters)
-        {
-            ct.ThrowIfCancellationRequested();
-
-            // Skip ignored encounters (Spirit Race, Statues, etc.)
-            if (WingMapping.IsIgnoredEncounter(encounter.BossName))
-                continue;
-
-            // Get players for this encounter
-            var players = await _db.PlayerEncounters
-                .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
-                .Where(x => x.pe.EncounterId == encounter.Id)
-                .ToListAsync(ct);
-
-            // Check composition achievements
-            var professions = players.Select(x => x.pe.Profession).ToList();
-            var baseProfessions = professions.Select(AchievementDefinitions.GetBaseProfession).ToList();
-            var guildMemberCount = players.Count(x => includedSet.Contains(x.p.AccountName));
-
-            // Need enough guild members
-            if (guildMemberCount < 5) continue;
-
-            // One Trick Guild
-            if (baseProfessions.Distinct().Count() == 1 && players.Count >= 10)
-            {
-                if (await AwardGuildAchievementAsync("one_trick_guild", encounter.Id, encounter.BossName, encounter.EncounterTime, ct))
-                    awarded++;
-            }
-
-            // Heavy Metal
-            var heavySpecs = AchievementDefinitions.ArmorClasses["Heavy"];
-            if (professions.All(p => heavySpecs.Contains(p)))
-            {
-                if (await AwardGuildAchievementAsync("heavy_metal", encounter.Id, encounter.BossName, encounter.EncounterTime, ct))
-                    awarded++;
-            }
-
-            // Cloth Squad
-            var lightSpecs = AchievementDefinitions.ArmorClasses["Light"];
-            if (professions.All(p => lightSpecs.Contains(p)))
-            {
-                if (await AwardGuildAchievementAsync("cloth_squad", encounter.Id, encounter.BossName, encounter.EncounterTime, ct))
-                    awarded++;
-            }
-
-            // Leather Lovers
-            var mediumSpecs = AchievementDefinitions.ArmorClasses["Medium"];
-            if (professions.All(p => mediumSpecs.Contains(p)))
-            {
-                if (await AwardGuildAchievementAsync("leather_lovers", encounter.Id, encounter.BossName, encounter.EncounterTime, ct))
-                    awarded++;
-            }
-
-            // No Duplicates (10 different elite specs in one encounter)
-            var uniqueSpecs = professions.Where(p => AchievementDefinitions.AllEliteSpecs.Contains(p)).Distinct().Count();
-            if (uniqueSpecs >= 10)
-            {
-                if (await AwardGuildAchievementAsync("no_duplicates", encounter.Id, encounter.BossName, encounter.EncounterTime, ct))
-                    awarded++;
-            }
-
-            // Rainbow Squad (all 9 professions in one encounter)
-            // Must have all 9 base professions represented
-            var allBaseProfessions = AchievementDefinitions.EliteSpecsByProfession.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var presentBaseProfessions = baseProfessions
-                .Where(p => allBaseProfessions.Contains(p))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Count();
-
-            if (presentBaseProfessions >= 9)
-            {
-                if (await AwardGuildAchievementAsync("rainbow_squad", encounter.Id, encounter.BossName, encounter.EncounterTime, ct))
-                    awarded++;
-            }
-
-            // Bench Warmers (7 or fewer players)
-            if (players.Count <= 7)
-            {
-                if (await AwardGuildAchievementAsync("bench_warmers", encounter.Id, encounter.BossName, encounter.EncounterTime, ct))
-                    awarded++;
-            }
-
-            // Untouchable (0 downs)
-            var totalDowns = players.Sum(x => x.pe.Downs);
-            if (totalDowns == 0)
-            {
-                if (await AwardGuildAchievementAsync("untouchable", encounter.Id, encounter.BossName, encounter.EncounterTime, ct))
-                    awarded++;
-            }
-
-            // The Comeback - check if we killed this boss after wiping 5+ times on it this session
-            await CheckTheComebackAsync(encounter, includedSet, ct);
-
-            // Record Breakers - DPS and boon DPS records in the same encounter
-            await CheckRecordBreakersAsync(encounter, includedSet, ct);
-        }
-
         // Check flawless wing achievements (0 deaths in entire wing in one session)
         awarded += await CheckFlawlessWingAchievementsAsync(includedSet, ct);
 
-        _logger.LogInformation("Guild achievements check complete: {Awarded} awarded", awarded);
+        // Check wing-based composition achievements (core_2_duo, chaos_dunk)
+        awarded += await CheckWingCompositionAchievementsAsync(includedSet, ct);
+
+        // Check expansion-themed achievements (thorn_in_my_side, ring_of_fire)
+        awarded += await CheckExpansionAchievementsAsync(includedSet, ct);
+
+        _logger.LogInformation("Multi-encounter guild achievements check complete: {Awarded} awarded", awarded);
         return awarded;
     }
 
@@ -407,104 +333,6 @@ public class AchievementBackfillService
         }
 
         return awarded;
-    }
-
-    /// <summary>
-    /// Check "The Comeback" achievement - kill a boss after wiping 5+ times on it in the same session
-    /// </summary>
-    private async Task CheckTheComebackAsync(EncounterEntity successfulEncounter, HashSet<string> includedSet, CancellationToken ct)
-    {
-        if (!successfulEncounter.Success) return;
-
-        // Get all encounters for this boss on this day
-        var sessionDate = successfulEncounter.EncounterTime.Date;
-        var sessionStart = new DateTimeOffset(sessionDate, successfulEncounter.EncounterTime.Offset);
-        var sessionEnd = sessionStart.AddDays(1);
-
-        var bossEncountersToday = await _db.Encounters
-            .Where(e => e.TriggerId == successfulEncounter.TriggerId)
-            .Where(e => e.IsCM == successfulEncounter.IsCM)
-            .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd)
-            .Where(e => e.EncounterTime <= successfulEncounter.EncounterTime)
-            .OrderBy(e => e.EncounterTime)
-            .ToListAsync(ct);
-
-        // Count wipes before this kill
-        var wipesBeforeKill = bossEncountersToday
-            .TakeWhile(e => e.Id != successfulEncounter.Id)
-            .Count(e => !e.Success);
-
-        if (wipesBeforeKill >= 5)
-        {
-            await AwardGuildAchievementAsync("the_comeback", successfulEncounter.Id, successfulEncounter.BossName, successfulEncounter.EncounterTime, ct);
-        }
-    }
-
-    // Threshold for boon support
-    private const decimal BoonSupportThreshold = 10m;
-
-    /// <summary>
-    /// Check "Record Breakers" achievement - break DPS and boon DPS records in the same encounter
-    /// </summary>
-    private async Task CheckRecordBreakersAsync(
-        EncounterEntity encounter,
-        HashSet<string> includedSet,
-        CancellationToken ct)
-    {
-        // Get all guild member performances in this encounter
-        var encounterPlayers = await _db.PlayerEncounters
-            .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
-            .Where(x => x.pe.EncounterId == encounter.Id)
-            .Where(x => includedSet.Contains(x.p.AccountName))
-            .ToListAsync(ct);
-
-        if (encounterPlayers.Count == 0) return;
-
-        // Get the top DPS from guild members in this encounter
-        var topDps = encounterPlayers
-            .OrderByDescending(x => x.pe.Dps)
-            .First();
-
-        // Get the previous DPS record (before this encounter)
-        var previousDpsRecord = await _db.PlayerEncounters
-            .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
-            .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
-            .Where(x => x.e.TriggerId == encounter.TriggerId && x.e.IsCM == encounter.IsCM && x.e.Success)
-            .Where(x => x.e.EncounterTime < encounter.EncounterTime)
-            .Where(x => includedSet.Contains(x.p.AccountName))
-            .MaxAsync(x => (int?)x.pe.Dps, ct) ?? 0;
-
-        var dpsRecordBroken = topDps.pe.Dps > previousDpsRecord;
-
-        // Get boon support players (quickness or alac >= 10%)
-        var boonPlayers = encounterPlayers
-            .Where(x => (x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
-                       (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold)
-            .OrderByDescending(x => x.pe.Dps)
-            .ToList();
-
-        if (boonPlayers.Count == 0) return;
-
-        var topBoonDps = boonPlayers.First();
-
-        // Get the previous boon DPS record
-        var previousBoonDpsRecord = await _db.PlayerEncounters
-            .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
-            .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
-            .Where(x => x.e.TriggerId == encounter.TriggerId && x.e.IsCM == encounter.IsCM && x.e.Success)
-            .Where(x => x.e.EncounterTime < encounter.EncounterTime)
-            .Where(x => includedSet.Contains(x.p.AccountName))
-            .Where(x => (x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
-                       (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold)
-            .MaxAsync(x => (int?)x.pe.Dps, ct) ?? 0;
-
-        var boonDpsRecordBroken = topBoonDps.pe.Dps > previousBoonDpsRecord;
-
-        // Award if both records broken
-        if (dpsRecordBroken && boonDpsRecordBroken)
-        {
-            await AwardGuildAchievementAsync("record_breakers", encounter.Id, encounter.BossName, encounter.EncounterTime, ct);
-        }
     }
 
     private async Task<bool> HasGuildAchievementAsync(string code, CancellationToken ct)
@@ -601,6 +429,264 @@ public class AchievementBackfillService
             return true;
         }
     }
+
+    /// <summary>
+    /// Check wing-based composition achievements (core_2_duo, chaos_dunk)
+    /// </summary>
+    private async Task<int> CheckWingCompositionAchievementsAsync(HashSet<string> includedSet, CancellationToken ct)
+    {
+        var awarded = 0;
+
+        for (int wingNum = 1; wingNum <= 8; wingNum++)
+        {
+            var wingBosses = AchievementDefinitions.WingMasterBosses.GetValueOrDefault(wingNum);
+            if (wingBosses == null || wingBosses.Length == 0) continue;
+
+            // Get all successful encounters for this wing, grouped by date
+            var encounters = await _db.Encounters
+                .Where(e => e.Success && wingBosses.Contains(e.TriggerId))
+                .OrderBy(e => e.EncounterTime)
+                .ToListAsync(ct);
+
+            var byDate = encounters.GroupBy(e => e.EncounterTime.Date).ToList();
+
+            foreach (var dateGroup in byDate)
+            {
+                var bossesCleared = dateGroup.Select(e => e.TriggerId).Distinct().ToList();
+                if (!wingBosses.All(b => bossesCleared.Contains(b))) continue;
+
+                // Get one encounter per boss (first kill)
+                var wingEncounters = dateGroup
+                    .GroupBy(e => AchievementDefinitions.NormalizeTriggerId(e.TriggerId))
+                    .Select(g => g.First())
+                    .ToList();
+
+                // Check Core 2 Duo - all players on core classes for entire wing
+                var allCoreForWing = true;
+                foreach (var enc in wingEncounters)
+                {
+                    var players = await _db.PlayerEncounters
+                        .Where(pe => pe.EncounterId == enc.Id)
+                        .Select(pe => pe.Profession)
+                        .ToListAsync(ct);
+
+                    if (!players.All(p => AchievementDefinitions.IsCoreProfession(p)))
+                    {
+                        allCoreForWing = false;
+                        break;
+                    }
+                }
+
+                if (allCoreForWing)
+                {
+                    var firstEnc = wingEncounters.First();
+                    var bossEncounters = wingEncounters.Select(e => new
+                    {
+                        encounter_id = e.Id,
+                        boss_name = AchievementDefinitions.BossNames.GetValueOrDefault(e.TriggerId, e.BossName)
+                    }).ToList();
+
+                    var contextJson = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        encounter_id = firstEnc.Id,
+                        boss = $"Wing {wingNum} Core Only",
+                        date = dateGroup.Key.ToString("yyyy-MM-dd"),
+                        bosses = bossEncounters
+                    });
+
+                    if (await AwardGuildAchievementWithContextAsync("core_2_duo", contextJson, firstEnc.EncounterTime, ct))
+                        awarded++;
+                }
+
+                // Check Chaos Dunk - all players in same subgroup for entire wing (7+ players each encounter)
+                var allSameSubgroupForWing = true;
+                int? consistentSubgroup = null;
+
+                foreach (var enc in wingEncounters)
+                {
+                    var encounterPlayers = await _db.PlayerEncounters
+                        .Where(pe => pe.EncounterId == enc.Id)
+                        .Select(pe => new { pe.SquadGroup })
+                        .ToListAsync(ct);
+
+                    // Require at least 7 players
+                    if (encounterPlayers.Count < 7)
+                    {
+                        allSameSubgroupForWing = false;
+                        break;
+                    }
+
+                    var subgroups = encounterPlayers
+                        .Select(p => p.SquadGroup)
+                        .Where(g => g != null)
+                        .Distinct()
+                        .ToList();
+
+                    if (subgroups.Count != 1)
+                    {
+                        allSameSubgroupForWing = false;
+                        break;
+                    }
+
+                    if (consistentSubgroup == null)
+                        consistentSubgroup = subgroups[0];
+                    else if (consistentSubgroup != subgroups[0])
+                    {
+                        allSameSubgroupForWing = false;
+                        break;
+                    }
+                }
+
+                if (allSameSubgroupForWing && consistentSubgroup != null)
+                {
+                    var firstEnc = wingEncounters.First();
+                    var bossEncounters = wingEncounters.Select(e => new
+                    {
+                        encounter_id = e.Id,
+                        boss_name = AchievementDefinitions.BossNames.GetValueOrDefault(e.TriggerId, e.BossName)
+                    }).ToList();
+
+                    var contextJson = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        encounter_id = firstEnc.Id,
+                        boss = $"Wing {wingNum} Chaos",
+                        date = dateGroup.Key.ToString("yyyy-MM-dd"),
+                        subgroup = consistentSubgroup,
+                        bosses = bossEncounters
+                    });
+
+                    if (await AwardGuildAchievementWithContextAsync("chaos_dunk", contextJson, firstEnc.EncounterTime, ct))
+                        awarded++;
+                }
+            }
+        }
+
+        return awarded;
+    }
+
+    /// <summary>
+    /// Check expansion-themed achievements (thorn_in_my_side, ring_of_fire)
+    /// </summary>
+    private async Task<int> CheckExpansionAchievementsAsync(HashSet<string> includedSet, CancellationToken ct)
+    {
+        var awarded = 0;
+
+        // Thorn in My Side - Complete Wings 1-4 on only HoT specs (single session)
+        var hotWingBosses = new List<int>();
+        for (int w = 1; w <= 4; w++)
+        {
+            var bosses = AchievementDefinitions.WingMasterBosses.GetValueOrDefault(w);
+            if (bosses != null) hotWingBosses.AddRange(bosses);
+        }
+
+        var hotEncounters = await _db.Encounters
+            .Where(e => e.Success && hotWingBosses.Contains(e.TriggerId))
+            .OrderBy(e => e.EncounterTime)
+            .ToListAsync(ct);
+
+        var hotByDate = hotEncounters.GroupBy(e => e.EncounterTime.Date).ToList();
+
+        foreach (var dateGroup in hotByDate)
+        {
+            var bossesCleared = dateGroup.Select(e => e.TriggerId).Distinct().ToList();
+            if (!hotWingBosses.All(b => bossesCleared.Contains(b))) continue;
+
+            // Get one encounter per boss
+            var wingEncounters = dateGroup
+                .GroupBy(e => AchievementDefinitions.NormalizeTriggerId(e.TriggerId))
+                .Select(g => g.First())
+                .ToList();
+
+            // Check if all players used HoT specs
+            var allHotForSession = true;
+            foreach (var enc in wingEncounters)
+            {
+                var players = await _db.PlayerEncounters
+                    .Where(pe => pe.EncounterId == enc.Id)
+                    .Select(pe => pe.Profession)
+                    .ToListAsync(ct);
+
+                if (!players.All(p => AchievementDefinitions.IsHotSpec(p)))
+                {
+                    allHotForSession = false;
+                    break;
+                }
+            }
+
+            if (allHotForSession)
+            {
+                var firstEnc = wingEncounters.First();
+                var contextJson = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    encounter_id = firstEnc.Id,
+                    boss = "Wings 1-4 HoT Only",
+                    date = dateGroup.Key.ToString("yyyy-MM-dd")
+                });
+
+                if (await AwardGuildAchievementWithContextAsync("thorn_in_my_side", contextJson, firstEnc.EncounterTime, ct))
+                    awarded++;
+            }
+        }
+
+        // Ring of Fire - Complete Wings 5-7 on only PoF specs (single session)
+        var pofWingBosses = new List<int>();
+        for (int w = 5; w <= 7; w++)
+        {
+            var bosses = AchievementDefinitions.WingMasterBosses.GetValueOrDefault(w);
+            if (bosses != null) pofWingBosses.AddRange(bosses);
+        }
+
+        var pofEncounters = await _db.Encounters
+            .Where(e => e.Success && pofWingBosses.Contains(e.TriggerId))
+            .OrderBy(e => e.EncounterTime)
+            .ToListAsync(ct);
+
+        var pofByDate = pofEncounters.GroupBy(e => e.EncounterTime.Date).ToList();
+
+        foreach (var dateGroup in pofByDate)
+        {
+            var bossesCleared = dateGroup.Select(e => e.TriggerId).Distinct().ToList();
+            if (!pofWingBosses.All(b => bossesCleared.Contains(b))) continue;
+
+            // Get one encounter per boss
+            var wingEncounters = dateGroup
+                .GroupBy(e => AchievementDefinitions.NormalizeTriggerId(e.TriggerId))
+                .Select(g => g.First())
+                .ToList();
+
+            // Check if all players used PoF specs
+            var allPofForSession = true;
+            foreach (var enc in wingEncounters)
+            {
+                var players = await _db.PlayerEncounters
+                    .Where(pe => pe.EncounterId == enc.Id)
+                    .Select(pe => pe.Profession)
+                    .ToListAsync(ct);
+
+                if (!players.All(p => AchievementDefinitions.IsPofSpec(p)))
+                {
+                    allPofForSession = false;
+                    break;
+                }
+            }
+
+            if (allPofForSession)
+            {
+                var firstEnc = wingEncounters.First();
+                var contextJson = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    encounter_id = firstEnc.Id,
+                    boss = "Wings 5-7 PoF Only",
+                    date = dateGroup.Key.ToString("yyyy-MM-dd")
+                });
+
+                if (await AwardGuildAchievementWithContextAsync("ring_of_fire", contextJson, firstEnc.EncounterTime, ct))
+                    awarded++;
+            }
+        }
+
+        return awarded;
+    }
 }
 
 public record BackfillProgress(
@@ -613,6 +699,6 @@ public record BackfillProgress(
 }
 
 public record BackfillResult(
-    int PlayersProcessed,
+    int EncountersProcessed,
     int AchievementsAwarded,
     List<string> Errors);

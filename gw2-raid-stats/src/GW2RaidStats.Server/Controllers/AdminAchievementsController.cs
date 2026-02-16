@@ -63,8 +63,8 @@ public class AdminAchievementsController : ControllerBase
                 _lastResult = result;
 
                 _logger.LogInformation(
-                    "Achievement backfill complete: {Players} players processed, {Awarded} achievements awarded",
-                    result.PlayersProcessed, result.AchievementsAwarded);
+                    "Achievement backfill complete: {Encounters} encounters processed, {Awarded} achievements awarded",
+                    result.EncountersProcessed, result.AchievementsAwarded);
             }
             catch (Exception ex)
             {

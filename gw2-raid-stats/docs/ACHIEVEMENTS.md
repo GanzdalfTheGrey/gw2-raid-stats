@@ -120,9 +120,9 @@ Playing with friends.
 
 ---
 
-## Guild Achievements (14 total)
+## Guild Achievements (20 total)
 
-### Class/Composition Challenges (7 achievements)
+### Class/Composition Challenges (13 achievements)
 Creative squad compositions.
 
 | Achievement | Description |
@@ -134,6 +134,12 @@ Creative squad compositions.
 | **Leather Lovers** | Complete a boss with only medium armor classes (Thief, Ranger, Engineer) |
 | **No Duplicates** | Complete a boss with 10 different elite specs (no repeats) |
 | **Rainbow Squad** | Complete a boss with at least one of each profession (9 classes represented) |
+| **Core Memory** | Complete an encounter with everyone on core classes (no elite specs) |
+| **Core 2 Duo** | Complete an entire wing with everyone on core classes only |
+| **Chaos Strat** | Complete an encounter with everyone in the same subgroup |
+| **Chaos Dunk** | Complete an entire wing with everyone in the same subgroup |
+| **Thorn in My Side** | Complete Wings 1-4 on only Heart of Thorns specializations |
+| **Ring of Fire** | Complete Wings 5-7 on only Path of Fire specializations |
 
 ---
 

@@ -32,7 +32,7 @@
     else if (_status?.Result != null)
     {
         <MudAlert Severity="Severity.Success" Class="mb-3">
-            Backfill complete! Processed @_status.Result.PlayersProcessed players,
+            Backfill complete! Processed @_status.Result.EncountersProcessed encounters,
             awarded @_status.Result.AchievementsAwarded achievements.
         </MudAlert>
 
@@ -249,7 +249,7 @@
     }
 
     public record BackfillResult(
-        int PlayersProcessed,
+        int EncountersProcessed,
         int AchievementsAwarded,
         List<string> Errors);
 

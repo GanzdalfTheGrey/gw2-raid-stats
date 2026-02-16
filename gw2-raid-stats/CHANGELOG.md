@@ -5,6 +5,27 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.4] - 2026-02-16
+
+### Added
+- 6 new guild achievements for creative squad compositions:
+  - **Core Memory**: Complete an encounter with everyone on core classes (no elite specs)
+  - **Core 2 Duo**: Complete an entire wing with everyone on core classes only
+  - **Chaos Strat**: Complete a raid encounter (Wings 1-8) with 7+ players all in the same subgroup
+  - **Chaos Dunk**: Complete an entire raid wing with 7+ players all in the same subgroup
+  - **Thorn in My Side**: Complete Wings 1-4 on only Heart of Thorns specializations
+  - **Ring of Fire**: Complete Wings 5-7 on only Path of Fire specializations
+- Added expansion-based elite spec categorization (HoT, PoF, EoD, JW) for future achievement tracking
+- 8 new personal "Shame" achievements for those memorable moments:
+  - **Serial Downer**: Go downstate 5+ times in a single encounter without fully dying
+  - **Backpack**: Die within the first minute of a boss and still clear
+  - **Greedy**: Die to a boss under 10% HP
+  - **Pacifist**: Do the least damage on a boss kill
+  - **Fast Service Oil Change**: Be the first to step in oil on Deimos on a failed run
+  - **Breakfast Special**: Get egged by Gorseval and die to Sabetha's flame wall in the same session
+  - **Glass Cannon (Without the Cannon)**: Go down 3+ times while doing less DPS than a boon DPS
+  - **Just GG Already**: Be the last one alive on a wipe for 5+ seconds
+
 ## [1.10.3] - 2025-02-12
 
 ### Fixed

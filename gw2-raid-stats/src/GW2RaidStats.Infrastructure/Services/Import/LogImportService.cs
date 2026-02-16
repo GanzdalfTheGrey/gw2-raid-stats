@@ -15,7 +15,7 @@ public class LogImportService
 {
     private readonly RaidStatsDb _db;
     private readonly RecordNotificationService _recordNotificationService;
-    private readonly AchievementService _achievementService;
+    private readonly AchievementOrchestrator? _achievementOrchestrator;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -24,11 +24,11 @@ public class LogImportService
     public LogImportService(
         RaidStatsDb db,
         RecordNotificationService recordNotificationService,
-        AchievementService achievementService)
+        AchievementOrchestrator? achievementOrchestrator = null)
     {
         _db = db;
         _recordNotificationService = recordNotificationService;
-        _achievementService = achievementService;
+        _achievementOrchestrator = achievementOrchestrator;
     }
 
     public async Task<ImportResult> ImportLogAsync(Stream jsonStream, string fileName, CancellationToken ct = default)
@@ -95,7 +95,10 @@ public class LogImportService
             }
 
             // Check for achievements (for all encounters - some track progress on wipes)
-            await _achievementService.CheckAfterEncounterAsync(encounterId, notify: true, ct);
+            if (_achievementOrchestrator != null)
+            {
+                await _achievementOrchestrator.CheckAfterEncounterAsync(encounterId, notify: true, ct);
+            }
 
             return new ImportResult(true, encounterId, fileName, log.FightName, null, WasDuplicate: false);
         }

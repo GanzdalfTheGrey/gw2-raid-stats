@@ -1239,6 +1239,30 @@ public class AchievementService
                 player_count = players.Count
             }, notify, ct, encounter.EncounterTime);
         }
+
+        // Core Memory - everyone on core classes (no elite specs)
+        if (professions.All(p => AchievementDefinitions.IsCoreProfession(p)))
+        {
+            await AwardGuildAchievementAsync("core_memory", new
+            {
+                encounter_id = encounter.Id,
+                boss = encounter.BossName
+            }, notify, ct, encounter.EncounterTime);
+        }
+
+        // Chaos Strat - everyone in the same subgroup (raids only, 7+ players)
+        var subgroups = players.Select(x => x.pe.SquadGroup).Distinct().ToList();
+        if (encounter.Wing >= 1 && encounter.Wing <= 8 &&
+            players.Count >= 7 &&
+            subgroups.Count == 1 && subgroups[0] != null)
+        {
+            await AwardGuildAchievementAsync("chaos_strat", new
+            {
+                encounter_id = encounter.Id,
+                boss = encounter.BossName,
+                subgroup = subgroups[0]
+            }, notify, ct, encounter.EncounterTime);
+        }
     }
 
     private async Task CheckGuildPerformanceAchievementsAsync(
@@ -1875,14 +1899,6 @@ public class AchievementService
         return bestProgress;
     }
 
-    public record ClassCompletionistProgress(
-        string Profession,
-        int CompletedSpecs,
-        List<string> CompletedSpecsList,
-        List<string> MissingSpecs,
-        string? TopBoss
-    );
-
     private async Task<int> GetMostResurrectsCountAsync(Guid playerId, CancellationToken ct)
     {
         // Get all encounters where this player had the most resurrects
@@ -2391,85 +2407,3 @@ public class AchievementService
         bool IsGuildAchievement
     );
 }
-
-#region DTOs
-
-public record PlayerAchievementDto(
-    string Code,
-    string Name,
-    string Description,
-    string Category,
-    DateTimeOffset AchievedAt,
-    string? Context,
-    int EarnedCount,
-    int TotalIncludedPlayers
-);
-
-public record AchievementProgressDto(
-    string Code,
-    string Name,
-    string Description,
-    string Category,
-    int Current,
-    int Required,
-    string ProgressText
-);
-
-public record GuildAchievementDto(
-    string Code,
-    string Name,
-    string Description,
-    string Category,
-    DateTimeOffset? AchievedAt,
-    bool IsEarned,
-    string? Context,
-    int CompletionCount,
-    DateTimeOffset? LastAchievedAt,
-    string? LastContext
-);
-
-/// <summary>
-/// Detailed Wing Master progress showing missing boss/role combos
-/// </summary>
-public record WingMasterDetailedProgressDto(
-    string Code,
-    string Name,
-    string Description,
-    int WingNumber,
-    int Completed,
-    int Total,
-    List<WingMasterBossProgressDto> Bosses
-);
-
-public record WingMasterBossProgressDto(
-    int TriggerId,
-    string BossName,
-    List<WingMasterRoleProgressDto> Roles
-);
-
-public record WingMasterRoleProgressDto(
-    string RoleCode,
-    string RoleDisplayName,
-    bool Completed
-);
-
-/// <summary>
-/// Detailed completion progress showing missing bosses
-/// </summary>
-public record CompletionDetailedProgressDto(
-    string Code,
-    string Name,
-    string Description,
-    int Completed,
-    int Total,
-    List<CompletionBossProgressDto> Bosses
-);
-
-public record CompletionBossProgressDto(
-    int TriggerId,
-    string BossName,
-    int? Wing,
-    bool Completed
-);
-
-#endregion

@@ -6,6 +6,8 @@ using GW2RaidStats.Infrastructure.Configuration;
 using GW2RaidStats.Infrastructure.Database;
 using GW2RaidStats.Infrastructure.Services;
 using GW2RaidStats.Infrastructure.Services.Achievements;
+using GW2RaidStats.Infrastructure.Services.Achievements.Checkers;
+using GW2RaidStats.Infrastructure.Services.Achievements.Progress;
 using GW2RaidStats.Infrastructure.Services.Import;
 
 namespace GW2RaidStats.Infrastructure;
@@ -56,9 +58,21 @@ public static class ServiceExtensions
         services.AddScoped<HtcmProgService>();
         services.AddScoped<RecordNotificationService>();
 
-        // Achievement services
-        services.AddScoped<AchievementService>();
+        // Achievement services - new architecture
         services.AddScoped<AchievementBackfillService>();
+        services.AddScoped<AchievementOrchestrator>();
+        services.AddScoped<AchievementAwardService>();
+        services.AddScoped<AchievementQueryService>();
+        services.AddScoped<PlayerHistoryCalculator>();
+        services.AddScoped<MechanicTracker>();
+        // Note: EncounterStatsCalculator is static and doesn't need DI registration
+
+        // Achievement checkers (strategy pattern)
+        services.AddScoped<IAchievementChecker, PersonalCombatChecker>();
+        services.AddScoped<IAchievementChecker, PersonalShameChecker>();
+        services.AddScoped<IAchievementChecker, PersonalMilestoneChecker>();
+        services.AddScoped<IAchievementChecker, GuildChallengeChecker>();
+        services.AddScoped<IAchievementChecker, GuildMilestoneChecker>();
 
         return services;
     }
