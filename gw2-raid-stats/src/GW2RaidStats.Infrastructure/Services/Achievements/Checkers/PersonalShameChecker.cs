@@ -342,6 +342,7 @@ public class PersonalShameChecker : IAchievementChecker
 
     /// <summary>
     /// Just GG Already - Be the last one alive on a wipe for 5+ seconds
+    /// Checks ALL players in encounter (including pugs) to ensure guild member was truly last alive
     /// </summary>
     private async Task<AchievementUnlock?> CheckJustGGAsync(
         PlayerEncounterData player,
@@ -349,7 +350,13 @@ public class PersonalShameChecker : IAchievementChecker
         Database.Entities.EncounterEntity encounter,
         CancellationToken ct)
     {
-        // Get all death events for this encounter
+        // Get ALL players in this encounter (including pugs)
+        var allEncounterPlayerIds = await _db.PlayerEncounters
+            .Where(pe => pe.EncounterId == encounter.Id)
+            .Select(pe => pe.PlayerId)
+            .ToListAsync(ct);
+
+        // Get all death events for this encounter (all players)
         var deathEvents = await _db.MechanicEvents
             .Where(m => m.EncounterId == encounter.Id)
             .Where(m => m.MechanicName.Contains("Dead") || m.MechanicFullName.Contains("Dead"))
@@ -365,17 +372,23 @@ public class PersonalShameChecker : IAchievementChecker
             .OrderBy(d => d.FirstDeathMs)
             .ToList();
 
-        // Need at least 2 players who died
+        // Find players who didn't die at all
+        var playersThatDied = playerDeaths.Select(d => d.PlayerId).ToHashSet();
+        var playersThatSurvived = allEncounterPlayerIds.Where(id => !playersThatDied.Contains(id)).ToList();
+
+        // If anyone else survived (didn't die), this player can't be the only one alive
+        if (playersThatSurvived.Count > 1) return null;
+        if (playersThatSurvived.Count == 1 && playersThatSurvived[0] != player.PlayerId) return null;
+
+        // Need at least 2 players who died for comparison
         if (playerDeaths.Count < 2) return null;
 
-        // Check if this player was the last to die (or didn't die at all)
         var playerDeath = playerDeaths.FirstOrDefault(d => d.PlayerId == player.PlayerId);
         var secondToLastDeath = playerDeaths[^2]; // Second to last
 
-        // If player didn't die, check if they were alive 5+ seconds after second-to-last death
+        // If player didn't die (and no one else survived per checks above), they were last alive
         if (playerDeath == null)
         {
-            // Player survived the wipe - check if second-to-last death was 5+ seconds before fight end
             var timeSurvived = encounter.DurationMs - secondToLastDeath.FirstDeathMs;
             if (timeSurvived >= 5000)
             {
@@ -394,7 +407,7 @@ public class PersonalShameChecker : IAchievementChecker
         }
         else
         {
-            // Player died - check if they were the last and survived 5+ seconds after second-to-last
+            // Player died - check if they were the last to die
             var lastDeath = playerDeaths[^1];
             if (lastDeath.PlayerId == player.PlayerId)
             {
