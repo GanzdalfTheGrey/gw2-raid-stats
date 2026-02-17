@@ -5,6 +5,13 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.5] - Unreleased
+
+### Changed
+- Updated GW2 Elite Insights parser to v3.18.1.0
+  - "Kela" renamed to "Guardian's Glade"
+  - Additional mechanics now tracked in logs
+
 ## [1.10.4] - 2026-02-16
 
 ### Added
@@ -25,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Breakfast Special**: Get egged by Gorseval and die to Sabetha's flame wall in the same session
   - **Glass Cannon (Without the Cannon)**: Go down 3+ times while doing less DPS than a boon DPS
   - **Just GG Already**: Be the last one alive on a wipe for 5+ seconds
+- Re-parse feature in Admin > Manage Logs to re-process logs with updated GW2EI parser
+
+### Fixed
+- Class Completionist achievement now shows progress even when incomplete (e.g., "2/4 Guardian specs on Vale Guardian")
 
 ## [1.10.3] - 2025-02-12
 
