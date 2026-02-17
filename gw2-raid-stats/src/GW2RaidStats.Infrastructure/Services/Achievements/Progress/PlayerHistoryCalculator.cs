@@ -752,9 +752,9 @@ public class PlayerHistoryCalculator
     }
 
     /// <summary>
-    /// Check if player has all 4 elite specs for a profession on any single boss
+    /// Get class completionist progress - returns the best profession/boss combo with most specs completed
     /// </summary>
-    public async Task<(string profession, string bossName, List<string> specs)?> GetClassCompletionistProgressAsync(
+    public async Task<(string profession, string bossName, List<string> specs, List<string> remaining)?> GetClassCompletionistProgressAsync(
         Guid playerId, CancellationToken ct)
     {
         var specKills = await _db.PlayerEncounters
@@ -765,19 +765,38 @@ public class PlayerHistoryCalculator
             .Distinct()
             .ToListAsync(ct);
 
+        if (specKills.Count == 0) return null;
+
         var killsByBoss = specKills.GroupBy(x => x.BossName).ToList();
+
+        string? bestProfession = null;
+        string? bestBossName = null;
+        List<string>? bestSpecs = null;
+        List<string>? bestRemaining = null;
+        int bestCount = 0;
 
         foreach (var (profession, eliteSpecs) in AchievementDefinitions.EliteSpecsByProfession)
         {
             foreach (var bossGroup in killsByBoss)
             {
                 var specsOnThisBoss = bossGroup.Select(x => x.Profession).Distinct().ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var completedSpecs = eliteSpecs.Where(spec => specsOnThisBoss.Contains(spec)).ToList();
+                var remainingSpecs = eliteSpecs.Where(spec => !specsOnThisBoss.Contains(spec)).ToList();
 
-                if (eliteSpecs.All(spec => specsOnThisBoss.Contains(spec)))
+                if (completedSpecs.Count > bestCount)
                 {
-                    return (profession, bossGroup.Key, eliteSpecs.ToList());
+                    bestCount = completedSpecs.Count;
+                    bestProfession = profession;
+                    bestBossName = bossGroup.Key;
+                    bestSpecs = completedSpecs;
+                    bestRemaining = remainingSpecs;
                 }
             }
+        }
+
+        if (bestProfession != null && bestBossName != null && bestSpecs != null && bestRemaining != null)
+        {
+            return (bestProfession, bestBossName, bestSpecs, bestRemaining);
         }
 
         return null;

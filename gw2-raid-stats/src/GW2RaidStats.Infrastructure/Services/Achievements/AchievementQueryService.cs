@@ -146,7 +146,10 @@ public class AchievementQueryService
             if (classProgress != null)
             {
                 var specsCount = classProgress.Value.specs.Count;
-                var progressText = $"{specsCount}/4 {classProgress.Value.profession} specs on {classProgress.Value.bossName}";
+                var remainingText = classProgress.Value.remaining.Count > 0
+                    ? $" (need: {string.Join(", ", classProgress.Value.remaining)})"
+                    : "";
+                var progressText = $"{specsCount}/4 {classProgress.Value.profession} specs on {classProgress.Value.bossName}{remainingText}";
                 result.Add(new AchievementProgressDto("class_completionist", "Class Completionist",
                     "Complete a boss on every elite spec for a single profession",
                     "SpecDiversity", specsCount, 4, progressText));

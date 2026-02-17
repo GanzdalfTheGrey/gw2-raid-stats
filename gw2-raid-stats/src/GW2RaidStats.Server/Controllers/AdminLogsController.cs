@@ -132,6 +132,48 @@ public class AdminLogsController : ControllerBase
             result = _lastRescanResult
         });
     }
+
+    /// <summary>
+    /// Re-parse encounters by copying their .zevtc files to the pending queue.
+    /// The processor will then re-parse them with the current GW2EI version.
+    /// </summary>
+    [HttpPost("reparse")]
+    public async Task<ActionResult<ReparseLogsResult>> ReparseLogs(
+        [FromBody] ReparseRequest request,
+        CancellationToken ct = default)
+    {
+        if ((request.EncounterIds == null || request.EncounterIds.Count == 0) &&
+            string.IsNullOrWhiteSpace(request.BossName))
+        {
+            return BadRequest("Must provide either encounter IDs or a boss name");
+        }
+
+        var result = await _logSearchService.ReparseLogsAsync(request, ct);
+
+        if (result.EncountersQueued == 0 && result.Errors.Count > 0)
+        {
+            return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Get encounters that match a boss name (for preview before reparse)
+    /// </summary>
+    [HttpGet("reparse/preview")]
+    public async Task<ActionResult<List<LogEntry>>> GetReparsePreview(
+        [FromQuery] string bossName,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(bossName))
+        {
+            return BadRequest("Boss name is required");
+        }
+
+        var encounters = await _logSearchService.GetEncountersForBossAsync(bossName, ct);
+        return Ok(encounters);
+    }
 }
 
 public record DeleteLogsRequest(

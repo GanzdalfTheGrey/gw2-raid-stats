@@ -51,6 +51,84 @@
     }
 </MudPaper>
 
+@* Re-parse Section *@
+<MudPaper Class="pa-4 mb-4" Elevation="2">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+        <MudStack>
+            <MudText Typo="Typo.h6">
+                <MudIcon Icon="@Icons.Material.Filled.Replay" Class="mr-2" />
+                Re-parse Logs
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Re-parse encounter logs with the latest GW2 Elite Insights version. Useful after GW2EI updates that fix parsing issues.
+            </MudText>
+        </MudStack>
+    </MudStack>
+
+    <MudGrid Class="mt-3">
+        <MudItem xs="12" sm="6" md="4">
+            <MudTextField @bind-Value="_reparseBossName"
+                          Label="Boss Name Filter"
+                          Variant="Variant.Outlined"
+                          Placeholder="e.g., Kela, Cerus"
+                          HelperText="Enter boss name to re-parse all matching encounters"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4" Class="d-flex align-center gap-2">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Info"
+                       OnClick="PreviewReparse"
+                       Disabled="@(string.IsNullOrWhiteSpace(_reparseBossName) || _reparsing)">
+                Preview
+            </MudButton>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Warning"
+                       StartIcon="@Icons.Material.Filled.Replay"
+                       OnClick="ReparseLogs"
+                       Disabled="@(string.IsNullOrWhiteSpace(_reparseBossName) || _reparsing)">
+                @if (_reparsing)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    @:Re-parsing...
+                }
+                else
+                {
+                    @:Re-parse
+                }
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+
+    @if (_reparsePreview != null && _reparsePreview.Count > 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="mt-3">
+            Found @_reparsePreview.Count encounter(s) matching "@_reparseBossName":
+            <ul class="mt-2 mb-0">
+                @foreach (var enc in _reparsePreview.Take(10))
+                {
+                    <li>@enc.BossName - @enc.EncounterTime.LocalDateTime.ToString("yyyy-MM-dd HH:mm") (@(enc.Success ? "Kill" : "Wipe"))</li>
+                }
+                @if (_reparsePreview.Count > 10)
+                {
+                    <li>... and @(_reparsePreview.Count - 10) more</li>
+                }
+            </ul>
+        </MudAlert>
+    }
+
+    @if (_reparseResult != null)
+    {
+        <MudAlert Severity="@(_reparseResult.EncountersQueued > 0 ? Severity.Success : Severity.Warning)" Class="mt-3">
+            Re-parse complete: @_reparseResult.EncountersQueued queued for processing, @_reparseResult.EncountersDeleted removed from database.
+            @if (_reparseResult.Errors.Count > 0)
+            {
+                <br /><small>@_reparseResult.Errors.Count error(s): @string.Join(", ", _reparseResult.Errors.Take(3))</small>
+            }
+        </MudAlert>
+    }
+</MudPaper>
+
 <MudPaper Class="pa-4 mb-4" Elevation="2">
     <MudText Typo="Typo.h6" Class="mb-3">
         <MudIcon Icon="@Icons.Material.Filled.FilterList" Class="mr-2" />
@@ -311,7 +389,11 @@
     private bool _loading = true;
     private bool _deleting = false;
     private bool _rescanning = false;
+    private bool _reparsing = false;
     private RescanResultDto? _rescanResult;
+    private ReparseResultDto? _reparseResult;
+    private List<LogEntryDto>? _reparsePreview;
+    private string? _reparseBossName;
     private LogSearchResultDto? _searchResult;
     private List<string> _availableBossNames = new();
     private List<int> _availableWings = new();
@@ -652,4 +734,75 @@
             _rescanning = false;
         }
     }
+
+    private async Task PreviewReparse()
+    {
+        if (string.IsNullOrWhiteSpace(_reparseBossName)) return;
+
+        try
+        {
+            _reparsePreview = await Http.GetFromJsonAsync<List<LogEntryDto>>(
+                $"api/admin/logs/reparse/preview?bossName={Uri.EscapeDataString(_reparseBossName)}");
+
+            if (_reparsePreview == null || _reparsePreview.Count == 0)
+            {
+                Snackbar.Add($"No encounters found matching '{_reparseBossName}'", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ReparseLogs()
+    {
+        if (string.IsNullOrWhiteSpace(_reparseBossName)) return;
+
+        _reparsing = true;
+        _reparseResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var request = new ReparseRequestDto(null, _reparseBossName);
+            var response = await Http.PostAsJsonAsync("api/admin/logs/reparse", request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                _reparseResult = await response.Content.ReadFromJsonAsync<ReparseResultDto>();
+                if (_reparseResult != null)
+                {
+                    Snackbar.Add($"Queued {_reparseResult.EncountersQueued} encounter(s) for re-parsing", Severity.Success);
+                    _reparsePreview = null;
+                    _reparseBossName = null;
+                    await LoadLogsAsync(); // Refresh the list since encounters were deleted
+                }
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Failed to start reparse: {error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _reparsing = false;
+        }
+    }
+
+    public record ReparseRequestDto(
+        List<Guid>? EncounterIds,
+        string? BossName
+    );
+
+    public record ReparseResultDto(
+        int EncountersQueued,
+        int EncountersDeleted,
+        List<string> Errors
+    );
 }
