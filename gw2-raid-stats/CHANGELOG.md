@@ -5,7 +5,38 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.10.6] - Unreleased
+## [1.11.0] - 2026-02-18
+
+### Added
+- 5 new personal achievements:
+  - **The Crabs and The Bees**: Complete Guardian's Glade strike mission
+  - **Cajun Seafood Boil**: Complete Guardian's Glade without being hit by Scalding Wave
+  - **Witness Me**: Be the only one alive when the boss dies
+  - **Ambulance**: Resurrect 5+ teammates in a single encounter
+  - **The Sacrifice**: Die during Matthias sacrifice mechanic
+- 9 new guild achievements:
+  - **Full Clear**: Clear all 8 wings in a single session
+  - **Musical Chairs achievements** (8): Complete a wing with different boon providers on each boss - no player can repeat the same boon role (heal alac, heal quick, dps alac, dps quick) across different bosses:
+    - Wing 1: "Spirit Shuffle"
+    - Wing 2: "Salvation Rotation"
+    - Wing 3: "Stronghold Swap"
+    - Wing 4: "Musical Chairs"
+    - Wing 5: "Death's Dance"
+    - Wing 6: "Mythwright Medley"
+    - Wing 7: "Key Change"
+    - Wing 8: "Balrior Ballet"
+- **Spec History page** (`/players/{name}/specs`) - New dedicated page showing complete spec and role history:
+  - All bosses with completed specs and roles (Heal Alac, DPS Quick, etc.)
+  - Kill counts per spec/role combination
+  - Accessible from Player Profile and achievement "View All Specs" links
+
+### Changed
+- "Most Rubs" MVP stat now shows total time spent resurrecting instead of count (e.g., "1m 23s" instead of "5")
+
+### Fixed
+- Search/Clear buttons on Mechanics page now wrap to new line below 1280px to prevent overflow
+- HTCM HP% calculation now correctly shows progress relative to all 6 dragons (fixes incorrect values with GW2EI v3.18.1.0)
+- Death counting in MVP/Shame stats now handles instant-kill mechanics correctly (first death always counts, deaths 5+ seconds before fight end count)
 
 ## [1.10.5] - 2026-02-17
 
