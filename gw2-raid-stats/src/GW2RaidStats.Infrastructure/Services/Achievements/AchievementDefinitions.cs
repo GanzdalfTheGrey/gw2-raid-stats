@@ -21,17 +21,20 @@ public static class AchievementDefinitions
         new("wing_7_master", "Wing 7 Master", "Complete all roles on Cardinal Adina, Cardinal Sabir, and Qadim the Peerless", AchievementCategory.WingMaster),
         new("wing_8_master", "Wing 8 Master", "Complete all roles on Greer, Decima, and Ura", AchievementCategory.WingMaster),
 
-        // Completion (4)
+        // Completion (6)
         new("completion", "Completion", "Kill every boss in Wings 1-7", AchievementCategory.Completion),
         new("legendary_raider", "Legendary Raider", "Kill every CM boss in Wings 3-7", AchievementCategory.Completion),
         new("wing_8_clear", "Wing 8 Clear", "Complete all Wing 8 bosses", AchievementCategory.Completion),
         new("wing_8_cm_clear", "Wing 8 CM Clear", "Complete all Wing 8 CMs", AchievementCategory.Completion),
+        new("guardians_glade_clear", "The Crabs and The Bees", "Complete Guardian's Glade strike mission", AchievementCategory.Completion),
+        new("guardians_glade_flawless", "Cajun Seafood Boil", "Complete Guardian's Glade without being hit by Scalding Wave", AchievementCategory.Completion),
 
-        // Performance (4)
+        // Performance (5)
         new("the_carry", "The Carry", "Deal 25%+ of your squad's total DPS in a successful kill", AchievementCategory.Performance),
         new("immortal", "Immortal", "Complete 10 consecutive kills without dying", AchievementCategory.Performance),
         new("clutch_player", "Clutch Player", "Survive a successful kill where 5+ squadmates died", AchievementCategory.Performance),
         new("speed_demon", "Speed Demon", "Participate in a guild record kill time", AchievementCategory.Performance),
+        new("witness_me", "Witness Me", "Be the only one alive when the boss dies", AchievementCategory.Performance),
 
         // Records (1)
         new("former_champion", "Former Champion", "Held a guild DPS record at any point in time", AchievementCategory.Records),
@@ -42,10 +45,11 @@ public static class AchievementDefinitions
         new("class_completionist", "Class Completionist", "Complete a boss on every elite spec for a single profession", AchievementCategory.SpecDiversity),
         new("master_of_one", "Master of One", "Complete 100 kills on the same elite spec", AchievementCategory.SpecDiversity),
 
-        // Support Recognition (3)
+        // Support Recognition (4)
         new("guardian_angel", "Guardian Angel", "Have the most resurrects in a successful kill (5+ times)", AchievementCategory.Support),
         new("cc_champion", "CC Champion", "Deal the most breakbar damage in a successful kill (10+ times)", AchievementCategory.Support),
         new("the_enabler", "The Enabler", "Have the highest boon DPS in a successful kill (25+ times)", AchievementCategory.Support),
+        new("ambulance", "Ambulance", "Resurrect 5+ teammates in a single encounter", AchievementCategory.Support),
 
         // Dedication (2)
         new("the_regular", "The Regular", "Participate in 25 raid sessions", AchievementCategory.Dedication),
@@ -59,7 +63,7 @@ public static class AchievementDefinitions
         new("trio", "Trio", "Complete 25 bosses with the same two party members", AchievementCategory.Social),
         new("guild_pride", "Guild Pride", "Be part of a successful kill with only guild members (no pugs)", AchievementCategory.Social),
 
-        // Shame (8)
+        // Shame (9)
         new("serial_downer", "Serial Downer", "Go downstate 5+ times in a single encounter without fully dying", AchievementCategory.Shame),
         new("backpack", "Backpack", "Die within the first minute of a boss and still clear", AchievementCategory.Shame),
         new("greedy", "Greedy", "Die to a boss under 10% HP", AchievementCategory.Shame),
@@ -67,7 +71,8 @@ public static class AchievementDefinitions
         new("oil_change", "Fast Service Oil Change", "Be the first to step in oil on Deimos on a failed run", AchievementCategory.Shame),
         new("breakfast_special", "Breakfast Special", "Get egged by Gorseval and die to Sabetha's flame wall in the same session", AchievementCategory.Shame),
         new("glass_cannon", "Glass Cannon (Without the Cannon)", "Go down 3+ times while doing less DPS than a boon DPS", AchievementCategory.Shame),
-        new("just_gg", "Just GG Already", "Be the last one alive on a wipe for 5+ seconds", AchievementCategory.Shame)
+        new("just_gg", "Just GG Already", "Be the last one alive on a wipe for 5+ seconds", AchievementCategory.Shame),
+        new("the_sacrifice", "The Sacrifice", "Die during Matthias sacrifice mechanic", AchievementCategory.Shame)
     };
 
     /// <summary>
@@ -119,7 +124,18 @@ public static class AchievementDefinitions
         new("bench_warmers", "Bench Warmers", "Complete a boss with 7 or fewer players", GuildAchievementCategory.FunRare),
         new("synchronized", "Synchronized", "3+ players set a personal best DPS in the same encounter", GuildAchievementCategory.FunRare),
         new("record_breakers", "Record Breakers", "Break DPS and boon DPS records in the same encounter", GuildAchievementCategory.FunRare),
-        new("the_comeback", "The Comeback", "Kill a boss after wiping 5+ times on it in the same session", GuildAchievementCategory.FunRare)
+        new("the_comeback", "The Comeback", "Kill a boss after wiping 5+ times on it in the same session", GuildAchievementCategory.FunRare),
+        new("full_clear", "Full Clear", "Clear all 8 wings in a single session", GuildAchievementCategory.FunRare),
+
+        // Musical Chairs - Different boon providers each boss in a wing (within same session)
+        new("musical_chairs_w1", "Spirit Shuffle", "Complete Wing 1 with different boon providers on each boss", GuildAchievementCategory.FunRare),
+        new("musical_chairs_w2", "Salvation Rotation", "Complete Wing 2 with different boon providers on each boss", GuildAchievementCategory.FunRare),
+        new("musical_chairs_w3", "Stronghold Swap", "Complete Wing 3 with different boon providers on each boss", GuildAchievementCategory.FunRare),
+        new("musical_chairs_w4", "Musical Chairs", "Complete Wing 4 with different boon providers on each boss", GuildAchievementCategory.FunRare),
+        new("musical_chairs_w5", "Death's Dance", "Complete Wing 5 with different boon providers on each boss", GuildAchievementCategory.FunRare),
+        new("musical_chairs_w6", "Mythwright Medley", "Complete Wing 6 with different boon providers on each boss", GuildAchievementCategory.FunRare),
+        new("musical_chairs_w7", "Key Change", "Complete Wing 7 with different boon providers on each boss", GuildAchievementCategory.FunRare),
+        new("musical_chairs_w8", "Balrior Ballet", "Complete Wing 8 with different boon providers on each boss", GuildAchievementCategory.FunRare)
     };
 
     /// <summary>

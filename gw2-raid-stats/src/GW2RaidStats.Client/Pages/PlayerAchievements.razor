@@ -105,11 +105,22 @@ else
                                                            Color="Color.Info" Size="Size.Small" Rounded="true" />
                                         @if (hasDetails)
                                         {
-                                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Info"
-                                                       OnClick="@(() => ToggleDetails(achievement.Code))"
-                                                       Style="align-self: flex-start; padding: 0; min-width: auto;">
-                                                @(isExpanded ? "Hide" : "Details")
-                                            </MudButton>
+                                            @if (IsSpecDiversityAchievement(achievement.Code))
+                                            {
+                                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Info"
+                                                           Href="@($"/players/{AccountName}/specs")"
+                                                           Style="align-self: flex-start; padding: 0; min-width: auto;">
+                                                    View All Specs
+                                                </MudButton>
+                                            }
+                                            else
+                                            {
+                                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Info"
+                                                           OnClick="@(() => ToggleDetails(achievement.Code))"
+                                                           Style="align-self: flex-start; padding: 0; min-width: auto;">
+                                                    @(isExpanded ? "Hide" : "Details")
+                                                </MudButton>
+                                            }
                                         }
                                     </MudStack>
                                 }
@@ -184,6 +195,77 @@ else
                                     </MudCardContent>
                                 }
                             }
+
+                            @* Expandable details for Spec Diversity achievements *@
+                            @if (isExpanded && IsSpecDiversityAchievement(achievement.Code) && _specDiversityProgress != null)
+                            {
+                                <MudDivider />
+                                <MudCardContent Class="pt-2 pb-2" Style="max-height: 300px; overflow-y: auto;">
+                                    @if (achievement.Code == "class_completionist")
+                                    {
+                                        @* Show profession breakdown by boss *@
+                                        @foreach (var boss in _specDiversityProgress.Bosses.Take(10))
+                                        {
+                                            <div style="margin-bottom: 8px;">
+                                                <MudText Typo="Typo.caption" Style="font-weight: 600;">
+                                                    @boss.BossName
+                                                </MudText>
+                                                @foreach (var prof in boss.ProfessionProgress.Where(p => p.Completed > 0))
+                                                {
+                                                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="mt-1">
+                                                        <MudText Typo="Typo.caption" Style="min-width: 80px;">
+                                                            @prof.Profession (@prof.Completed/@prof.Total)
+                                                        </MudText>
+                                                        <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                                                            @foreach (var spec in prof.CompletedSpecs)
+                                                            {
+                                                                <MudChip T="string" Size="Size.Small" Color="Color.Success"
+                                                                         Variant="Variant.Filled" Style="font-size: 0.6rem; height: 18px;">
+                                                                    @spec
+                                                                </MudChip>
+                                                            }
+                                                            @foreach (var spec in prof.RemainingSpecs)
+                                                            {
+                                                                <MudChip T="string" Size="Size.Small" Color="Color.Error"
+                                                                         Variant="Variant.Outlined" Style="font-size: 0.6rem; height: 18px;">
+                                                                    @spec
+                                                                </MudChip>
+                                                            }
+                                                        </MudStack>
+                                                    </MudStack>
+                                                }
+                                            </div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        @* Versatile / Jack of All Trades - show specs by boss *@
+                                        @foreach (var boss in _specDiversityProgress.Bosses.Take(10))
+                                        {
+                                            <div style="margin-bottom: 6px;">
+                                                <MudText Typo="Typo.caption" Style="font-weight: 600;">
+                                                    @boss.BossName (@boss.TotalSpecs specs)
+                                                </MudText>
+                                                <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                                                    @foreach (var spec in boss.CompletedSpecs)
+                                                    {
+                                                        <MudChip T="string" Size="Size.Small" Color="Color.Success"
+                                                                 Variant="Variant.Filled" Style="font-size: 0.6rem; height: 18px;">
+                                                            @spec
+                                                        </MudChip>
+                                                    }
+                                                </MudStack>
+                                            </div>
+                                        }
+                                        @if (_specDiversityProgress.Bosses.Count > 10)
+                                        {
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                +@(_specDiversityProgress.Bosses.Count - 10) more bosses...
+                                            </MudText>
+                                        }
+                                    }
+                                </MudCardContent>
+                            }
                         </MudCard>
                     </MudItem>
                 }
@@ -208,12 +290,18 @@ else
     private AchievementDefinitionsResponse? _definitions;
     private List<WingMasterDetailedProgressDto>? _wingMasterProgress;
     private List<CompletionDetailedProgressDto>? _completionProgress;
+    private SpecDiversityDetailedProgressDto? _specDiversityProgress;
     private Dictionary<string, PlayerAchievementDto> _earnedLookup = new();
     private string? _expandedAchievement;
 
     private static readonly HashSet<string> CompletionAchievementCodes = new()
     {
         "completion", "legendary_raider", "wing_8_clear", "wing_8_cm_clear"
+    };
+
+    private static readonly HashSet<string> SpecDiversityAchievementCodes = new()
+    {
+        "versatile", "jack_of_all_trades", "class_completionist"
     };
 
     protected override async Task OnParametersSetAsync()
@@ -229,13 +317,16 @@ else
                 $"api/achievements/player/{Uri.EscapeDataString(AccountName)}/wing-master");
             var completionTask = Http.GetFromJsonAsync<List<CompletionDetailedProgressDto>>(
                 $"api/achievements/player/{Uri.EscapeDataString(AccountName)}/completion");
+            var specDiversityTask = Http.GetFromJsonAsync<SpecDiversityDetailedProgressDto>(
+                $"api/achievements/player/{Uri.EscapeDataString(AccountName)}/spec-diversity");
 
-            await Task.WhenAll(achievementsTask, definitionsTask, wingMasterTask, completionTask);
+            await Task.WhenAll(achievementsTask, definitionsTask, wingMasterTask, completionTask, specDiversityTask);
 
             _achievements = await achievementsTask;
             _definitions = await definitionsTask;
             _wingMasterProgress = await wingMasterTask;
             _completionProgress = await completionTask;
+            _specDiversityProgress = await specDiversityTask;
 
             _earnedLookup = _achievements?.Earned.ToDictionary(a => a.Code) ?? new();
         }
@@ -260,6 +351,8 @@ else
 
     private bool IsCompletionAchievement(string code) => CompletionAchievementCodes.Contains(code);
 
+    private bool IsSpecDiversityAchievement(string code) => SpecDiversityAchievementCodes.Contains(code);
+
     private bool HasExpandableDetails(string code)
     {
         if (code.StartsWith("wing_") && code.EndsWith("_master"))
@@ -269,6 +362,10 @@ else
         if (IsCompletionAchievement(code))
         {
             return _completionProgress?.Any(c => c.Code == code) == true;
+        }
+        if (IsSpecDiversityAchievement(code))
+        {
+            return _specDiversityProgress?.Bosses.Count > 0;
         }
         return false;
     }
@@ -427,4 +524,28 @@ else
         string BossName,
         int? Wing,
         bool Completed);
+
+    public record SpecDiversityDetailedProgressDto(
+        int VersatileProgress,
+        int VersatileTarget,
+        int JackTarget,
+        string? BestProfession,
+        string? BestBossForProfession,
+        int BestProfessionProgress,
+        List<string> BestProfessionRemaining,
+        List<SpecDiversityBossProgressDto> Bosses);
+
+    public record SpecDiversityBossProgressDto(
+        int TriggerId,
+        string BossName,
+        int TotalSpecs,
+        List<string> CompletedSpecs,
+        List<SpecDiversityProfessionProgressDto> ProfessionProgress);
+
+    public record SpecDiversityProfessionProgressDto(
+        string Profession,
+        int Completed,
+        int Total,
+        List<string> CompletedSpecs,
+        List<string> RemainingSpecs);
 }

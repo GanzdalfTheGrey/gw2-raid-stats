@@ -130,6 +130,42 @@ public class AchievementsController : ControllerBase
     }
 
     /// <summary>
+    /// Get detailed spec diversity progress for a player showing all bosses and specs
+    /// </summary>
+    [HttpGet("player/{accountName}/spec-diversity")]
+    public async Task<ActionResult<SpecDiversityDetailedProgressDto>> GetSpecDiversityProgress(
+        string accountName,
+        CancellationToken ct)
+    {
+        var player = await _db.Players
+            .FirstOrDefaultAsync(p => p.AccountName == accountName, ct);
+
+        if (player == null)
+            return NotFound(new { message = "Player not found" });
+
+        var progress = await _queryService.GetSpecDiversityDetailedProgressAsync(player.Id, ct);
+        return Ok(progress);
+    }
+
+    /// <summary>
+    /// Get complete spec and role history for a player across all bosses
+    /// </summary>
+    [HttpGet("player/{accountName}/spec-history")]
+    public async Task<ActionResult<PlayerSpecHistoryDto>> GetSpecHistory(
+        string accountName,
+        CancellationToken ct)
+    {
+        var player = await _db.Players
+            .FirstOrDefaultAsync(p => p.AccountName == accountName, ct);
+
+        if (player == null)
+            return NotFound(new { message = "Player not found" });
+
+        var history = await _queryService.GetPlayerSpecHistoryAsync(player.Id, accountName, ct);
+        return Ok(history);
+    }
+
+    /// <summary>
     /// Get all guild achievements
     /// </summary>
     [HttpGet("guild")]

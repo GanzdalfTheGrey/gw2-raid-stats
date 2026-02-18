@@ -198,6 +198,7 @@ public class LogImportService
 
                 // Support stats
                 Resurrects = support?.Resurrects ?? 0,
+                ResurrectTime = support?.ResurrectTime ?? 0,
                 CondiCleanse = support?.CondiCleanse ?? 0,
                 BoonStrips = support?.BoonStrips ?? 0,
 
@@ -450,16 +451,45 @@ public class LogImportService
         // Calculate overall clear percentage by summing HP burned across all targets
         if (log.Targets != null && log.Targets.Count > 0)
         {
-            // Sum up healthPercentBurned for all targets
-            var totalHpBurned = log.Targets.Sum(t => t.HealthPercentBurned);
-            var totalPossible = log.Targets.Count * 100m;
+            // Check if this is HTCM (has dragon "Void" targets)
+            var dragonTargets = log.Targets.Where(t => t.Name != null && t.Name.Contains("Void")).ToList();
+            var isHtcm = dragonTargets.Count >= 2; // HTCM has multiple Void dragons
 
-            // Clear percentage = total burned / total possible
-            var clearPercentage = totalPossible > 0 ? (totalHpBurned / totalPossible) * 100 : 0;
+            if (isHtcm)
+            {
+                // For HTCM: Calculate progress relative to ALL 6 dragons
+                // Get dragon HP from the first reached dragon (they all have the same HP)
+                var reachedDragon = dragonTargets.FirstOrDefault(t => t.TotalHealth > 0);
+                if (reachedDragon != null)
+                {
+                    var dragonHp = (decimal)reachedDragon.TotalHealth;
+                    var totalFightHp = dragonHp * 6; // 6 dragons total
 
-            // Remaining = 100% - clear%
-            bossHpRemaining = 100 - clearPercentage;
-            if (bossHpRemaining < 0) bossHpRemaining = 0;
+                    // Sum HP burned from all reached dragons
+                    var totalHpRemoved = dragonTargets
+                        .Where(t => t.TotalHealth > 0)
+                        .Sum(t => (decimal)t.TotalHealth * (t.HealthPercentBurned / 100m));
+
+                    var clearPercentage = totalFightHp > 0 ? (totalHpRemoved / totalFightHp) * 100 : 0;
+                    bossHpRemaining = 100 - clearPercentage;
+                    if (bossHpRemaining < 0) bossHpRemaining = 0;
+                }
+            }
+            else
+            {
+                // For regular bosses: use weighted calculation on valid targets
+                var validTargets = log.Targets.Where(t => t.TotalHealth > 0).ToList();
+
+                if (validTargets.Count > 0)
+                {
+                    var totalActualHealth = validTargets.Sum(t => (decimal)t.TotalHealth);
+                    var totalHpRemoved = validTargets.Sum(t => (decimal)t.TotalHealth * (t.HealthPercentBurned / 100m));
+
+                    var clearPercentage = totalActualHealth > 0 ? (totalHpRemoved / totalActualHealth) * 100 : 0;
+                    bossHpRemaining = 100 - clearPercentage;
+                    if (bossHpRemaining < 0) bossHpRemaining = 0;
+                }
+            }
         }
 
         return (furthestPhase, furthestPhaseIndex, bossHpRemaining);

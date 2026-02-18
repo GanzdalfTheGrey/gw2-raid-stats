@@ -9,7 +9,7 @@ namespace GW2RaidStats.Infrastructure.Services.Achievements.Checkers;
 /// <summary>
 /// Checks milestone/progress personal achievements:
 /// - Wing Master (all roles on all bosses in a wing)
-/// - Completion achievements (completion, legendary_raider, wing_8_clear, wing_8_cm_clear)
+/// - Completion achievements (completion, legendary_raider, wing_8_clear, wing_8_cm_clear, guardians_glade_*)
 /// - Spec Diversity (versatile, jack_of_all_trades, class_completionist, master_of_one)
 /// - Social achievements (dynamic_duo, trio, guild_pride)
 /// - Dedication (the_regular, dedicated)
@@ -20,6 +20,9 @@ public class PersonalMilestoneChecker : IAchievementChecker
     private readonly RaidStatsDb _db;
     private readonly AchievementAwardService _awardService;
     private readonly PlayerHistoryCalculator _historyCalculator;
+
+    // Strike mission trigger IDs
+    private const int GuardiansGladeTriggerId = 27124;
 
     public PersonalMilestoneChecker(
         RaidStatsDb db,
@@ -172,6 +175,24 @@ public class PersonalMilestoneChecker : IAchievementChecker
             var unlock = await CheckWing8CMClearAsync(playerId, encounter, ct);
             if (unlock != null) unlocks.Add(unlock);
         }
+
+        // Guardian's Glade Clear
+        if (!earned.Contains("guardians_glade_clear") && encounter.TriggerId == GuardiansGladeTriggerId)
+        {
+            unlocks.Add(new AchievementUnlock(
+                "guardians_glade_clear",
+                playerId,
+                new { encounter_id = encounter.Id },
+                encounter.EncounterTime
+            ));
+        }
+
+        // Guardian's Glade Flawless (Scalding Survivor) - no Scalding Wave hits
+        if (!earned.Contains("guardians_glade_flawless") && encounter.TriggerId == GuardiansGladeTriggerId)
+        {
+            var unlock = await CheckGuardiansGladeFlawlessAsync(playerId, encounter, ct);
+            if (unlock != null) unlocks.Add(unlock);
+        }
     }
 
     private async Task<AchievementUnlock?> CheckCompletionAchievementAsync(
@@ -289,6 +310,33 @@ public class PersonalMilestoneChecker : IAchievementChecker
         {
             var achievedAt = new[] { greerCmKill.Value, decimaCmKill.Value, uraCmKill.Value }.Max();
             return new AchievementUnlock("wing_8_cm_clear", playerId, null, achievedAt);
+        }
+
+        return null;
+    }
+
+    private async Task<AchievementUnlock?> CheckGuardiansGladeFlawlessAsync(
+        Guid playerId,
+        EncounterEntity encounter,
+        CancellationToken ct)
+    {
+        // Check if player was hit by Scalding Wave mechanic
+        var wasHitByScaldingWave = await _db.MechanicEvents
+            .Where(m => m.EncounterId == encounter.Id)
+            .Where(m => m.PlayerId == playerId)
+            .Where(m => m.MechanicName.Contains("Scalding") ||
+                       m.MechanicFullName.Contains("Scalding") ||
+                       m.MechanicName.Contains("scalding"))
+            .AnyAsync(ct);
+
+        if (!wasHitByScaldingWave)
+        {
+            return new AchievementUnlock(
+                "guardians_glade_flawless",
+                playerId,
+                new { encounter_id = encounter.Id },
+                encounter.EncounterTime
+            );
         }
 
         return null;

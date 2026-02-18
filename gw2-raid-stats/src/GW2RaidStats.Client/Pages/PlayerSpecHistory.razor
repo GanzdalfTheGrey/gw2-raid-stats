@@ -1,0 +1,224 @@
+@page "/players/{AccountName}/specs"
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>GW2 Raid Stats - @AccountName Spec History</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else if (_history == null)
+{
+    <MudAlert Severity="Severity.Error">Player not found.</MudAlert>
+}
+else
+{
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+        <MudStack Spacing="0">
+            <MudText Typo="Typo.h4">@_history.AccountName - Spec History</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                @_history.TotalUniqueSpecs specs across @_history.TotalBosses bosses
+            </MudText>
+        </MudStack>
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.EmojiEvents"
+                       Href="@($"/players/{AccountName}/achievements")">
+                Achievements
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.ArrowBack"
+                       Href="@($"/players/{AccountName}")">
+                Back to Profile
+            </MudButton>
+        </MudStack>
+    </MudStack>
+
+    <!-- Summary Cards -->
+    <MudGrid Class="mb-4">
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-3" Elevation="2">
+                <MudStack Spacing="0" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.h4" Color="Color.Primary">@_history.TotalBosses</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Bosses Killed</MudText>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-3" Elevation="2">
+                <MudStack Spacing="0" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.h4" Color="Color.Success">@_history.TotalUniqueSpecs</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Unique Specs</MudText>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-3" Elevation="2">
+                <MudStack Spacing="0" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.h4" Color="Color.Warning">@_history.TotalUniqueRoles</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Unique Roles</MudText>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-3" Elevation="2">
+                <MudStack Spacing="0" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.h4" Color="Color.Info">@_history.Bosses.Sum(b => b.Completions.Count)</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Spec/Role Combos</MudText>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <!-- Boss Breakdown -->
+    @foreach (var wingGroup in _history.Bosses.GroupBy(b => b.Wing ?? 0).OrderBy(g => g.Key == 0 ? 99 : g.Key))
+    {
+        <MudText Typo="Typo.h6" Class="mb-2 mt-4">
+            @if (wingGroup.Key == 0)
+            {
+                <span>Strikes / Other</span>
+            }
+            else
+            {
+                <span>Wing @wingGroup.Key</span>
+            }
+        </MudText>
+
+        <MudGrid>
+            @foreach (var boss in wingGroup.OrderBy(b => b.EncounterOrder))
+            {
+                var uniqueRoles = boss.Completions.Select(c => c.Role).Distinct().OrderBy(r => GetRoleOrder(r)).ToList();
+                <MudItem xs="12" md="6" lg="4">
+                    <MudPaper Class="pa-3" Elevation="2">
+                        <!-- Header: Boss name + completed roles -->
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2" Wrap="Wrap.Wrap">
+                            <MudText Typo="Typo.subtitle1"><strong>@boss.BossName</strong></MudText>
+                            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                                @foreach (var role in uniqueRoles)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
+                                             Color="@GetRoleColor(role)"
+                                             Style="margin: 0; height: 20px; font-size: 0.65rem;">
+                                        @GetRoleDisplayName(role)
+                                    </MudChip>
+                                }
+                            </MudStack>
+                        </MudStack>
+
+                        <MudDivider Class="mb-2" />
+
+                        <!-- Body: Organized by profession then spec -->
+                        @foreach (var profGroup in boss.Completions.GroupBy(c => c.Profession).OrderBy(g => g.Key))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Style="font-weight: 600;">@profGroup.Key</MudText>
+                            <MudStack Spacing="0" Class="ml-2 mb-2">
+                                @foreach (var spec in profGroup.GroupBy(c => c.Spec).OrderBy(g => g.Key))
+                                {
+                                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                                        <MudText Typo="Typo.body2">@spec.Key</MudText>
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">@spec.Sum(s => s.KillCount) kills</MudText>
+                                    </MudStack>
+                                }
+                            </MudStack>
+                        }
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+}
+
+@code {
+    [Parameter]
+    public string AccountName { get; set; } = "";
+
+    private bool _loading = true;
+    private PlayerSpecHistoryDto? _history;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            _history = await Http.GetFromJsonAsync<PlayerSpecHistoryDto>(
+                $"api/achievements/player/{Uri.EscapeDataString(AccountName)}/spec-history");
+        }
+        catch
+        {
+            _history = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static Color GetRoleColor(string role) => role switch
+    {
+        "heal_alac" => Color.Success,
+        "heal_quick" => Color.Success,
+        "dps_alac" => Color.Info,
+        "dps_quick" => Color.Info,
+        "pure_dps" => Color.Warning,
+        _ => Color.Default
+    };
+
+    private static int GetRoleOrder(string role) => role switch
+    {
+        "heal_alac" => 1,
+        "heal_quick" => 2,
+        "dps_alac" => 3,
+        "dps_quick" => 4,
+        "pure_dps" => 5,
+        _ => 99
+    };
+
+    private static string GetRoleDisplayName(string role) => role switch
+    {
+        "heal_alac" => "Heal Alac",
+        "heal_quick" => "Heal Quick",
+        "dps_alac" => "DPS Alac",
+        "dps_quick" => "DPS Quick",
+        "pure_dps" => "DPS",
+        _ => role
+    };
+
+    // DTOs
+    public record PlayerSpecHistoryDto(
+        string AccountName,
+        int TotalBosses,
+        int TotalUniqueSpecs,
+        int TotalUniqueRoles,
+        List<BossSpecHistoryDto> Bosses
+    );
+
+    public record BossSpecHistoryDto(
+        int TriggerId,
+        string BossName,
+        int? Wing,
+        int EncounterOrder,
+        int SpecCount,
+        int RoleCount,
+        List<SpecRoleCompletionDto> Completions
+    );
+
+    public record SpecRoleCompletionDto(
+        string Spec,
+        string Profession,
+        string Role,
+        string RoleDisplayName,
+        DateTimeOffset FirstCompletedAt,
+        int KillCount
+    );
+}

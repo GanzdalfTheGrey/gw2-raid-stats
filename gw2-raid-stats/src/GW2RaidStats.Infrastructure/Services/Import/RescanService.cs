@@ -129,11 +129,10 @@ public class RescanService
         if (encounter == null)
             return false;
 
-        // Only update if we have new data and existing is null
-        var needsUpdate = (furthestPhase != null && encounter.FurthestPhase == null) ||
-                          (bossHpRemaining.HasValue && !encounter.BossHealthPercentRemaining.HasValue);
+        // Always update if we have calculated values (allows fixing incorrect values)
+        var hasProgressionData = furthestPhase != null || bossHpRemaining.HasValue;
 
-        if (!needsUpdate)
+        if (!hasProgressionData)
             return false;
 
         await _db.Encounters
@@ -155,7 +154,7 @@ public class RescanService
             // Find matching player_encounter by character name
             var playerEncounter = await _db.PlayerEncounters
                 .Where(pe => pe.EncounterId == encounterId && pe.CharacterName == eiPlayer.Name)
-                .Select(pe => new { pe.Id, pe.HealingPowerStat, pe.QuicknessGeneration, pe.AlacracityGeneration, pe.Role })
+                .Select(pe => new { pe.Id, pe.HealingPowerStat, pe.QuicknessGeneration, pe.AlacracityGeneration, pe.Role, pe.ResurrectTime })
                 .FirstOrDefaultAsync(ct);
 
             if (playerEncounter == null)
@@ -188,6 +187,18 @@ public class RescanService
 
                 anyUpdated = true;
             }
+
+            // Check if resurrect time needs updating (0 means not set)
+            var support = eiPlayer.Support?.FirstOrDefault();
+            if (playerEncounter.ResurrectTime == 0 && support?.ResurrectTime > 0)
+            {
+                await _db.PlayerEncounters
+                    .Where(pe => pe.Id == playerEncounter.Id)
+                    .Set(pe => pe.ResurrectTime, support.ResurrectTime)
+                    .UpdateAsync(ct);
+
+                anyUpdated = true;
+            }
         }
 
         return anyUpdated;
@@ -216,14 +227,41 @@ public class RescanService
         // Extract boss HP remaining from targets
         if (log.Targets is { Count: > 0 })
         {
-            var mainTarget = log.Targets.FirstOrDefault();
-            if (mainTarget != null)
+            // Check if this is HTCM (has dragon "Void" targets)
+            var dragonTargets = log.Targets.Where(t => t.Name != null && t.Name.Contains("Void")).ToList();
+            var isHtcm = dragonTargets.Count >= 2; // HTCM has multiple Void dragons
+
+            if (isHtcm)
             {
-                // healthPercentBurned is how much HP was done, so remaining = 100 - burned
-                var hpBurned = mainTarget.HealthPercentBurned;
-                if (hpBurned > 0)
+                // For HTCM: Calculate progress relative to ALL 6 dragons
+                // Get dragon HP from the first reached dragon (they all have the same HP)
+                var reachedDragon = dragonTargets.FirstOrDefault(t => t.TotalHealth > 0);
+                if (reachedDragon != null)
                 {
-                    bossHpRemaining = Math.Max(0, 100 - (decimal)hpBurned);
+                    var dragonHp = (decimal)reachedDragon.TotalHealth;
+                    var totalFightHp = dragonHp * 6; // 6 dragons total
+
+                    // Sum HP burned from all reached dragons
+                    var totalHpRemoved = dragonTargets
+                        .Where(t => t.TotalHealth > 0)
+                        .Sum(t => (decimal)t.TotalHealth * (t.HealthPercentBurned / 100m));
+
+                    var clearPercentage = totalFightHp > 0 ? (totalHpRemoved / totalFightHp) * 100 : 0;
+                    bossHpRemaining = Math.Max(0, 100 - clearPercentage);
+                }
+            }
+            else
+            {
+                // For regular bosses: use weighted calculation on valid targets
+                var validTargets = log.Targets.Where(t => t.TotalHealth > 0).ToList();
+
+                if (validTargets.Count > 0)
+                {
+                    var totalActualHealth = validTargets.Sum(t => (decimal)t.TotalHealth);
+                    var totalHpRemoved = validTargets.Sum(t => (decimal)t.TotalHealth * (t.HealthPercentBurned / 100m));
+
+                    var clearPercentage = totalActualHealth > 0 ? (totalHpRemoved / totalActualHealth) * 100 : 0;
+                    bossHpRemaining = Math.Max(0, 100 - clearPercentage);
                 }
             }
         }

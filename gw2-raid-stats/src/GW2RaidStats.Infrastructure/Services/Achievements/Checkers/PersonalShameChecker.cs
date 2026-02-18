@@ -12,6 +12,7 @@ namespace GW2RaidStats.Infrastructure.Services.Achievements.Checkers;
 /// - Greedy: Die when boss under 10% HP (requires mechanics data)
 /// - Pacifist: Lowest damage on a kill
 /// - Oil Change: First to hit oil on Deimos wipe (requires mechanics data)
+/// - The Sacrifice: Die during Matthias sacrifice mechanic
 /// </summary>
 public class PersonalShameChecker : IAchievementChecker
 {
@@ -23,6 +24,8 @@ public class PersonalShameChecker : IAchievementChecker
     private const int DeimosTriggerId = 17154;
     private const int GorsevalTriggerId = 15429;
     private const int SabethaTriggerId = 15375;
+    private const int MatthiasTriggerId = 16137;
+    private const int MatthiasAltTriggerId = 16115;
 
     public PersonalShameChecker(
         RaidStatsDb db,
@@ -105,6 +108,14 @@ public class PersonalShameChecker : IAchievementChecker
             if (!earned.Contains("just_gg") && !encounter.Success)
             {
                 var unlock = await CheckJustGGAsync(player, context.Players, encounter, ct);
+                if (unlock != null) unlocks.Add(unlock);
+            }
+
+            // The Sacrifice - Die during Matthias sacrifice mechanic
+            if (!earned.Contains("the_sacrifice") &&
+                (encounter.TriggerId == MatthiasTriggerId || encounter.TriggerId == MatthiasAltTriggerId))
+            {
+                var unlock = await CheckTheSacrificeAsync(player, encounter, ct);
                 if (unlock != null) unlocks.Add(unlock);
             }
         }
@@ -502,6 +513,45 @@ public class PersonalShameChecker : IAchievementChecker
                     session_date = sabethaEncounter.EncounterTime.Date
                 },
                 sabethaEncounter.EncounterTime
+            );
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The Sacrifice - Die during Matthias sacrifice mechanic
+    /// The sacrifice mechanic in Elite Insights is typically called "Sacrifice" or "Unbalanced"
+    /// </summary>
+    private async Task<AchievementUnlock?> CheckTheSacrificeAsync(
+        PlayerEncounterData player,
+        Database.Entities.EncounterEntity encounter,
+        CancellationToken ct)
+    {
+        if (player.Deaths == 0) return null;
+
+        // Check if player was involved in sacrifice mechanic
+        // In Elite Insights, the sacrifice mechanic is tracked as "Sacrifice" or related
+        var wasSacrificed = await _db.MechanicEvents
+            .Where(m => m.EncounterId == encounter.Id)
+            .Where(m => m.PlayerId == player.PlayerId)
+            .Where(m => m.MechanicName.Contains("Sacrifice") ||
+                       m.MechanicFullName.Contains("Sacrifice") ||
+                       m.MechanicName.Contains("Unbalanced") ||
+                       m.MechanicFullName.Contains("Unbalanced"))
+            .AnyAsync(ct);
+
+        if (wasSacrificed)
+        {
+            return new AchievementUnlock(
+                "the_sacrifice",
+                player.PlayerId,
+                new
+                {
+                    encounter_id = encounter.Id,
+                    boss = encounter.BossName
+                },
+                encounter.EncounterTime
             );
         }
 

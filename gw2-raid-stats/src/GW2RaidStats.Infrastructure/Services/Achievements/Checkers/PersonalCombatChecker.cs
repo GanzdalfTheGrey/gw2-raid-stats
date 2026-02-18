@@ -11,9 +11,11 @@ namespace GW2RaidStats.Infrastructure.Services.Achievements.Checkers;
 /// - Immortal (10 consecutive kills without dying)
 /// - Clutch Player (survive when 5+ died)
 /// - Speed Demon (guild record kill time)
+/// - Witness Me (only one alive when boss dies)
 /// - Guardian Angel (most resurrects 5+ times)
 /// - CC Champion (most CC 10+ times)
 /// - The Enabler (highest boon DPS 25+ times)
+/// - Ambulance (5+ resurrects in single encounter)
 /// </summary>
 public class PersonalCombatChecker : IAchievementChecker
 {
@@ -83,6 +85,13 @@ public class PersonalCombatChecker : IAchievementChecker
                 if (unlock != null) unlocks.Add(unlock);
             }
 
+            // Witness Me - only one alive when boss dies
+            if (!earned.Contains("witness_me"))
+            {
+                var unlock = CheckWitnessMe(player, context.Players, encounter);
+                if (unlock != null) unlocks.Add(unlock);
+            }
+
             // Support achievements
             if (!earned.Contains("guardian_angel"))
             {
@@ -99,6 +108,13 @@ public class PersonalCombatChecker : IAchievementChecker
             if (!earned.Contains("the_enabler"))
             {
                 var unlock = await CheckEnablerAsync(player, context.Players, encounter, ct);
+                if (unlock != null) unlocks.Add(unlock);
+            }
+
+            // Ambulance - 5+ resurrects in single encounter
+            if (!earned.Contains("ambulance"))
+            {
+                var unlock = CheckAmbulance(player, encounter);
                 if (unlock != null) unlocks.Add(unlock);
             }
         }
@@ -288,6 +304,69 @@ public class PersonalCombatChecker : IAchievementChecker
                 "the_enabler",
                 player.PlayerId,
                 new { times = count },
+                encounter.EncounterTime
+            );
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Witness Me - Be the only one alive when boss dies (no deaths, everyone else died)
+    /// </summary>
+    private AchievementUnlock? CheckWitnessMe(
+        PlayerEncounterData player,
+        List<PlayerEncounterData> allPlayers,
+        Database.Entities.EncounterEntity encounter)
+    {
+        // Player must have survived (0 deaths)
+        if (player.Deaths > 0) return null;
+
+        // Need at least 5 players for this to be meaningful
+        if (allPlayers.Count < 5) return null;
+
+        // Count how many others died
+        var othersWhoDied = allPlayers.Count(p => p.PlayerId != player.PlayerId && p.Deaths > 0);
+
+        // Everyone else (or nearly everyone) must have died
+        var otherPlayers = allPlayers.Count - 1;
+        if (othersWhoDied >= otherPlayers - 1 && othersWhoDied >= 4) // Allow 1 other survivor max, need at least 4 deaths
+        {
+            return new AchievementUnlock(
+                "witness_me",
+                player.PlayerId,
+                new
+                {
+                    encounter_id = encounter.Id,
+                    boss = encounter.BossName,
+                    squad_deaths = othersWhoDied,
+                    squad_size = allPlayers.Count
+                },
+                encounter.EncounterTime
+            );
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Ambulance - Resurrect 5+ teammates in a single encounter
+    /// </summary>
+    private AchievementUnlock? CheckAmbulance(
+        PlayerEncounterData player,
+        Database.Entities.EncounterEntity encounter)
+    {
+        if (player.Resurrects >= 5)
+        {
+            return new AchievementUnlock(
+                "ambulance",
+                player.PlayerId,
+                new
+                {
+                    encounter_id = encounter.Id,
+                    boss = encounter.BossName,
+                    resurrects = player.Resurrects
+                },
                 encounter.EncounterTime
             );
         }

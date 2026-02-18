@@ -97,9 +97,13 @@ public class SessionNotificationHandler : INotificationHandler
             {
                 mvpLines.Add($"💥 Best CC: **{mvpStats.BestCcPlayer}** ({mvpStats.BestCcValue:N0})");
             }
-            if (mvpStats.MostRessesPlayer != null && mvpStats.MostRessesCount > 0)
+            if (mvpStats.MostRubTimePlayer != null && mvpStats.MostRubTimeSeconds > 0)
             {
-                mvpLines.Add($"🩹 Most Resses: **{mvpStats.MostRessesPlayer}** ({mvpStats.MostRessesCount})");
+                var rubTime = TimeSpan.FromSeconds(mvpStats.MostRubTimeSeconds.Value);
+                var rubTimeStr = rubTime.TotalMinutes >= 1
+                    ? $"{(int)rubTime.TotalMinutes}m {rubTime.Seconds}s"
+                    : $"{rubTime.Seconds}s";
+                mvpLines.Add($"🩹 Most Rubs: **{mvpStats.MostRubTimePlayer}** ({rubTimeStr})");
             }
             if (mvpStats.SurvivorPlayer != null)
             {

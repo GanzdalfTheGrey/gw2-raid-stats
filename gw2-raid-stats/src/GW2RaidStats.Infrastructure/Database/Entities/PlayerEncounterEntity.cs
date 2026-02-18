@@ -59,6 +59,9 @@ public class PlayerEncounterEntity
     [Column("resurrects")]
     public int Resurrects { get; set; }
 
+    [Column("resurrect_time")]
+    public decimal ResurrectTime { get; set; }
+
     [Column("condi_cleanse")]
     public int CondiCleanse { get; set; }
 

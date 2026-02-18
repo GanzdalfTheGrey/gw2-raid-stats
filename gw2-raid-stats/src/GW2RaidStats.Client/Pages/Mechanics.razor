@@ -48,31 +48,33 @@
                 </ItemTemplate>
             </MudAutocomplete>
         </MudItem>
-        <MudItem xs="6" sm="4" md="2">
+        <MudItem xs="6" sm="3" md="2">
             <MudDatePicker Label="From"
                            @bind-Date="_fromDate"
                            Variant="Variant.Outlined"
                            Clearable="true" />
         </MudItem>
-        <MudItem xs="6" sm="4" md="2">
+        <MudItem xs="6" sm="3" md="2">
             <MudDatePicker Label="To"
                            @bind-Date="_toDate"
                            Variant="Variant.Outlined"
                            Clearable="true" />
         </MudItem>
-        <MudItem xs="12" sm="4" md="2">
-            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Style="height: 100%;">
+        <MudItem xs="12" lg="2">
+            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Justify="Justify.FlexStart" Style="height: 100%;">
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
                            StartIcon="@Icons.Material.Filled.Search"
                            OnClick="SearchAsync"
-                           Disabled="_selectedMechanic == null">
+                           Disabled="_selectedMechanic == null"
+                           Style="min-width: 90px;">
                     Search
                 </MudButton>
                 <MudButton Variant="Variant.Outlined"
                            Color="Color.Secondary"
                            StartIcon="@Icons.Material.Filled.Clear"
-                           OnClick="ClearFilters">
+                           OnClick="ClearFilters"
+                           Style="min-width: 80px;">
                     Clear
                 </MudButton>
             </MudStack>

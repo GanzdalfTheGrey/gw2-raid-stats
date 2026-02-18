@@ -1,5 +1,6 @@
 using LinqToDB;
 using LinqToDB.Async;
+using GW2RaidStats.Core;
 using GW2RaidStats.Infrastructure.Database;
 using GW2RaidStats.Infrastructure.Services.Achievements.Progress;
 
@@ -504,6 +505,167 @@ public class AchievementQueryService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Get detailed spec diversity progress showing all bosses and specs completed
+    /// </summary>
+    public async Task<SpecDiversityDetailedProgressDto> GetSpecDiversityDetailedProgressAsync(
+        Guid playerId,
+        CancellationToken ct)
+    {
+        // Get all elite spec kills by boss
+        var specKills = await _db.PlayerEncounters
+            .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+            .Where(x => x.pe.PlayerId == playerId && x.e.Success)
+            .Where(x => AchievementDefinitions.AllEliteSpecs.Contains(x.pe.Profession))
+            .Select(x => new { x.e.TriggerId, x.e.BossName, x.pe.Profession })
+            .ToListAsync(ct);
+
+        var bossList = new List<SpecDiversityBossProgressDto>();
+
+        // Group by boss
+        var bossGroups = specKills
+            .GroupBy(x => new { x.TriggerId, x.BossName })
+            .OrderByDescending(g => g.Select(x => x.Profession).Distinct().Count())
+            .ToList();
+
+        foreach (var bossGroup in bossGroups)
+        {
+            var completedSpecs = bossGroup
+                .Select(x => x.Profession)
+                .Distinct()
+                .OrderBy(s => s)
+                .ToList();
+
+            // Group specs by profession for class completionist tracking
+            var specsByProfession = new List<SpecDiversityProfessionProgressDto>();
+            foreach (var (profession, eliteSpecs) in AchievementDefinitions.EliteSpecsByProfession)
+            {
+                var completed = eliteSpecs.Where(s => completedSpecs.Contains(s)).ToList();
+                var remaining = eliteSpecs.Where(s => !completedSpecs.Contains(s)).ToList();
+
+                if (completed.Count > 0)
+                {
+                    specsByProfession.Add(new SpecDiversityProfessionProgressDto(
+                        profession,
+                        completed.Count,
+                        eliteSpecs.Length,
+                        completed,
+                        remaining
+                    ));
+                }
+            }
+
+            bossList.Add(new SpecDiversityBossProgressDto(
+                bossGroup.Key.TriggerId,
+                bossGroup.Key.BossName,
+                completedSpecs.Count,
+                completedSpecs,
+                specsByProfession.OrderByDescending(p => p.Completed).ToList()
+            ));
+        }
+
+        // Get top boss for versatile/jack progress
+        var topBoss = bossList.FirstOrDefault();
+        var versatileProgress = topBoss?.TotalSpecs ?? 0;
+
+        // Get best class completionist progress
+        var bestClassProgress = bossList
+            .SelectMany(b => b.ProfessionProgress.Select(p => new { b.BossName, p.Profession, p.Completed, p.Total, p.RemainingSpecs }))
+            .OrderByDescending(x => x.Completed)
+            .FirstOrDefault();
+
+        return new SpecDiversityDetailedProgressDto(
+            versatileProgress,
+            10, // versatile target
+            20, // jack target
+            bestClassProgress?.Profession,
+            bestClassProgress?.BossName,
+            bestClassProgress?.Completed ?? 0,
+            bestClassProgress?.RemainingSpecs?.ToList() ?? new List<string>(),
+            bossList
+        );
+    }
+
+    #endregion
+
+    #region Player Spec History
+
+    /// <summary>
+    /// Get complete spec and role history for a player across all bosses
+    /// </summary>
+    public async Task<PlayerSpecHistoryDto> GetPlayerSpecHistoryAsync(
+        Guid playerId,
+        string accountName,
+        CancellationToken ct)
+    {
+        // Get all successful encounters with spec and role info
+        var encounters = await _db.PlayerEncounters
+            .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+            .Where(x => x.pe.PlayerId == playerId && x.e.Success)
+            .Select(x => new
+            {
+                x.e.TriggerId,
+                x.e.BossName,
+                x.pe.Profession,
+                x.pe.Role,
+                x.e.EncounterTime
+            })
+            .ToListAsync(ct);
+
+        // Group by boss, then by spec+role combination
+        var bossGroups = encounters
+            .GroupBy(x => new { x.TriggerId, x.BossName })
+            .Select(bossGroup =>
+            {
+                var completions = bossGroup
+                    .GroupBy(x => new { x.Profession, x.Role })
+                    .Select(specRoleGroup =>
+                    {
+                        var roleCode = specRoleGroup.Key.Role ?? "pure_dps";
+                        var roleDisplay = AchievementDefinitions.RoleDisplayNames.GetValueOrDefault(roleCode, roleCode);
+                        var profession = AchievementDefinitions.GetBaseProfession(specRoleGroup.Key.Profession);
+
+                        return new SpecRoleCompletionDto(
+                            specRoleGroup.Key.Profession,
+                            profession,
+                            roleCode,
+                            roleDisplay,
+                            specRoleGroup.Min(x => x.EncounterTime),
+                            specRoleGroup.Count()
+                        );
+                    })
+                    .OrderBy(c => c.Profession)
+                    .ThenBy(c => c.Spec)
+                    .ThenBy(c => c.Role)
+                    .ToList();
+
+                // Get wing and encounter order from WingMapping
+                var wing = WingMapping.GetWing(bossGroup.Key.TriggerId);
+                var order = WingMapping.GetEncounterOrder(bossGroup.Key.TriggerId);
+
+                return new BossSpecHistoryDto(
+                    bossGroup.Key.TriggerId,
+                    bossGroup.Key.BossName,
+                    wing,
+                    order,
+                    completions.Select(c => c.Spec).Distinct().Count(),
+                    completions.Select(c => c.Role).Distinct().Count(),
+                    completions
+                );
+            })
+            .OrderBy(b => b.Wing ?? 99)
+            .ThenBy(b => b.EncounterOrder)
+            .ToList();
+
+        return new PlayerSpecHistoryDto(
+            accountName,
+            bossGroups.Count,
+            bossGroups.SelectMany(b => b.Completions).Select(c => c.Spec).Distinct().Count(),
+            bossGroups.SelectMany(b => b.Completions).Select(c => c.Role).Distinct().Count(),
+            bossGroups
+        );
     }
 
     #endregion

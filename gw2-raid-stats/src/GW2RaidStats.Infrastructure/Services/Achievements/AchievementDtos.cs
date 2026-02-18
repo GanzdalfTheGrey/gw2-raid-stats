@@ -94,6 +94,74 @@ public record CompletionBossProgressDto(
 
 #endregion
 
+#region Spec Diversity Progress DTOs
+
+/// <summary>
+/// Detailed spec diversity progress showing all bosses and specs completed
+/// </summary>
+public record SpecDiversityDetailedProgressDto(
+    int VersatileProgress,
+    int VersatileTarget,
+    int JackTarget,
+    string? BestProfession,
+    string? BestBossForProfession,
+    int BestProfessionProgress,
+    List<string> BestProfessionRemaining,
+    List<SpecDiversityBossProgressDto> Bosses
+);
+
+public record SpecDiversityBossProgressDto(
+    int TriggerId,
+    string BossName,
+    int TotalSpecs,
+    List<string> CompletedSpecs,
+    List<SpecDiversityProfessionProgressDto> ProfessionProgress
+);
+
+public record SpecDiversityProfessionProgressDto(
+    string Profession,
+    int Completed,
+    int Total,
+    List<string> CompletedSpecs,
+    List<string> RemainingSpecs
+);
+
+#endregion
+
+#region Player Spec History DTOs
+
+/// <summary>
+/// Complete spec and role history for a player across all bosses
+/// </summary>
+public record PlayerSpecHistoryDto(
+    string AccountName,
+    int TotalBosses,
+    int TotalUniqueSpecs,
+    int TotalUniqueRoles,
+    List<BossSpecHistoryDto> Bosses
+);
+
+public record BossSpecHistoryDto(
+    int TriggerId,
+    string BossName,
+    int? Wing,
+    int EncounterOrder,
+    int SpecCount,
+    int RoleCount,
+    List<SpecRoleCompletionDto> Completions
+);
+
+public record SpecRoleCompletionDto(
+    string Spec,
+    string Profession,
+    string Role,
+    string RoleDisplayName,
+    DateTimeOffset FirstCompletedAt,
+    int KillCount
+);
+
+#endregion
+
 #region Internal Progress Records
 
 /// <summary>

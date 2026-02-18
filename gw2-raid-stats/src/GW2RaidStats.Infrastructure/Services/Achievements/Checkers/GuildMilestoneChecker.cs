@@ -10,6 +10,7 @@ namespace GW2RaidStats.Infrastructure.Services.Achievements.Checkers;
 /// - Record Breakers (DPS + boon DPS records broken in same encounter)
 /// - The Comeback (kill after 5+ wipes in same session)
 /// - Synchronized (3+ players set personal best in same encounter)
+/// - Full Clear (clear all 8 wings in a single session)
 /// </summary>
 public class GuildMilestoneChecker : IAchievementChecker
 {
@@ -50,6 +51,14 @@ public class GuildMilestoneChecker : IAchievementChecker
         // Synchronized - check if 3+ guild members set personal bests
         var synchronizedUnlock = await CheckSynchronizedAsync(encounter, context, ct);
         if (synchronizedUnlock != null) unlocks.Add(synchronizedUnlock);
+
+        // Full Clear - all 8 wings in a single session
+        var fullClearUnlock = await CheckFullClearAsync(encounter, ct);
+        if (fullClearUnlock != null) unlocks.Add(fullClearUnlock);
+
+        // Musical Chairs - different boon providers each boss in a wing
+        var musicalChairsUnlocks = await CheckMusicalChairsAsync(encounter, ct);
+        unlocks.AddRange(musicalChairsUnlocks);
 
         return unlocks;
     }
@@ -204,5 +213,162 @@ public class GuildMilestoneChecker : IAchievementChecker
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Full Clear - Clear all 8 wings in a single session (within 8 hours)
+    /// </summary>
+    private async Task<AchievementUnlock?> CheckFullClearAsync(
+        Database.Entities.EncounterEntity encounter,
+        CancellationToken ct)
+    {
+        // Get all boss trigger IDs for wings 1-8
+        var allWingBosses = AchievementDefinitions.WingMasterBosses
+            .SelectMany(kvp => kvp.Value)
+            .Select(AchievementDefinitions.NormalizeTriggerId)
+            .Distinct()
+            .ToHashSet();
+
+        // Look for kills within 8 hours of this encounter (long raid session)
+        var sessionStart = encounter.EncounterTime.AddHours(-8);
+        var sessionEnd = encounter.EncounterTime;
+
+        // Get all successful kills in this session window
+        var sessionKills = await _db.Encounters
+            .Where(e => e.Success)
+            .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime <= sessionEnd)
+            .Select(e => new { e.TriggerId, e.EncounterTime })
+            .ToListAsync(ct);
+
+        // Normalize trigger IDs and get unique bosses killed
+        var bossesKilled = sessionKills
+            .Select(k => AchievementDefinitions.NormalizeTriggerId(k.TriggerId))
+            .Distinct()
+            .ToHashSet();
+
+        // Check if all wing bosses were killed
+        if (allWingBosses.All(b => bossesKilled.Contains(b)))
+        {
+            // Find the time when the last boss was killed to complete the clear
+            var lastBossTime = sessionKills.Max(k => k.EncounterTime);
+            return new AchievementUnlock(
+                "full_clear",
+                null, // Guild achievement - no specific player
+                new
+                {
+                    session_date = lastBossTime.Date,
+                    bosses_killed = bossesKilled.Count
+                },
+                lastBossTime
+            );
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Musical Chairs - Complete a wing with different boon providers on each boss.
+    /// Boon roles tracked: heal_alac, heal_quick, dps_alac, dps_quick (not pure_dps).
+    /// No player can repeat the same boon role across different bosses in the wing.
+    /// </summary>
+    private async Task<List<AchievementUnlock>> CheckMusicalChairsAsync(
+        Database.Entities.EncounterEntity encounter,
+        CancellationToken ct)
+    {
+        var unlocks = new List<AchievementUnlock>();
+
+        // Only check for raid encounters (wings 1-8)
+        if (!encounter.Wing.HasValue || encounter.Wing < 1 || encounter.Wing > 8) return unlocks;
+
+        var wing = encounter.Wing.Value;
+        var wingBosses = AchievementDefinitions.WingMasterBosses.GetValueOrDefault(wing);
+        if (wingBosses == null) return unlocks;
+
+        // Look for kills within 8 hours (same session window as full clear)
+        var sessionStart = encounter.EncounterTime.AddHours(-8);
+        var sessionEnd = encounter.EncounterTime;
+
+        // Get all successful kills for this wing's bosses in the session
+        var wingBossSet = wingBosses.Select(AchievementDefinitions.NormalizeTriggerId).ToHashSet();
+
+        var sessionEncounters = await _db.Encounters
+            .Where(e => e.Success)
+            .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime <= sessionEnd)
+            .Where(e => e.Wing == wing)
+            .Select(e => new { e.Id, e.TriggerId, e.BossName, e.EncounterTime })
+            .ToListAsync(ct);
+
+        // Normalize and filter to wing bosses, take most recent kill per boss
+        var bossKills = sessionEncounters
+            .Select(e => new { e.Id, TriggerId = AchievementDefinitions.NormalizeTriggerId(e.TriggerId), e.BossName, e.EncounterTime })
+            .Where(e => wingBossSet.Contains(e.TriggerId))
+            .GroupBy(e => e.TriggerId)
+            .Select(g => g.OrderByDescending(e => e.EncounterTime).First())
+            .ToList();
+
+        // Need all bosses in the wing killed
+        if (bossKills.Count != wingBosses.Length) return unlocks;
+
+        // Get player roles for each encounter
+        var encounterIds = bossKills.Select(k => k.Id).ToList();
+        var playerEncounters = await _db.PlayerEncounters
+            .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
+            .Where(x => encounterIds.Contains(x.pe.EncounterId))
+            .Select(x => new
+            {
+                x.pe.EncounterId,
+                x.p.AccountName,
+                x.pe.Role
+            })
+            .ToListAsync(ct);
+
+        // Group roles into general categories:
+        // - Healers (heal_alac OR heal_quick) - same player can't heal on multiple bosses
+        // - Boon DPS (dps_alac OR dps_quick) - same player can't boon DPS on multiple bosses
+        var roleGroups = new Dictionary<string, string[]>
+        {
+            { "healer", new[] { "heal_alac", "heal_quick" } },
+            { "boon_dps", new[] { "dps_alac", "dps_quick" } }
+        };
+
+        // For each role group, check that no player repeats across bosses
+        var isMusicalChairs = true;
+        foreach (var (groupName, roles) in roleGroups)
+        {
+            var playersInRoleGroup = playerEncounters
+                .Where(pe => roles.Contains(pe.Role))
+                .GroupBy(pe => pe.EncounterId)
+                .Select(g => g.Select(pe => pe.AccountName).ToList())
+                .ToList();
+
+            // No player should appear more than once across all bosses in this role group
+            var allPlayersInGroup = playersInRoleGroup.SelectMany(p => p).ToList();
+            if (allPlayersInGroup.Count != allPlayersInGroup.Distinct().Count())
+            {
+                // Someone repeated this role group across bosses
+                isMusicalChairs = false;
+                break;
+            }
+        }
+
+        if (isMusicalChairs)
+        {
+            var achievementCode = $"musical_chairs_w{wing}";
+            var lastBossTime = bossKills.Max(k => k.EncounterTime);
+
+            unlocks.Add(new AchievementUnlock(
+                achievementCode,
+                null, // Guild achievement
+                new
+                {
+                    wing,
+                    bosses = bossKills.Select(b => b.BossName).ToList(),
+                    session_date = lastBossTime.Date
+                },
+                lastBossTime
+            ));
+        }
+
+        return unlocks;
     }
 }

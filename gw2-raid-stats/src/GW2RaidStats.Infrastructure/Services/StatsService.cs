@@ -453,29 +453,33 @@ public class StatsService
             .ToListAsync(ct);
 
         // Filter deaths to only count "legitimate" ones
+        // Rules: First death in encounter always counts, or death more than 5 seconds before fight end
         var deathEvents = mechanicEvents.Where(m => m.MechanicName == "Dead").ToList();
-        var downedEvents = mechanicEvents.Where(m => m.MechanicName == "Downed").ToList();
 
         const int endOfFightThresholdMs = 5000; // Exclude deaths within 5 seconds of encounter end
-        const int downedLookbackMs = 15000; // Look for downed event within 15 seconds before death
+
+        // Find first death time per encounter for "first to die" rule
+        var firstDeathPerEncounter = deathEvents
+            .GroupBy(d => d.EncounterId)
+            .ToDictionary(g => g.Key, g => g.Min(d => d.EventTimeMs));
 
         var legitimateDeaths = deathEvents.Where(death =>
         {
-            // Exclude deaths within 5 seconds of encounter end
+            // First death in an encounter always counts (handles instant-kill mechanics, /gg detection)
+            if (firstDeathPerEncounter.TryGetValue(death.EncounterId, out var firstDeathTime) &&
+                death.EventTimeMs == firstDeathTime)
+            {
+                return true;
+            }
+
+            // Otherwise, exclude deaths within 5 seconds of encounter end
             if (encounterDurations.TryGetValue(death.EncounterId, out var durationMs))
             {
                 if (death.EventTimeMs > durationMs - endOfFightThresholdMs)
                     return false;
             }
 
-            // Exclude deaths without a preceding downed event (/ff detection)
-            var hasDownedBefore = downedEvents.Any(downed =>
-                downed.EncounterId == death.EncounterId &&
-                downed.PlayerId == death.PlayerId &&
-                downed.EventTimeMs < death.EventTimeMs &&
-                downed.EventTimeMs >= death.EventTimeMs - downedLookbackMs);
-
-            return hasDownedBefore;
+            return true;
         }).ToList();
 
         // Count legitimate deaths per player
@@ -565,7 +569,7 @@ public class StatsService
                 AvgQuickness = g.Average(x => (double)(x.pe.QuicknessGeneration ?? 0)),
                 AvgAlacrity = g.Average(x => (double)(x.pe.AlacracityGeneration ?? 0)),
                 TotalBreakbarDamage = g.Sum(x => (double)(x.pe.BreakbarDamage ?? 0)),
-                TotalResurrects = g.Sum(x => x.pe.Resurrects)
+                TotalResurrectTime = g.Sum(x => (double)x.pe.ResurrectTime)
             })
             .ToListAsync(ct);
 
@@ -587,26 +591,31 @@ public class StatsService
             .ToListAsync(ct);
 
         var deathEvents = mechanicEvents.Where(m => m.MechanicName == "Dead").ToList();
-        var downedEvents = mechanicEvents.Where(m => m.MechanicName == "Downed").ToList();
 
         const int endOfFightThresholdMs = 5000;
-        const int downedLookbackMs = 15000;
+
+        // Find first death time per encounter for "first to die" rule
+        var firstDeathPerEncounter = deathEvents
+            .GroupBy(d => d.EncounterId)
+            .ToDictionary(g => g.Key, g => g.Min(d => d.EventTimeMs));
 
         var legitimateDeaths = deathEvents.Where(death =>
         {
+            // First death in an encounter always counts
+            if (firstDeathPerEncounter.TryGetValue(death.EncounterId, out var firstDeathTime) &&
+                death.EventTimeMs == firstDeathTime)
+            {
+                return true;
+            }
+
+            // Otherwise, exclude deaths within 5 seconds of encounter end
             if (encounterDurations.TryGetValue(death.EncounterId, out var durationMs))
             {
                 if (death.EventTimeMs > durationMs - endOfFightThresholdMs)
                     return false;
             }
 
-            var hasDownedBefore = downedEvents.Any(downed =>
-                downed.EncounterId == death.EncounterId &&
-                downed.PlayerId == death.PlayerId &&
-                downed.EventTimeMs < death.EventTimeMs &&
-                downed.EventTimeMs >= death.EventTimeMs - downedLookbackMs);
-
-            return hasDownedBefore;
+            return true;
         }).ToList();
 
         var deathsByPlayer = legitimateDeaths
@@ -626,8 +635,8 @@ public class StatsService
         // Best CC (most breakbar damage)
         var bestCc = playerStats.OrderByDescending(p => p.TotalBreakbarDamage).FirstOrDefault();
 
-        // Most Resses
-        var mostResses = playerStats.OrderByDescending(p => p.TotalResurrects).FirstOrDefault();
+        // Most Rubs - longest time spent resurrecting (manual F-key only, not skill-based rallies)
+        var mostRubTime = playerStats.OrderByDescending(p => p.TotalResurrectTime).FirstOrDefault();
 
         // Survivor (fewest legitimate deaths, min 3 encounters to qualify)
         // Uses same death filtering as wall of shame (excludes /gg and end-of-fight deaths)
@@ -662,8 +671,8 @@ public class StatsService
             BestBoonDpsValue: bestBoonDps != null ? (int)bestBoonDps.AvgDps : null,
             BestCcPlayer: bestCc?.AccountName,
             BestCcValue: bestCc != null ? (int)bestCc.TotalBreakbarDamage : null,
-            MostRessesPlayer: mostResses?.AccountName,
-            MostRessesCount: mostResses?.TotalResurrects,
+            MostRubTimePlayer: mostRubTime?.AccountName,
+            MostRubTimeSeconds: mostRubTime?.TotalResurrectTime,
             SurvivorPlayer: survivor?.AccountName,
             SurvivorDeaths: survivor?.LegitimateDeaths
         );
@@ -677,8 +686,8 @@ public record SessionMvpStats(
     int? BestBoonDpsValue,
     string? BestCcPlayer,
     int? BestCcValue,
-    string? MostRessesPlayer,
-    int? MostRessesCount,
+    string? MostRubTimePlayer,
+    double? MostRubTimeSeconds,
     string? SurvivorPlayer,
     int? SurvivorDeaths
 );
