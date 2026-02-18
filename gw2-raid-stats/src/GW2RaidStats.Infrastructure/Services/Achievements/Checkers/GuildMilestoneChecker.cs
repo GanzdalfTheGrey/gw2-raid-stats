@@ -356,18 +356,27 @@ public class GuildMilestoneChecker : IAchievementChecker
             { "boon_dps", new[] { "dps_alac", "dps_quick" } }
         };
 
-        // For each role group, check that no player repeats across bosses
+        // For each role group, check that:
+        // 1. Each boss has at least one player in this role group
+        // 2. No player repeats across bosses
         var isMusicalChairs = true;
         foreach (var (groupName, roles) in roleGroups)
         {
             var playersInRoleGroup = playerEncounters
-                .Where(pe => roles.Contains(pe.Role))
+                .Where(pe => pe.Role != null && roles.Contains(pe.Role))
                 .GroupBy(pe => pe.EncounterId)
-                .Select(g => g.Select(pe => pe.AccountName).ToList())
-                .ToList();
+                .ToDictionary(g => g.Key, g => g.Select(pe => pe.AccountName).ToList());
+
+            // Each boss must have at least one player in this role group
+            if (playersInRoleGroup.Count != bossKills.Count)
+            {
+                // Some bosses don't have this role (missing role data)
+                isMusicalChairs = false;
+                break;
+            }
 
             // No player should appear more than once across all bosses in this role group
-            var allPlayersInGroup = playersInRoleGroup.SelectMany(p => p).ToList();
+            var allPlayersInGroup = playersInRoleGroup.Values.SelectMany(p => p).ToList();
             if (allPlayersInGroup.Count != allPlayersInGroup.Distinct().Count())
             {
                 // Someone repeated this role group across bosses
