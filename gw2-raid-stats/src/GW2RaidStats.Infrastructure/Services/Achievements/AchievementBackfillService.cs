@@ -42,19 +42,23 @@ public class AchievementBackfillService
         var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
         var includedSet = includedAccounts.ToHashSet();
 
-        // Get all unique encounters that have at least one guild member
-        // This is much more efficient than looping through players then their encounters
-        var allEncounters = await _db.Encounters
-            .InnerJoin(_db.PlayerEncounters, (e, pe) => e.Id == pe.EncounterId, (e, pe) => new { e, pe })
-            .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.e, x.pe, p })
+        // Get all unique encounter IDs that have at least one guild member
+        var encounterIdsWithGuildMembers = await _db.PlayerEncounters
+            .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
             .Where(x => includedSet.Contains(x.p.AccountName))
-            .Select(x => new { x.e.Id, x.e.BossName, x.e.EncounterTime })
+            .Select(x => x.pe.EncounterId)
             .Distinct()
-            .OrderBy(x => x.EncounterTime)
+            .ToListAsync(ct);
+
+        // Now get the encounter details - this guarantees unique encounters
+        var encounters = await _db.Encounters
+            .Where(e => encounterIdsWithGuildMembers.Contains(e.Id))
+            .OrderBy(e => e.EncounterTime)
+            .Select(e => new { e.Id, e.BossName, e.EncounterTime })
             .ToListAsync(ct);
 
         // Filter out ignored encounters in memory (can't translate to SQL)
-        var encounters = allEncounters
+        encounters = encounters
             .Where(x => !WingMapping.IsIgnoredEncounter(x.BossName))
             .ToList();
 

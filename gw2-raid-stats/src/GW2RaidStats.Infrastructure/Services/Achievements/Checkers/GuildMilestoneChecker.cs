@@ -249,6 +249,10 @@ public class GuildMilestoneChecker : IAchievementChecker
         // Check if all wing bosses were killed
         if (allWingBosses.All(b => bossesKilled.Contains(b)))
         {
+            // Only award if the current encounter is one of the kills being used
+            var normalizedCurrentTrigger = AchievementDefinitions.NormalizeTriggerId(encounter.TriggerId);
+            if (!allWingBosses.Contains(normalizedCurrentTrigger)) return null;
+
             // Find the time when the last boss was killed to complete the clear
             var lastBossTime = sessionKills.Max(k => k.EncounterTime);
             return new AchievementUnlock(
@@ -288,26 +292,47 @@ public class GuildMilestoneChecker : IAchievementChecker
         var sessionStart = encounter.EncounterTime.AddHours(-8);
         var sessionEnd = encounter.EncounterTime;
 
-        // Get all successful kills for this wing's bosses in the session
+        // Build set of valid trigger IDs for this wing (both NM and CM versions)
+        // Most CMs use same trigger ID as NM, but some (like Decima CM=26867) have different IDs
         var wingBossSet = wingBosses.Select(AchievementDefinitions.NormalizeTriggerId).ToHashSet();
 
+        // Add Wing 8 CM trigger IDs if checking Wing 8
+        if (wing == 8)
+        {
+            foreach (var cmTriggerId in AchievementDefinitions.Wing8CMBosses)
+            {
+                wingBossSet.Add(cmTriggerId);
+            }
+        }
+
+        // Get all successful kills in the session window, filtering by trigger ID directly
+        // This ensures we get both NM and CM kills regardless of Wing field
         var sessionEncounters = await _db.Encounters
             .Where(e => e.Success)
             .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime <= sessionEnd)
-            .Where(e => e.Wing == wing)
+            .Where(e => wingBossSet.Contains(e.TriggerId))
             .Select(e => new { e.Id, e.TriggerId, e.BossName, e.EncounterTime })
             .ToListAsync(ct);
 
-        // Normalize and filter to wing bosses, take most recent kill per boss
+        // Normalize trigger IDs and take most recent kill per boss
+        // Map CM trigger IDs back to their NM equivalents for grouping
         var bossKills = sessionEncounters
-            .Select(e => new { e.Id, TriggerId = AchievementDefinitions.NormalizeTriggerId(e.TriggerId), e.BossName, e.EncounterTime })
-            .Where(e => wingBossSet.Contains(e.TriggerId))
+            .Select(e => new {
+                e.Id,
+                TriggerId = NormalizeTriggerIdForWing(e.TriggerId, wing),
+                e.BossName,
+                e.EncounterTime
+            })
             .GroupBy(e => e.TriggerId)
             .Select(g => g.OrderByDescending(e => e.EncounterTime).First())
             .ToList();
 
         // Need all bosses in the wing killed
         if (bossKills.Count != wingBosses.Length) return unlocks;
+
+        // Only award if the current encounter is one of the boss kills being used
+        // This prevents re-awarding when a later encounter looks back and finds old kills
+        if (!bossKills.Any(k => k.Id == encounter.Id)) return unlocks;
 
         // Get player roles for each encounter
         var encounterIds = bossKills.Select(k => k.Id).ToList();
@@ -370,5 +395,24 @@ public class GuildMilestoneChecker : IAchievementChecker
         }
 
         return unlocks;
+    }
+
+    /// <summary>
+    /// Normalize trigger ID for wing grouping - maps CM trigger IDs to their NM equivalents
+    /// so that KC CM and KC NM are grouped as the same boss.
+    /// </summary>
+    private static int NormalizeTriggerIdForWing(int triggerId, int wing)
+    {
+        // First apply standard normalization (e.g., Matthias)
+        triggerId = AchievementDefinitions.NormalizeTriggerId(triggerId);
+
+        // Wing 8: Map Decima CM (26867) to Decima NM (26774)
+        if (wing == 8 && triggerId == 26867)
+        {
+            return 26774;
+        }
+
+        // Other CMs use the same trigger ID as NM (with IsCM flag), so no mapping needed
+        return triggerId;
     }
 }
