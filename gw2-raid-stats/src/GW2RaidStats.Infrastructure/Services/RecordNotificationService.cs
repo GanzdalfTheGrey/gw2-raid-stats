@@ -151,36 +151,34 @@ public class RecordNotificationService
             }
         }
 
-        // Check for top 5 placements (only if they didn't break the record)
-        foreach (var current in playerEncounters)
+        // Build combined leaderboard: previous top 5 + current encounter players
+        // This ensures we calculate correct ranks when multiple players from same encounter enter top 5
+        var combinedLeaderboard = previousTop5
+            .Select(x => new { x.p.AccountName, x.pe.Profession, x.pe.Dps, IsNew = false })
+            .Concat(playerEncounters.Select(x => new { x.p.AccountName, x.pe.Profession, x.pe.Dps, IsNew = true }))
+            .OrderByDescending(x => x.Dps)
+            .Select((x, index) => new { x.AccountName, x.Profession, x.Dps, x.IsNew, Rank = index + 1 })
+            .ToList();
+
+        // Notify for new entries in positions 2-5 (position 1 is handled as record breaker above)
+        foreach (var entry in combinedLeaderboard.Where(x => x.IsNew && x.Rank >= 2 && x.Rank <= 5))
         {
             // Skip if they already broke the record
-            if (recordBreakers.Contains(current.p.AccountName))
+            if (recordBreakers.Contains(entry.AccountName))
                 continue;
 
-            // Check if they would place in top 5
-            if (current.pe.Dps > previousTop5Threshold)
-            {
-                // Calculate their rank (how many in previous top 5 they beat + 1)
-                var rank = previousTop5.Count(x => current.pe.Dps > x.pe.Dps) + 1;
+            var payload = new Top5Payload(
+                "DPS",
+                encounter.BossName,
+                encounter.IsCM,
+                entry.AccountName,
+                entry.Profession,
+                entry.Dps,
+                entry.Rank,
+                encounter.LogUrl
+            );
 
-                // Only notify for positions 2-5 (1 is a record breaker)
-                if (rank >= 2 && rank <= 5)
-                {
-                    var payload = new Top5Payload(
-                        "DPS",
-                        encounter.BossName,
-                        encounter.IsCM,
-                        current.p.AccountName,
-                        current.pe.Profession,
-                        current.pe.Dps,
-                        rank,
-                        encounter.LogUrl
-                    );
-
-                    await QueueNotificationAsync("top_5", payload, ct);
-                }
-            }
+            await QueueNotificationAsync("top_5", payload, ct);
         }
     }
 

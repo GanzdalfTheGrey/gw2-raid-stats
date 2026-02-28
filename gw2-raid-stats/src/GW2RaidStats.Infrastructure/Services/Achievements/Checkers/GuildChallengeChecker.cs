@@ -52,38 +52,8 @@ public class GuildChallengeChecker : IAchievementChecker
             }
         }
 
-        // Heavy Metal - only heavy armor
-        if (EncounterStatsCalculator.AllHeavyArmor(players))
-        {
-            unlocks.Add(new AchievementUnlock(
-                "heavy_metal",
-                null,
-                new { encounter_id = encounter.Id, boss = encounter.BossName },
-                encounter.EncounterTime
-            ));
-        }
-
-        // Cloth Squad - only light armor
-        if (EncounterStatsCalculator.AllLightArmor(players))
-        {
-            unlocks.Add(new AchievementUnlock(
-                "cloth_squad",
-                null,
-                new { encounter_id = encounter.Id, boss = encounter.BossName },
-                encounter.EncounterTime
-            ));
-        }
-
-        // Leather Lovers - only medium armor
-        if (EncounterStatsCalculator.AllMediumArmor(players))
-        {
-            unlocks.Add(new AchievementUnlock(
-                "leather_lovers",
-                null,
-                new { encounter_id = encounter.Id, boss = encounter.BossName },
-                encounter.EncounterTime
-            ));
-        }
+        // Heavy Metal, Cloth Squad, Leather Lovers are now wing-based achievements
+        // handled in GuildMilestoneChecker
 
         // No Duplicates - 10 different elite specs
         if (EncounterStatsCalculator.HasNoDuplicateEliteSpecs(players))

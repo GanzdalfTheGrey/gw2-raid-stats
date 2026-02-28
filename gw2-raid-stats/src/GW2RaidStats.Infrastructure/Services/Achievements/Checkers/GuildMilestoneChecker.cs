@@ -11,6 +11,7 @@ namespace GW2RaidStats.Infrastructure.Services.Achievements.Checkers;
 /// - The Comeback (kill after 5+ wipes in same session)
 /// - Synchronized (3+ players set personal best in same encounter)
 /// - Full Clear (clear all 8 wings in a single session)
+/// - Heavy Metal / Cloth Squad / Leather Lovers (wing with armor class)
 /// </summary>
 public class GuildMilestoneChecker : IAchievementChecker
 {
@@ -19,6 +20,22 @@ public class GuildMilestoneChecker : IAchievementChecker
 
     // Threshold for boon support
     private const decimal BoonSupportThreshold = 10m;
+
+    // Armor class definitions
+    private static readonly Dictionary<string, string[]> ArmorClasses = new()
+    {
+        { "heavy", new[] { "Guardian", "Warrior", "Revenant" } },
+        { "medium", new[] { "Engineer", "Ranger", "Thief" } },
+        { "light", new[] { "Elementalist", "Mesmer", "Necromancer" } }
+    };
+
+    // Achievement codes by armor class
+    private static readonly Dictionary<string, string> ArmorAchievementCodes = new()
+    {
+        { "heavy", "heavy_metal" },
+        { "medium", "leather_lovers" },
+        { "light", "cloth_squad" }
+    };
 
     public GuildMilestoneChecker(
         RaidStatsDb db,
@@ -59,6 +76,10 @@ public class GuildMilestoneChecker : IAchievementChecker
         // Musical Chairs - different boon providers each boss in a wing
         var musicalChairsUnlocks = await CheckMusicalChairsAsync(encounter, ct);
         unlocks.AddRange(musicalChairsUnlocks);
+
+        // Armor class wing achievements (Heavy Metal, Cloth Squad, Leather Lovers)
+        var armorClassUnlock = await CheckArmorClassWingAchievementsAsync(encounter, ct);
+        if (armorClassUnlock != null) unlocks.Add(armorClassUnlock);
 
         return unlocks;
     }
@@ -404,6 +425,138 @@ public class GuildMilestoneChecker : IAchievementChecker
         }
 
         return unlocks;
+    }
+
+    /// <summary>
+    /// Armor class wing achievements - Complete an entire wing with only one armor class,
+    /// featuring at least one of each base profession in that class.
+    /// - Heavy Metal: Guardian, Warrior, Revenant
+    /// - Cloth Squad: Elementalist, Mesmer, Necromancer
+    /// - Leather Lovers: Engineer, Ranger, Thief
+    /// </summary>
+    private async Task<AchievementUnlock?> CheckArmorClassWingAchievementsAsync(
+        Database.Entities.EncounterEntity encounter,
+        CancellationToken ct)
+    {
+        // Only check for raid encounters (wings 1-8)
+        if (!encounter.Wing.HasValue || encounter.Wing < 1 || encounter.Wing > 8) return null;
+
+        var wing = encounter.Wing.Value;
+        var wingBosses = AchievementDefinitions.WingMasterBosses.GetValueOrDefault(wing);
+        if (wingBosses == null) return null;
+
+        // Look for kills within 8 hours (same session window as full clear)
+        var sessionStart = encounter.EncounterTime.AddHours(-8);
+        var sessionEnd = encounter.EncounterTime;
+
+        // Build set of valid trigger IDs for this wing (both NM and CM versions)
+        var wingBossSet = wingBosses.Select(AchievementDefinitions.NormalizeTriggerId).ToHashSet();
+
+        // Add Wing 8 CM trigger IDs if checking Wing 8
+        if (wing == 8)
+        {
+            foreach (var cmTriggerId in AchievementDefinitions.Wing8CMBosses)
+            {
+                wingBossSet.Add(cmTriggerId);
+            }
+        }
+
+        // Get all successful kills in the session window, filtering by trigger ID
+        var sessionEncounters = await _db.Encounters
+            .Where(e => e.Success)
+            .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime <= sessionEnd)
+            .Where(e => wingBossSet.Contains(e.TriggerId))
+            .Select(e => new { e.Id, e.TriggerId, e.BossName, e.EncounterTime })
+            .ToListAsync(ct);
+
+        // Normalize trigger IDs and take most recent kill per boss
+        var bossKills = sessionEncounters
+            .Select(e => new {
+                e.Id,
+                TriggerId = NormalizeTriggerIdForWing(e.TriggerId, wing),
+                e.BossName,
+                e.EncounterTime
+            })
+            .GroupBy(e => e.TriggerId)
+            .Select(g => g.OrderByDescending(e => e.EncounterTime).First())
+            .ToList();
+
+        // Need all bosses in the wing killed
+        if (bossKills.Count != wingBosses.Length) return null;
+
+        // Only award if the current encounter is one of the boss kills being used
+        if (!bossKills.Any(k => k.Id == encounter.Id)) return null;
+
+        // Get all players and their base professions for each encounter
+        var encounterIds = bossKills.Select(k => k.Id).ToList();
+        var playerEncounters = await _db.PlayerEncounters
+            .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
+            .Where(x => encounterIds.Contains(x.pe.EncounterId))
+            .Select(x => new
+            {
+                x.pe.EncounterId,
+                x.p.AccountName,
+                x.pe.Profession // This is the elite spec, we need to map to base profession
+            })
+            .ToListAsync(ct);
+
+        // Map all professions to their base professions
+        var playerBaseProfessions = playerEncounters
+            .Select(pe => new
+            {
+                pe.EncounterId,
+                pe.AccountName,
+                BaseProfession = AchievementDefinitions.GetBaseProfession(pe.Profession)
+            })
+            .ToList();
+
+        // Get all unique base professions across all encounters
+        var allBaseProfessions = playerBaseProfessions
+            .Select(p => p.BaseProfession)
+            .Distinct()
+            .ToList();
+
+        // Check each armor class
+        foreach (var (armorClass, professions) in ArmorClasses)
+        {
+            var professionSet = professions.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            // All players must be in this armor class
+            var allPlayersInClass = allBaseProfessions.All(bp =>
+                bp != null && professionSet.Contains(bp));
+
+            if (!allPlayersInClass) continue;
+
+            // Must have at least one of each profession in the armor class (across all encounters)
+            var professionsPresent = allBaseProfessions
+                .Where(bp => bp != null)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var hasAllProfessions = professions.All(p => professionsPresent.Contains(p));
+
+            if (hasAllProfessions)
+            {
+                var achievementCode = ArmorAchievementCodes[armorClass];
+                var lastBossTime = bossKills.Max(k => k.EncounterTime);
+
+                return new AchievementUnlock(
+                    achievementCode,
+                    null, // Guild achievement
+                    new
+                    {
+                        wing,
+                        armor_class = armorClass,
+                        professions_used = professionsPresent.ToList(),
+                        bosses = bossKills.Select(b => b.BossName).ToList(),
+                        session_date = lastBossTime.Date
+                    },
+                    lastBossTime
+                );
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
