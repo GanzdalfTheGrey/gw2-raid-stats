@@ -83,9 +83,9 @@ public static class AchievementDefinitions
         // Class/Composition Challenges (7)
         new("one_trick_guild", "One Trick Guild", "Complete a boss with all 10 players on the same profession", GuildAchievementCategory.Composition),
         new("class_wing_clear", "Class Wing Clear", "Complete an entire wing with all players on the same profession", GuildAchievementCategory.Composition),
-        new("heavy_metal", "Heavy Metal", "Complete an entire wing with only heavy armor classes, featuring at least one Guardian, Warrior, and Revenant", GuildAchievementCategory.Composition),
-        new("cloth_squad", "Cloth Squad", "Complete an entire wing with only light armor classes, featuring at least one Elementalist, Mesmer, and Necromancer", GuildAchievementCategory.Composition),
-        new("leather_lovers", "Leather Lovers", "Complete an entire wing with only medium armor classes, featuring at least one Engineer, Ranger, and Thief", GuildAchievementCategory.Composition),
+        new("heavy_metal", "Heavy Metal", "Complete an entire wing with only heavy armor professions, with at least one Guardian, one Warrior, and one Revenant (any elite spec)", GuildAchievementCategory.Composition),
+        new("cloth_squad", "Cloth Squad", "Complete an entire wing with only light armor professions, with at least one Elementalist, one Mesmer, and one Necromancer (any elite spec)", GuildAchievementCategory.Composition),
+        new("leather_lovers", "Leather Lovers", "Complete an entire wing with only medium armor professions, with at least one Engineer, one Ranger, and one Thief (any elite spec)", GuildAchievementCategory.Composition),
         new("no_duplicates", "No Duplicates", "Complete a boss with 10 different elite specs (no repeats)", GuildAchievementCategory.Composition),
         new("rainbow_squad", "Rainbow Squad", "Complete a boss with at least one of each profession (9 classes)", GuildAchievementCategory.Composition),
 
