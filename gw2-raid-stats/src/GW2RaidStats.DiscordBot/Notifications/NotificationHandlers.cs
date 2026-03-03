@@ -338,16 +338,16 @@ public class AchievementNotificationHandler : INotificationHandler
         var embed = new EmbedBuilder()
             .WithCurrentTimestamp();
 
-        if (achievement.IsGuildAchievement)
+        if (achievement.IsGuild)
         {
             embed.WithTitle("🏆 Guild Achievement Unlocked!")
-                .WithDescription($"**{achievement.AchievementName}**")
+                .WithDescription($"**{achievement.Name}**")
                 .WithColor(Color.Purple);
         }
         else
         {
             embed.WithTitle("🎖️ Achievement Unlocked!")
-                .WithDescription($"**{achievement.PlayerName}** earned **{achievement.AchievementName}**")
+                .WithDescription($"**{achievement.PlayerName}** earned **{achievement.Name}**")
                 .WithColor(Color.Gold);
         }
 
@@ -359,8 +359,8 @@ public class AchievementNotificationHandler : INotificationHandler
 
 public record AchievementPayload(
     string? PlayerName,
-    string AchievementCode,
-    string AchievementName,
+    string Code,
+    string Name,
     string Description,
-    bool IsGuildAchievement
+    bool IsGuild
 );
