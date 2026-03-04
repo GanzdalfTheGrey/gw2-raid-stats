@@ -5,7 +5,22 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.11.1] - 2026-02-27
+## [1.11.2] - 2026-03-03
+
+### Added
+- Logs page now has Raids/Strikes toggle to filter by content type
+- Strike boss list for filtering strike encounters
+- 4 new guild achievements:
+  - **Metal Bikini Brigade**: Complete Heavy Metal on all 8 wings
+  - **Glass Cannons United**: Complete Cloth Squad on all 8 wings
+  - **Cowhide Crusaders**: Complete Leather Lovers on all 8 wings
+  - **Triple Threat**: Complete Heavy Metal, Cloth Squad, and Leather Lovers on the same wing
+
+### Fixed
+- First kill DPS record now only awards to top DPS player (not everyone in the squad)
+- Achievement Discord notifications now display the achievement name correctly
+
+## [1.11.1] - 2026-03-02
 
 ### Changed
 - Heavy Metal, Cloth Squad, and Leather Lovers achievements are now wing-based instead of single-boss:

@@ -79,7 +79,14 @@ public class GuildMilestoneChecker : IAchievementChecker
 
         // Armor class wing achievements (Heavy Metal, Cloth Squad, Leather Lovers)
         var armorClassUnlock = await CheckArmorClassWingAchievementsAsync(encounter, ct);
-        if (armorClassUnlock != null) unlocks.Add(armorClassUnlock);
+        if (armorClassUnlock != null)
+        {
+            unlocks.Add(armorClassUnlock);
+
+            // Check for meta-achievements (master achievements and triple threat)
+            var metaUnlocks = await CheckArmorClassMetaAchievementsAsync(encounter, armorClassUnlock, ct);
+            unlocks.AddRange(metaUnlocks);
+        }
 
         return unlocks;
     }
@@ -557,6 +564,119 @@ public class GuildMilestoneChecker : IAchievementChecker
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Check for armor class meta-achievements:
+    /// - Master achievements (complete an armor class on all 8 wings)
+    /// - Triple Threat (complete all 3 armor classes on the same wing)
+    /// </summary>
+    private async Task<List<AchievementUnlock>> CheckArmorClassMetaAchievementsAsync(
+        Database.Entities.EncounterEntity encounter,
+        AchievementUnlock armorClassUnlock,
+        CancellationToken ct)
+    {
+        var unlocks = new List<AchievementUnlock>();
+
+        if (!encounter.Wing.HasValue) return unlocks;
+        var wing = encounter.Wing.Value;
+
+        // Map achievement codes to their master versions
+        var masterAchievements = new Dictionary<string, string>
+        {
+            { "heavy_metal", "heavy_metal_master" },
+            { "cloth_squad", "cloth_squad_master" },
+            { "leather_lovers", "leather_lovers_master" }
+        };
+
+        var armorAchievementCodes = new[] { "heavy_metal", "cloth_squad", "leather_lovers" };
+
+        // Get all existing armor class achievements from database
+        var existingAchievements = await _db.GuildAchievements
+            .Where(ga => armorAchievementCodes.Contains(ga.AchievementCode))
+            .Select(ga => new { ga.AchievementCode, ga.Context })
+            .ToListAsync(ct);
+
+        // Parse wing numbers from metadata for each achievement type
+        var wingsByAchievement = new Dictionary<string, HashSet<int>>();
+        foreach (var code in armorAchievementCodes)
+        {
+            wingsByAchievement[code] = new HashSet<int>();
+        }
+
+        foreach (var achievement in existingAchievements)
+        {
+            if (string.IsNullOrEmpty(achievement.Context)) continue;
+
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(achievement.Context);
+                if (doc.RootElement.TryGetProperty("wing", out var wingProp) && wingProp.TryGetInt32(out var achievementWing))
+                {
+                    wingsByAchievement[achievement.AchievementCode].Add(achievementWing);
+                }
+            }
+            catch
+            {
+                // Ignore parse errors
+            }
+        }
+
+        // Add the current unlock's wing
+        wingsByAchievement[armorClassUnlock.Code].Add(wing);
+
+        // Check for master achievement (all 8 wings completed for this armor class)
+        if (masterAchievements.TryGetValue(armorClassUnlock.Code, out var masterCode))
+        {
+            var wingsCompleted = wingsByAchievement[armorClassUnlock.Code];
+            if (wingsCompleted.Count == 8)
+            {
+                // Check if master achievement already exists
+                var masterExists = await _db.GuildAchievements
+                    .AnyAsync(ga => ga.AchievementCode == masterCode, ct);
+
+                if (!masterExists)
+                {
+                    unlocks.Add(new AchievementUnlock(
+                        masterCode,
+                        null,
+                        new
+                        {
+                            armor_class = armorClassUnlock.Code,
+                            wings_completed = wingsCompleted.OrderBy(w => w).ToList()
+                        },
+                        encounter.EncounterTime
+                    ));
+                }
+            }
+        }
+
+        // Check for Triple Threat (all 3 armor classes on the same wing)
+        var allThreeOnWing = armorAchievementCodes.All(code => wingsByAchievement[code].Contains(wing));
+        if (allThreeOnWing)
+        {
+            // Check if Triple Threat for this wing already exists
+            var tripleExists = await _db.GuildAchievements
+                .Where(ga => ga.AchievementCode == "triple_threat")
+                .Where(ga => ga.Context != null && ga.Context.Contains($"\"wing\":{wing}"))
+                .AnyAsync(ct);
+
+            if (!tripleExists)
+            {
+                unlocks.Add(new AchievementUnlock(
+                    "triple_threat",
+                    null,
+                    new
+                    {
+                        wing,
+                        achievements = armorAchievementCodes.ToList()
+                    },
+                    encounter.EncounterTime
+                ));
+            }
+        }
+
+        return unlocks;
     }
 
     /// <summary>

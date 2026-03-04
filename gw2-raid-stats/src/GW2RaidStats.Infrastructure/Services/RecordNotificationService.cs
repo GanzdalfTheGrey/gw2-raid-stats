@@ -129,10 +129,16 @@ public class RecordNotificationService
         // Track who broke the record (so we don't double-notify for top 5)
         var recordBreakers = new HashSet<string>();
 
-        // Notify for ALL players who beat the previous record (highest DPS first)
+        // On first clear (no previous records), only the top DPS gets the record
+        // On subsequent clears, notify anyone who beats the previous best
         foreach (var current in playerEncounters)
         {
-            if (previousTop5.Count == 0 || current.pe.Dps > previousBestDps)
+            var isFirstClear = previousTop5.Count == 0;
+            var beatsRecord = current.pe.Dps > previousBestDps;
+            var isTopDps = current == playerEncounters.First();
+
+            // First clear: only top DPS gets record. Otherwise: anyone who beats previous best
+            if ((isFirstClear && isTopDps) || (!isFirstClear && beatsRecord))
             {
                 recordBreakers.Add(current.p.AccountName);
 
@@ -211,10 +217,15 @@ public class RecordNotificationService
             .OrderByDescending(x => x.pe.Dps)
             .ToListAsync(ct);
 
-        // Notify for ALL boon players who beat the previous record (highest DPS first)
+        // On first clear (no previous records), only the top boon DPS gets the record
+        // On subsequent clears, notify anyone who beats the previous best
         foreach (var current in boonPlayers)
         {
-            if (previousBest == null || current.pe.Dps > previousBestDps)
+            var isFirstClear = previousBest == null;
+            var beatsRecord = current.pe.Dps > previousBestDps;
+            var isTopBoonDps = current == boonPlayers.First();
+
+            if ((isFirstClear && isTopBoonDps) || (!isFirstClear && beatsRecord))
             {
                 var payload = new RecordPayload(
                     "Boon DPS",

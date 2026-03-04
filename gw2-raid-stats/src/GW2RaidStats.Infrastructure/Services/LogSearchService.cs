@@ -39,6 +39,15 @@ public class LogSearchService
             query = query.Where(e => e.Wing == request.Wing.Value);
         }
 
+        // Filter by content type: strikes (Wing is null) vs raids (Wing is not null)
+        if (request.IsStrike.HasValue)
+        {
+            if (request.IsStrike.Value)
+                query = query.Where(e => e.Wing == null);
+            else
+                query = query.Where(e => e.Wing != null);
+        }
+
         if (request.IsCM.HasValue)
         {
             query = query.Where(e => e.IsCM == request.IsCM.Value);
@@ -321,6 +330,7 @@ public record LogSearchRequest(
     string? BossName = null,
     int? TriggerId = null,
     int? Wing = null,
+    bool? IsStrike = null,  // true = strikes only (Wing is null), false = raids only (Wing is not null)
     bool? IsCM = null,
     bool? Success = null,
     DateTimeOffset? FromDate = null,

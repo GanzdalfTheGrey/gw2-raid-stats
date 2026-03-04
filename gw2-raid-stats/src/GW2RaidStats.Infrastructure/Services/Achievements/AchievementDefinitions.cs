@@ -86,6 +86,10 @@ public static class AchievementDefinitions
         new("heavy_metal", "Heavy Metal", "Complete an entire wing with only heavy armor professions, with at least one Guardian, one Warrior, and one Revenant (any elite spec)", GuildAchievementCategory.Composition),
         new("cloth_squad", "Cloth Squad", "Complete an entire wing with only light armor professions, with at least one Elementalist, one Mesmer, and one Necromancer (any elite spec)", GuildAchievementCategory.Composition),
         new("leather_lovers", "Leather Lovers", "Complete an entire wing with only medium armor professions, with at least one Engineer, one Ranger, and one Thief (any elite spec)", GuildAchievementCategory.Composition),
+        new("heavy_metal_master", "Metal Bikini Brigade", "Complete Heavy Metal on all 8 wings", GuildAchievementCategory.Composition),
+        new("cloth_squad_master", "Glass Cannons United", "Complete Cloth Squad on all 8 wings", GuildAchievementCategory.Composition),
+        new("leather_lovers_master", "Cowhide Crusaders", "Complete Leather Lovers on all 8 wings", GuildAchievementCategory.Composition),
+        new("triple_threat", "Triple Threat", "Complete Heavy Metal, Cloth Squad, and Leather Lovers on the same wing", GuildAchievementCategory.Composition),
         new("no_duplicates", "No Duplicates", "Complete a boss with 10 different elite specs (no repeats)", GuildAchievementCategory.Composition),
         new("rainbow_squad", "Rainbow Squad", "Complete a boss with at least one of each profession (9 classes)", GuildAchievementCategory.Composition),
 
