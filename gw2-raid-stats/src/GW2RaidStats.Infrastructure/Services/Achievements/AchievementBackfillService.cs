@@ -583,8 +583,12 @@ public class AchievementBackfillService
             if (bosses != null) hotWingBosses.AddRange(bosses);
         }
 
+        // Also include alternate Matthias trigger ID for querying
+        var hotWingBossesWithAlts = hotWingBosses.ToList();
+        hotWingBossesWithAlts.Add(16115); // Matthias alternate trigger ID
+
         var hotEncounters = await _db.Encounters
-            .Where(e => e.Success && hotWingBosses.Contains(e.TriggerId))
+            .Where(e => e.Success && hotWingBossesWithAlts.Contains(e.TriggerId))
             .OrderBy(e => e.EncounterTime)
             .ToListAsync(ct);
 
@@ -592,7 +596,11 @@ public class AchievementBackfillService
 
         foreach (var dateGroup in hotByDate)
         {
-            var bossesCleared = dateGroup.Select(e => e.TriggerId).Distinct().ToList();
+            // Normalize trigger IDs when checking bosses cleared (handles Matthias alternate ID)
+            var bossesCleared = dateGroup
+                .Select(e => AchievementDefinitions.NormalizeTriggerId(e.TriggerId))
+                .Distinct()
+                .ToList();
             if (!hotWingBosses.All(b => bossesCleared.Contains(b))) continue;
 
             // Get one encounter per boss
@@ -649,7 +657,11 @@ public class AchievementBackfillService
 
         foreach (var dateGroup in pofByDate)
         {
-            var bossesCleared = dateGroup.Select(e => e.TriggerId).Distinct().ToList();
+            // Normalize trigger IDs when checking bosses cleared
+            var bossesCleared = dateGroup
+                .Select(e => AchievementDefinitions.NormalizeTriggerId(e.TriggerId))
+                .Distinct()
+                .ToList();
             if (!pofWingBosses.All(b => bossesCleared.Contains(b))) continue;
 
             // Get one encounter per boss

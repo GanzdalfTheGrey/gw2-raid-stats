@@ -88,6 +88,10 @@ public class GuildMilestoneChecker : IAchievementChecker
             unlocks.AddRange(metaUnlocks);
         }
 
+        // Expansion-themed achievements (Thorn in My Side, Ring of Fire)
+        var expansionUnlocks = await CheckExpansionThemedAchievementsAsync(encounter, ct);
+        unlocks.AddRange(expansionUnlocks);
+
         return unlocks;
     }
 
@@ -696,5 +700,118 @@ public class GuildMilestoneChecker : IAchievementChecker
 
         // Other CMs use the same trigger ID as NM (with IsCM flag), so no mapping needed
         return triggerId;
+    }
+
+    /// <summary>
+    /// Expansion-themed achievements:
+    /// - Thorn in My Side: Complete Wings 1-4 on only Heart of Thorns specs
+    /// - Ring of Fire: Complete Wings 5-7 on only Path of Fire specs
+    /// </summary>
+    private async Task<List<AchievementUnlock>> CheckExpansionThemedAchievementsAsync(
+        Database.Entities.EncounterEntity encounter,
+        CancellationToken ct)
+    {
+        var unlocks = new List<AchievementUnlock>();
+
+        // Only check for raid encounters
+        if (!encounter.Wing.HasValue || encounter.Wing < 1 || encounter.Wing > 7) return unlocks;
+
+        // Check Thorn in My Side (Wings 1-4, HoT specs only)
+        if (encounter.Wing >= 1 && encounter.Wing <= 4)
+        {
+            var thornUnlock = await CheckExpansionAchievementAsync(
+                encounter, 1, 4, "thorn_in_my_side", "Wings 1-4 HoT Only",
+                AchievementDefinitions.IsHotSpec, ct);
+            if (thornUnlock != null) unlocks.Add(thornUnlock);
+        }
+
+        // Check Ring of Fire (Wings 5-7, PoF specs only)
+        if (encounter.Wing >= 5 && encounter.Wing <= 7)
+        {
+            var ringUnlock = await CheckExpansionAchievementAsync(
+                encounter, 5, 7, "ring_of_fire", "Wings 5-7 PoF Only",
+                AchievementDefinitions.IsPofSpec, ct);
+            if (ringUnlock != null) unlocks.Add(ringUnlock);
+        }
+
+        return unlocks;
+    }
+
+    private async Task<AchievementUnlock?> CheckExpansionAchievementAsync(
+        Database.Entities.EncounterEntity encounter,
+        int startWing,
+        int endWing,
+        string achievementCode,
+        string contextBoss,
+        Func<string, bool> specCheck,
+        CancellationToken ct)
+    {
+        // Build list of required boss trigger IDs for these wings
+        var requiredBosses = new List<int>();
+        for (int w = startWing; w <= endWing; w++)
+        {
+            var bosses = AchievementDefinitions.WingMasterBosses.GetValueOrDefault(w);
+            if (bosses != null) requiredBosses.AddRange(bosses);
+        }
+
+        // Also include alternate trigger IDs for querying (e.g., Matthias alternate)
+        var queryTriggerIds = requiredBosses.ToHashSet();
+        queryTriggerIds.Add(16115); // Matthias alternate trigger ID
+
+        // Look for kills within 8 hours (same session window as other achievements)
+        var sessionStart = encounter.EncounterTime.AddHours(-8);
+        var sessionEnd = encounter.EncounterTime;
+
+        // Get all successful kills in the session window for these wings
+        var sessionEncounters = await _db.Encounters
+            .Where(e => e.Success)
+            .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime <= sessionEnd)
+            .Where(e => queryTriggerIds.Contains(e.TriggerId))
+            .Select(e => new { e.Id, e.TriggerId, e.BossName, e.EncounterTime })
+            .ToListAsync(ct);
+
+        // Normalize trigger IDs and take most recent kill per boss
+        var bossKills = sessionEncounters
+            .Select(e => new {
+                e.Id,
+                TriggerId = AchievementDefinitions.NormalizeTriggerId(e.TriggerId),
+                e.BossName,
+                e.EncounterTime
+            })
+            .GroupBy(e => e.TriggerId)
+            .Select(g => g.OrderByDescending(e => e.EncounterTime).First())
+            .ToList();
+
+        // Check if all required bosses were killed
+        var bossesCleared = bossKills.Select(k => k.TriggerId).ToHashSet();
+        if (!requiredBosses.All(b => bossesCleared.Contains(b))) return null;
+
+        // Only award if the current encounter is one of the boss kills being used
+        if (!bossKills.Any(k => k.Id == encounter.Id)) return null;
+
+        // Get all players and their professions for each encounter
+        var encounterIds = bossKills.Select(k => k.Id).ToList();
+        var playerEncounters = await _db.PlayerEncounters
+            .Where(pe => encounterIds.Contains(pe.EncounterId))
+            .Select(pe => new { pe.EncounterId, pe.Profession })
+            .ToListAsync(ct);
+
+        // Check if ALL players across ALL encounters used the correct expansion specs
+        var allSpecsValid = playerEncounters.All(pe => specCheck(pe.Profession));
+        if (!allSpecsValid) return null;
+
+        var lastBossTime = bossKills.Max(k => k.EncounterTime);
+
+        return new AchievementUnlock(
+            achievementCode,
+            null, // Guild achievement
+            new
+            {
+                boss = contextBoss,
+                bosses = bossKills.Select(b => b.BossName).ToList(),
+                session_date = lastBossTime.Date
+            },
+            lastBossTime
+        );
     }
 }

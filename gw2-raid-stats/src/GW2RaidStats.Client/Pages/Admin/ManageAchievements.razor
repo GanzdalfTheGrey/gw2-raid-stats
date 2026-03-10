@@ -114,6 +114,121 @@
         </MudGrid>
     }
 </MudPaper>
+
+<MudPaper Class="pa-4 mt-4" Elevation="2">
+    <MudText Typo="Typo.h6" Class="mb-3">Manual Guild Achievement Award</MudText>
+    <MudText Class="mb-3">
+        Manually award guild achievements. This will send a Discord notification.
+    </MudText>
+
+    @if (_loadingGuildAchievements)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+    }
+    else
+    {
+        <MudStack Row="true" Spacing="2" Class="mb-4" AlignItems="AlignItems.End">
+            <MudSelect T="string" Label="Guild Achievement" @bind-Value="_selectedAchievement"
+                       Variant="Variant.Outlined" Style="min-width: 400px;">
+                @foreach (var group in _guildAchievements.GroupBy(a => a.Category))
+                {
+                    <MudSelectItem Disabled="true" T="string" Value="@($"_header_{group.Key}")">
+                        <MudText Typo="Typo.subtitle2" Color="Color.Primary">@group.Key</MudText>
+                    </MudSelectItem>
+                    @foreach (var achievement in group)
+                    {
+                        <MudSelectItem Value="@achievement.Code">
+                            @if (achievement.IsAwarded)
+                            {
+                                <MudText Color="Color.Success">@achievement.Name (x@achievement.CompletionCount)</MudText>
+                            }
+                            else
+                            {
+                                <span>@achievement.Name</span>
+                            }
+                        </MudSelectItem>
+                    }
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="_awardReason" Label="Reason (optional)"
+                          Variant="Variant.Outlined" Style="min-width: 300px;" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="AwardSelectedAchievement"
+                       Disabled="@(string.IsNullOrEmpty(_selectedAchievement) || _awarding)">
+                @if (_awarding)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>Awarding...</span>
+                }
+                else
+                {
+                    <span>Award Achievement</span>
+                }
+            </MudButton>
+        </MudStack>
+
+        @if (!string.IsNullOrEmpty(_selectedAchievement))
+        {
+            var selected = _guildAchievements.FirstOrDefault(a => a.Code == _selectedAchievement);
+            if (selected != null)
+            {
+                <MudAlert Severity="@(selected.IsAwarded ? Severity.Info : Severity.Normal)" Class="mb-3">
+                    <strong>@selected.Name:</strong> @selected.Description
+                    @if (selected.IsAwarded && selected.AchievedAt.HasValue)
+                    {
+                        <br /><small>First awarded: @selected.AchievedAt.Value.ToString("yyyy-MM-dd") | Completions: @selected.CompletionCount</small>
+                    }
+                </MudAlert>
+            }
+        }
+
+        <MudExpansionPanels Class="mt-4">
+            <MudExpansionPanel Text="View All Guild Achievements">
+                <MudTable Items="_guildAchievements" Dense="true" Hover="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Category</MudTh>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Description</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Category">@context.Category</MudTd>
+                        <MudTd DataLabel="Name">@context.Name</MudTd>
+                        <MudTd DataLabel="Description" Style="max-width: 300px;">@context.Description</MudTd>
+                        <MudTd DataLabel="Status">
+                            @if (context.IsAwarded)
+                            {
+                                <MudChip T="string" Color="Color.Success" Size="Size.Small">
+                                    x@context.CompletionCount
+                                </MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Color="Color.Default" Size="Size.Small">Not Awarded</MudChip>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Actions">
+                            <MudIconButton Icon="@Icons.Material.Filled.Add"
+                                           Size="Size.Small"
+                                           Color="Color.Primary"
+                                           OnClick="@(() => QuickAward(context.Code))"
+                                           Disabled="@_awarding" />
+                            @if (context.IsAwarded)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Size="Size.Small"
+                                               Color="Color.Error"
+                                               OnClick="@(() => RemoveAchievement(context.Code))"
+                                               Disabled="@_awarding" />
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+    }
+</MudPaper>
 </AdminAuth>
 
 @code {
@@ -122,11 +237,19 @@
     private bool _loadingStats = true;
     private System.Threading.Timer? _pollingTimer;
 
+    // Guild achievement manual award
+    private List<GuildAchievementListItem> _guildAchievements = new();
+    private bool _loadingGuildAchievements = true;
+    private string? _selectedAchievement;
+    private string? _awardReason;
+    private bool _awarding = false;
+
     protected override async Task OnInitializedAsync()
     {
         await Task.WhenAll(
             RefreshStatus(),
-            LoadStats()
+            LoadStats(),
+            LoadGuildAchievements()
         );
     }
 
@@ -228,6 +351,89 @@
         _pollingTimer = null;
     }
 
+    private async Task LoadGuildAchievements()
+    {
+        _loadingGuildAchievements = true;
+        try
+        {
+            _guildAchievements = await Http.GetFromJsonAsync<List<GuildAchievementListItem>>("api/admin/achievements/guild") ?? new();
+        }
+        catch { }
+        finally
+        {
+            _loadingGuildAchievements = false;
+        }
+    }
+
+    private async Task AwardSelectedAchievement()
+    {
+        if (string.IsNullOrEmpty(_selectedAchievement)) return;
+        await AwardAchievement(_selectedAchievement, _awardReason);
+    }
+
+    private async Task QuickAward(string code)
+    {
+        await AwardAchievement(code, null);
+    }
+
+    private async Task AwardAchievement(string code, string? reason)
+    {
+        _awarding = true;
+        try
+        {
+            var request = new { reason = reason };
+            var response = await Http.PostAsJsonAsync($"api/admin/achievements/guild/{code}/award", request);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<AwardResponse>();
+                Snackbar.Add($"Achievement '{result?.Name}' awarded! Discord notification sent.", Severity.Success);
+                await LoadGuildAchievements();
+                await LoadStats();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Failed to award achievement: {error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _awarding = false;
+        }
+    }
+
+    private async Task RemoveAchievement(string code)
+    {
+        _awarding = true;
+        try
+        {
+            var response = await Http.DeleteAsync($"api/admin/achievements/guild/{code}");
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Achievement removed", Severity.Success);
+                await LoadGuildAchievements();
+                await LoadStats();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Failed to remove achievement: {error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _awarding = false;
+        }
+    }
+
     public void Dispose()
     {
         StopPolling();
@@ -263,4 +469,15 @@
         List<RarestAchievementDto> RarestAchievements);
 
     public record RarestAchievementDto(string Code, string Name, int EarnedCount);
+
+    public record GuildAchievementListItem(
+        string Code,
+        string Name,
+        string Description,
+        string Category,
+        bool IsAwarded,
+        int CompletionCount,
+        DateTimeOffset? AchievedAt);
+
+    public record AwardResponse(string Message, string Code, string Name, bool NotificationSent);
 }
