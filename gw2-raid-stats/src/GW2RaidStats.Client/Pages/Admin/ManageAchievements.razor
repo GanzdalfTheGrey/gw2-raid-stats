@@ -118,7 +118,7 @@
 <MudPaper Class="pa-4 mt-4" Elevation="2">
     <MudText Typo="Typo.h6" Class="mb-3">Manual Guild Achievement Award</MudText>
     <MudText Class="mb-3">
-        Manually award guild achievements. This will send a Discord notification.
+        Award guild achievements manually with a custom date. Does not send Discord notification.
     </MudText>
 
     @if (_loadingGuildAchievements)
@@ -127,52 +127,60 @@
     }
     else
     {
-        <MudStack Row="true" Spacing="2" Class="mb-4" AlignItems="AlignItems.End">
-            <MudSelect T="string" Label="Guild Achievement" @bind-Value="_selectedAchievement"
-                       Variant="Variant.Outlined" Style="min-width: 400px;">
-                @foreach (var group in _guildAchievements.GroupBy(a => a.Category))
-                {
-                    <MudSelectItem Disabled="true" T="string" Value="@($"_header_{group.Key}")">
-                        <MudText Typo="Typo.subtitle2" Color="Color.Primary">@group.Key</MudText>
-                    </MudSelectItem>
-                    @foreach (var achievement in group)
+        <MudGrid>
+            <MudItem xs="12" md="4">
+                <MudSelect T="string" Label="Guild Achievement" @bind-Value="_selectedAchievement"
+                           Variant="Variant.Outlined" FullWidth="true">
+                    @foreach (var group in _guildAchievements.GroupBy(a => a.Category))
                     {
-                        <MudSelectItem Value="@achievement.Code">
-                            @if (achievement.IsAwarded)
-                            {
-                                <MudText Color="Color.Success">@achievement.Name (x@achievement.CompletionCount)</MudText>
-                            }
-                            else
-                            {
-                                <span>@achievement.Name</span>
-                            }
+                        <MudSelectItem Disabled="true" T="string" Value="@($"_header_{group.Key}")">
+                            <MudText Typo="Typo.subtitle2" Color="Color.Primary">@group.Key</MudText>
                         </MudSelectItem>
+                        @foreach (var achievement in group)
+                        {
+                            <MudSelectItem Value="@achievement.Code">
+                                @if (achievement.IsAwarded)
+                                {
+                                    <MudText Color="Color.Success">@achievement.Name (x@achievement.CompletionCount)</MudText>
+                                }
+                                else
+                                {
+                                    <span>@achievement.Name</span>
+                                }
+                            </MudSelectItem>
+                        }
                     }
-                }
-            </MudSelect>
-            <MudTextField @bind-Value="_awardReason" Label="Reason (optional)"
-                          Variant="Variant.Outlined" Style="min-width: 300px;" />
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       OnClick="AwardSelectedAchievement"
-                       Disabled="@(string.IsNullOrEmpty(_selectedAchievement) || _awarding)">
-                @if (_awarding)
-                {
-                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-                    <span>Awarding...</span>
-                }
-                else
-                {
-                    <span>Award Achievement</span>
-                }
-            </MudButton>
-        </MudStack>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudDatePicker Label="Award Date" @bind-Date="_awardDate" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudTextField @bind-Value="_awardReason" Label="Reason (optional)" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" md="2" Class="d-flex align-end">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                           OnClick="AwardSelectedAchievement"
+                           Disabled="@(string.IsNullOrEmpty(_selectedAchievement) || _awarding)">
+                    @if (_awarding)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Awarding...</span>
+                    }
+                    else
+                    {
+                        <span>Award</span>
+                    }
+                </MudButton>
+            </MudItem>
+        </MudGrid>
 
         @if (!string.IsNullOrEmpty(_selectedAchievement))
         {
             var selected = _guildAchievements.FirstOrDefault(a => a.Code == _selectedAchievement);
             if (selected != null)
             {
-                <MudAlert Severity="@(selected.IsAwarded ? Severity.Info : Severity.Normal)" Class="mb-3">
+                <MudAlert Severity="@(selected.IsAwarded ? Severity.Info : Severity.Normal)" Class="mt-3">
                     <strong>@selected.Name:</strong> @selected.Description
                     @if (selected.IsAwarded && selected.AchievedAt.HasValue)
                     {
@@ -181,53 +189,117 @@
                 </MudAlert>
             }
         }
+    }
+</MudPaper>
 
-        <MudExpansionPanels Class="mt-4">
-            <MudExpansionPanel Text="View All Guild Achievements">
-                <MudTable Items="_guildAchievements" Dense="true" Hover="true" Striped="true">
-                    <HeaderContent>
-                        <MudTh>Category</MudTh>
-                        <MudTh>Name</MudTh>
-                        <MudTh>Description</MudTh>
-                        <MudTh>Status</MudTh>
-                        <MudTh>Actions</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Category">@context.Category</MudTd>
-                        <MudTd DataLabel="Name">@context.Name</MudTd>
-                        <MudTd DataLabel="Description" Style="max-width: 300px;">@context.Description</MudTd>
-                        <MudTd DataLabel="Status">
-                            @if (context.IsAwarded)
-                            {
-                                <MudChip T="string" Color="Color.Success" Size="Size.Small">
-                                    x@context.CompletionCount
-                                </MudChip>
-                            }
-                            else
-                            {
-                                <MudChip T="string" Color="Color.Default" Size="Size.Small">Not Awarded</MudChip>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="Actions">
+<MudPaper Class="pa-4 mt-4" Elevation="2">
+    <MudText Typo="Typo.h6" Class="mb-3">Discord Achievement Notification</MudText>
+    <MudText Class="mb-3">
+        Send a Discord notification for an already-earned guild achievement.
+    </MudText>
+
+    @if (!_loadingGuildAchievements)
+    {
+        var earnedAchievements = _guildAchievements.Where(a => a.IsAwarded).ToList();
+
+        @if (earnedAchievements.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">No guild achievements have been earned yet.</MudAlert>
+        }
+        else
+        {
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.End">
+                <MudSelect T="string" Label="Earned Achievement" @bind-Value="_selectedNotifyAchievement"
+                           Variant="Variant.Outlined" Style="min-width: 400px;">
+                    @foreach (var group in earnedAchievements.GroupBy(a => a.Category))
+                    {
+                        <MudSelectItem Disabled="true" T="string" Value="@($"_header_{group.Key}")">
+                            <MudText Typo="Typo.subtitle2" Color="Color.Primary">@group.Key</MudText>
+                        </MudSelectItem>
+                        @foreach (var achievement in group)
+                        {
+                            <MudSelectItem Value="@achievement.Code">
+                                @achievement.Name (x@achievement.CompletionCount)
+                            </MudSelectItem>
+                        }
+                    }
+                </MudSelect>
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary"
+                           OnClick="SendNotification"
+                           Disabled="@(string.IsNullOrEmpty(_selectedNotifyAchievement) || _notifying)"
+                           StartIcon="@Icons.Material.Filled.Campaign">
+                    @if (_notifying)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Sending...</span>
+                    }
+                    else
+                    {
+                        <span>Send Notification</span>
+                    }
+                </MudButton>
+            </MudStack>
+        }
+    }
+</MudPaper>
+
+<MudPaper Class="pa-4 mt-4" Elevation="2">
+    <MudExpansionPanels>
+        <MudExpansionPanel Text="View All Guild Achievements">
+            <MudTable Items="_guildAchievements" Dense="true" Hover="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Category</MudTh>
+                    <MudTh>Name</MudTh>
+                    <MudTh>Description</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Category">@context.Category</MudTd>
+                    <MudTd DataLabel="Name">@context.Name</MudTd>
+                    <MudTd DataLabel="Description" Style="max-width: 300px;">@context.Description</MudTd>
+                    <MudTd DataLabel="Status">
+                        @if (context.IsAwarded)
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small">
+                                x@context.CompletionCount
+                            </MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Color="Color.Default" Size="Size.Small">Not Awarded</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Actions">
+                        <MudTooltip Text="Award">
                             <MudIconButton Icon="@Icons.Material.Filled.Add"
                                            Size="Size.Small"
                                            Color="Color.Primary"
                                            OnClick="@(() => QuickAward(context.Code))"
                                            Disabled="@_awarding" />
-                            @if (context.IsAwarded)
-                            {
+                        </MudTooltip>
+                        @if (context.IsAwarded)
+                        {
+                            <MudTooltip Text="Send Discord Notification">
+                                <MudIconButton Icon="@Icons.Material.Filled.Campaign"
+                                               Size="Size.Small"
+                                               Color="Color.Secondary"
+                                               OnClick="@(() => QuickNotify(context.Code))"
+                                               Disabled="@_notifying" />
+                            </MudTooltip>
+                            <MudTooltip Text="Remove">
                                 <MudIconButton Icon="@Icons.Material.Filled.Delete"
                                                Size="Size.Small"
                                                Color="Color.Error"
                                                OnClick="@(() => RemoveAchievement(context.Code))"
                                                Disabled="@_awarding" />
-                            }
-                        </MudTd>
-                    </RowTemplate>
-                </MudTable>
-            </MudExpansionPanel>
-        </MudExpansionPanels>
-    }
+                            </MudTooltip>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
 </MudPaper>
 </AdminAuth>
 
@@ -242,7 +314,12 @@
     private bool _loadingGuildAchievements = true;
     private string? _selectedAchievement;
     private string? _awardReason;
+    private DateTime? _awardDate = DateTime.Today;
     private bool _awarding = false;
+
+    // Discord notification
+    private string? _selectedNotifyAchievement;
+    private bool _notifying = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -368,25 +445,25 @@
     private async Task AwardSelectedAchievement()
     {
         if (string.IsNullOrEmpty(_selectedAchievement)) return;
-        await AwardAchievement(_selectedAchievement, _awardReason);
+        await AwardAchievement(_selectedAchievement, _awardReason, _awardDate);
     }
 
     private async Task QuickAward(string code)
     {
-        await AwardAchievement(code, null);
+        await AwardAchievement(code, null, DateTime.Today);
     }
 
-    private async Task AwardAchievement(string code, string? reason)
+    private async Task AwardAchievement(string code, string? reason, DateTime? awardDate = null)
     {
         _awarding = true;
         try
         {
-            var request = new { reason = reason };
+            var request = new { reason = reason, awardDate = awardDate?.ToString("yyyy-MM-dd") };
             var response = await Http.PostAsJsonAsync($"api/admin/achievements/guild/{code}/award", request);
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadFromJsonAsync<AwardResponse>();
-                Snackbar.Add($"Achievement '{result?.Name}' awarded! Discord notification sent.", Severity.Success);
+                Snackbar.Add($"Achievement '{result?.Name}' awarded!", Severity.Success);
                 await LoadGuildAchievements();
                 await LoadStats();
             }
@@ -403,6 +480,44 @@
         finally
         {
             _awarding = false;
+        }
+    }
+
+    private async Task SendNotification()
+    {
+        if (string.IsNullOrEmpty(_selectedNotifyAchievement)) return;
+        await NotifyAchievement(_selectedNotifyAchievement);
+    }
+
+    private async Task QuickNotify(string code)
+    {
+        await NotifyAchievement(code);
+    }
+
+    private async Task NotifyAchievement(string code)
+    {
+        _notifying = true;
+        try
+        {
+            var response = await Http.PostAsync($"api/admin/achievements/guild/{code}/notify", null);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<NotifyResponse>();
+                Snackbar.Add($"Discord notification sent for '{result?.Name}'!", Severity.Success);
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Failed to send notification: {error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _notifying = false;
         }
     }
 
@@ -479,5 +594,7 @@
         int CompletionCount,
         DateTimeOffset? AchievedAt);
 
-    public record AwardResponse(string Message, string Code, string Name, bool NotificationSent);
+    public record AwardResponse(string Message, string Code, string Name, DateTimeOffset? AchievedAt);
+
+    public record NotifyResponse(string Message, string Code, string Name);
 }

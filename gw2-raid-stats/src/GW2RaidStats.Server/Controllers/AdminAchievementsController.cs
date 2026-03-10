@@ -196,7 +196,7 @@ public class AdminAchievementsController : ControllerBase
     }
 
     /// <summary>
-    /// Manually award a guild achievement with Discord notification
+    /// Manually award a guild achievement (without Discord notification)
     /// </summary>
     [HttpPost("guild/{code}/award")]
     public async Task<ActionResult> AwardGuildAchievement(string code, [FromBody] ManualAwardRequest? request)
@@ -213,37 +213,109 @@ public class AdminAchievementsController : ControllerBase
             using var scope = _scopeFactory.CreateScope();
             var awardService = scope.ServiceProvider.GetRequiredService<AchievementAwardService>();
 
+            // Parse award date if provided
+            var achievedAt = DateTimeOffset.UtcNow;
+            if (!string.IsNullOrEmpty(request?.AwardDate))
+            {
+                if (DateTimeOffset.TryParse(request.AwardDate, out var parsed))
+                {
+                    achievedAt = parsed;
+                }
+            }
+
             // Build context for the manual award
             var context = new
             {
                 manual_award = true,
                 reason = request?.Reason ?? "Manually awarded by admin",
-                awarded_at = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+                awarded_at = achievedAt.ToString("yyyy-MM-dd HH:mm:ss")
             };
 
-            // Award with notification enabled
+            // Award WITHOUT notification
             await awardService.AwardGuildAchievementAsync(
                 code,
                 context,
-                notify: true,
+                notify: false,
                 CancellationToken.None,
-                achievedAt: DateTimeOffset.UtcNow);
+                achievedAt: achievedAt);
 
-            _logger.LogInformation("Manually awarded guild achievement {Code} by admin. Reason: {Reason}",
-                code, request?.Reason ?? "No reason provided");
+            _logger.LogInformation("Manually awarded guild achievement {Code} by admin. Reason: {Reason}, Date: {Date}",
+                code, request?.Reason ?? "No reason provided", achievedAt);
 
             return Ok(new
             {
                 message = $"Guild achievement '{definition.Name}' awarded successfully",
                 code = code,
                 name = definition.Name,
-                notificationSent = true
+                achievedAt = achievedAt
             });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to award guild achievement {Code}", code);
             return StatusCode(500, new { message = $"Failed to award achievement: {ex.Message}" });
+        }
+    }
+
+    /// <summary>
+    /// Send a Discord notification for an already-earned guild achievement
+    /// </summary>
+    [HttpPost("guild/{code}/notify")]
+    public async Task<ActionResult> NotifyGuildAchievement(string code)
+    {
+        try
+        {
+            // Verify achievement exists in definitions
+            var definition = AchievementDefinitions.Guild.FirstOrDefault(a => a.Code == code);
+            if (definition == null)
+            {
+                return NotFound(new { message = $"Guild achievement '{code}' not found in definitions" });
+            }
+
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<RaidStatsDb>();
+
+            // Check if achievement has been earned
+            var earned = await db.GuildAchievements
+                .FirstOrDefaultAsync(ga => ga.AchievementCode == code);
+
+            if (earned == null)
+            {
+                return BadRequest(new { message = $"Guild achievement '{code}' has not been earned yet" });
+            }
+
+            // Queue the notification
+            var payload = new AchievementPayload(
+                null, // No player for guild achievements
+                code,
+                definition.Name,
+                definition.Description,
+                true // IsGuild
+            );
+
+            var notification = new Infrastructure.Database.Entities.NotificationQueueEntity
+            {
+                Id = Guid.NewGuid(),
+                NotificationType = "achievement_unlocked",
+                Payload = JsonSerializer.Serialize(payload),
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+
+            await db.InsertAsync(notification);
+
+            _logger.LogInformation("Queued Discord notification for guild achievement {Code}", code);
+
+            return Ok(new
+            {
+                message = $"Discord notification queued for '{definition.Name}'",
+                code = code,
+                name = definition.Name
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to notify guild achievement {Code}", code);
+            return StatusCode(500, new { message = $"Failed to send notification: {ex.Message}" });
         }
     }
 
@@ -288,4 +360,4 @@ public record GuildAchievementListItem(
     int CompletionCount,
     DateTimeOffset? AchievedAt);
 
-public record ManualAwardRequest(string? Reason);
+public record ManualAwardRequest(string? Reason, string? AwardDate);
