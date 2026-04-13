@@ -15,6 +15,7 @@
         <MudText Typo="Typo.h6">Boss Records</MudText>
         <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Style="margin-top: 0;">
             <MudSelect T="string" Value="_selectedPatchId" ValueChanged="OnPatchChanged"
+                       ToStringFunc="@PatchDisplayName"
                        Variant="Variant.Outlined" Margin="Margin.Dense"
                        Style="min-width: 200px; margin-top: 0;"
                        Class="mt-0">
@@ -70,7 +71,11 @@
 
     private RenderFragment RenderBossTable(IEnumerable<BossRecord> bosses, bool groupByWing = false) => __builder =>
     {
-        @if (!bosses.Any())
+        @if (_loading)
+        {
+            // Don't show empty state while loading
+        }
+        else if (!bosses.Any())
         {
             <MudAlert Severity="Severity.Info">No boss kills found. Import some logs first!</MudAlert>
         }
@@ -337,6 +342,14 @@
         _bosses = null;
         StateHasChanged();
         await LoadDataAsync();
+    }
+
+    private string PatchDisplayName(string patchId)
+    {
+        if (string.IsNullOrEmpty(patchId))
+            return "All Time";
+        var patch = _patches?.FirstOrDefault(p => p.Id.ToString() == patchId);
+        return patch?.Name ?? patchId;
     }
 
     private DateTimeOffset? GetSelectedFromDate()
