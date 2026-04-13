@@ -370,7 +370,7 @@
             var url = "api/leaderboard/all";
             if (fromDate.HasValue)
             {
-                url += $"?fromDate={fromDate.Value:O}";
+                url += $"?fromDate={Uri.EscapeDataString(fromDate.Value.ToString("O"))}";
             }
             _bosses = await Http.GetFromJsonAsync<List<BossRecord>>(url);
         }
