@@ -380,36 +380,50 @@ public class LeaderboardService
     /// </summary>
     public async Task<List<BossRecord>> GetAllBossRecordsAsync(DateTimeOffset? fromDate = null, CancellationToken ct = default)
     {
-        // Get all unique boss/mode combinations with kill counts (excluding late start and non-boss events)
-        var encounterQuery = _db.Encounters
+        var baseQuery = _db.Encounters
             .Where(e => e.Success)
             .Where(e => !e.BossName.Contains(LateStartFilter))
             .Where(e => AlwaysAllowedEncounters.Any(a => e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => e.BossName.Contains(i)));
 
-        if (fromDate.HasValue)
-            encounterQuery = encounterQuery.Where(e => e.EncounterTime >= fromDate.Value);
-
-        var bossGroups = await encounterQuery
+        // Always discover bosses from all-time data so cards always render
+        var allBossGroups = await baseQuery
             .GroupBy(e => new { e.TriggerId, e.BossName, e.IsCM })
             .Select(g => new
             {
                 g.Key.TriggerId,
                 g.Key.BossName,
+                g.Key.IsCM
+            })
+            .ToListAsync(ct);
+
+        // Get kill counts within the patch period (if filtered)
+        var filteredQuery = fromDate.HasValue
+            ? baseQuery.Where(e => e.EncounterTime >= fromDate.Value)
+            : baseQuery;
+
+        var killCounts = await filteredQuery
+            .GroupBy(e => new { e.TriggerId, e.IsCM })
+            .Select(g => new
+            {
+                g.Key.TriggerId,
                 g.Key.IsCM,
                 KillCount = g.Count()
             })
             .ToListAsync(ct);
 
+        var killCountLookup = killCounts.ToDictionary(k => (k.TriggerId, k.IsCM), k => k.KillCount);
+
         var results = new List<BossRecord>();
 
-        foreach (var boss in bossGroups)
+        foreach (var boss in allBossGroups)
         {
             // Get wing from trigger ID, fallback to boss name matching
             var wing = WingMapping.GetWing(boss.TriggerId)
                        ?? WingMapping.GetWingByBossName(boss.BossName);
             var encounterOrder = WingMapping.GetEncounterOrder(boss.TriggerId);
+            var killCount = killCountLookup.GetValueOrDefault((boss.TriggerId, boss.IsCM), 0);
 
-            // Get top DPS for this boss/mode
+            // Get top DPS for this boss/mode (filtered by patch date)
             var topDps = await GetTopDpsForBossAsync(boss.TriggerId, boss.IsCM, 1, fromDate, ct);
             var topBoonDps = await GetTopBoonDpsForBossAsync(boss.TriggerId, boss.IsCM, 1, fromDate, ct);
             var topHealerDps = await GetTopHealerDpsForBossAsync(boss.TriggerId, boss.IsCM, 1, fromDate, ct);
@@ -418,7 +432,7 @@ public class LeaderboardService
                 boss.TriggerId,
                 boss.BossName,
                 boss.IsCM,
-                boss.KillCount,
+                killCount,
                 topDps.FirstOrDefault(),
                 topBoonDps.FirstOrDefault(),
                 topHealerDps.FirstOrDefault(),

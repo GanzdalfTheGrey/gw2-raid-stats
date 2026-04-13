@@ -13,10 +13,11 @@
 <MudPaper Class="pa-4" Elevation="2">
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
         <MudText Typo="Typo.h6">Boss Records</MudText>
-        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Style="margin-top: 0;">
             <MudSelect T="string" Value="_selectedPatchId" ValueChanged="OnPatchChanged"
-                       Label="Patch" Variant="Variant.Outlined" Margin="Margin.Dense"
-                       Style="min-width: 200px;">
+                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Style="min-width: 200px; margin-top: 0;"
+                       Class="mt-0">
                 <MudSelectItem T="string" Value="@("")">All Time</MudSelectItem>
                 @if (_patches != null)
                 {
@@ -34,8 +35,9 @@
                           Variant="Variant.Outlined"
                           Margin="Margin.Dense"
                           Immediate="true"
+                          Style="margin-top: 0;"
                           Class="mt-0" />
-            <MudToggleGroup T="string" @bind-Value="_modeFilter" Color="Color.Primary" CheckMark="true">
+            <MudToggleGroup T="string" @bind-Value="_modeFilter" Color="Color.Primary" CheckMark="true" Style="margin-top: 0;">
                 <MudToggleItem Value="@("all")" Text="All" />
                 <MudToggleItem Value="@("nm")" Text="NM" />
                 <MudToggleItem Value="@("cm")" Text="CM" />
