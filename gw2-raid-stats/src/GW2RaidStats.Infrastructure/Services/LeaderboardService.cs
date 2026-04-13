@@ -42,12 +42,17 @@ public class LeaderboardService
     /// <summary>
     /// Get all unique bosses with their trigger IDs
     /// </summary>
-    public async Task<List<BossInfo>> GetBossListAsync(CancellationToken ct = default)
+    public async Task<List<BossInfo>> GetBossListAsync(DateTimeOffset? fromDate = null, CancellationToken ct = default)
     {
-        var bosses = await _db.Encounters
+        var query = _db.Encounters
             .Where(e => e.Success) // Only successful encounters
             .Where(e => !e.BossName.Contains(LateStartFilter)) // Exclude late start
-            .Where(e => AlwaysAllowedEncounters.Any(a => e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => e.BossName.Contains(i))) // Exclude non-boss events, but always allow Twin Largos etc.
+            .Where(e => AlwaysAllowedEncounters.Any(a => e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => e.BossName.Contains(i))); // Exclude non-boss events, but always allow Twin Largos etc.
+
+        if (fromDate.HasValue)
+            query = query.Where(e => e.EncounterTime >= fromDate.Value);
+
+        var bosses = await query
             .GroupBy(e => new { e.TriggerId, e.BossName })
             .Select(g => new BossInfo(
                 g.Key.TriggerId,
@@ -67,6 +72,7 @@ public class LeaderboardService
         int triggerId,
         bool isCM,
         int limit = 10,
+        DateTimeOffset? fromDate = null,
         CancellationToken ct = default)
     {
         // Get included players (guild members) - only they can claim leaderboard spots
@@ -80,6 +86,9 @@ public class LeaderboardService
             .Where(x => x.e.TriggerId == triggerId && x.e.IsCM == isCM && x.e.Success)
             .Where(x => !x.e.BossName.Contains(LateStartFilter)) // Exclude late start
             .Where(x => AlwaysAllowedEncounters.Any(a => x.e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => x.e.BossName.Contains(i))); // Exclude non-boss events, but always allow Twin Largos etc.
+
+        if (fromDate.HasValue)
+            query = query.Where(x => x.e.EncounterTime >= fromDate.Value);
 
         // Only included players can claim leaderboard spots
         if (includedList.Count > 0)
@@ -142,6 +151,7 @@ public class LeaderboardService
         int triggerId,
         bool isCM,
         int limit = 10,
+        DateTimeOffset? fromDate = null,
         CancellationToken ct = default)
     {
         // Get included players (guild members) - only they can claim leaderboard spots
@@ -157,6 +167,9 @@ public class LeaderboardService
             .Where(x => AlwaysAllowedEncounters.Any(a => x.e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => x.e.BossName.Contains(i))) // Exclude non-boss events, but always allow Twin Largos etc.
             .Where(x => (x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
                         (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold);
+
+        if (fromDate.HasValue)
+            query = query.Where(x => x.e.EncounterTime >= fromDate.Value);
 
         // Only included players can claim leaderboard spots
         if (includedList.Count > 0)
@@ -218,6 +231,7 @@ public class LeaderboardService
         int triggerId,
         bool isCM,
         int limit = 10,
+        DateTimeOffset? fromDate = null,
         CancellationToken ct = default)
     {
         // Get included players (guild members) - only they can claim leaderboard spots
@@ -237,6 +251,9 @@ public class LeaderboardService
             .Where(x => x.pe.HealingPowerStat >= HealerStatThreshold)
             .Where(x => (x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
                         (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold);
+
+        if (fromDate.HasValue)
+            query = query.Where(x => x.e.EncounterTime >= fromDate.Value);
 
         // Only included players can claim leaderboard spots
         if (includedList.Count > 0)
@@ -361,13 +378,18 @@ public class LeaderboardService
     /// <summary>
     /// Get all boss records with top DPS for each (NM and CM separate)
     /// </summary>
-    public async Task<List<BossRecord>> GetAllBossRecordsAsync(CancellationToken ct = default)
+    public async Task<List<BossRecord>> GetAllBossRecordsAsync(DateTimeOffset? fromDate = null, CancellationToken ct = default)
     {
         // Get all unique boss/mode combinations with kill counts (excluding late start and non-boss events)
-        var bossGroups = await _db.Encounters
+        var encounterQuery = _db.Encounters
             .Where(e => e.Success)
             .Where(e => !e.BossName.Contains(LateStartFilter))
-            .Where(e => AlwaysAllowedEncounters.Any(a => e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => e.BossName.Contains(i)))
+            .Where(e => AlwaysAllowedEncounters.Any(a => e.BossName.Contains(a)) || !IgnoredEncounters.Any(i => e.BossName.Contains(i)));
+
+        if (fromDate.HasValue)
+            encounterQuery = encounterQuery.Where(e => e.EncounterTime >= fromDate.Value);
+
+        var bossGroups = await encounterQuery
             .GroupBy(e => new { e.TriggerId, e.BossName, e.IsCM })
             .Select(g => new
             {
@@ -388,9 +410,9 @@ public class LeaderboardService
             var encounterOrder = WingMapping.GetEncounterOrder(boss.TriggerId);
 
             // Get top DPS for this boss/mode
-            var topDps = await GetTopDpsForBossAsync(boss.TriggerId, boss.IsCM, 1, ct);
-            var topBoonDps = await GetTopBoonDpsForBossAsync(boss.TriggerId, boss.IsCM, 1, ct);
-            var topHealerDps = await GetTopHealerDpsForBossAsync(boss.TriggerId, boss.IsCM, 1, ct);
+            var topDps = await GetTopDpsForBossAsync(boss.TriggerId, boss.IsCM, 1, fromDate, ct);
+            var topBoonDps = await GetTopBoonDpsForBossAsync(boss.TriggerId, boss.IsCM, 1, fromDate, ct);
+            var topHealerDps = await GetTopHealerDpsForBossAsync(boss.TriggerId, boss.IsCM, 1, fromDate, ct);
 
             results.Add(new BossRecord(
                 boss.TriggerId,
@@ -701,6 +723,7 @@ public class LeaderboardService
         int triggerId,
         bool isCM,
         int limit = 10,
+        DateTimeOffset? fromDate = null,
         CancellationToken ct = default)
     {
         var bossName = await _db.Encounters
@@ -708,9 +731,9 @@ public class LeaderboardService
             .Select(e => e.BossName)
             .FirstOrDefaultAsync(ct) ?? "Unknown";
 
-        var topDps = await GetTopDpsForBossAsync(triggerId, isCM, limit, ct);
-        var topBoonDps = await GetTopBoonDpsForBossAsync(triggerId, isCM, limit, ct);
-        var topHealerDps = await GetTopHealerDpsForBossAsync(triggerId, isCM, limit, ct);
+        var topDps = await GetTopDpsForBossAsync(triggerId, isCM, limit, fromDate, ct);
+        var topBoonDps = await GetTopBoonDpsForBossAsync(triggerId, isCM, limit, fromDate, ct);
+        var topHealerDps = await GetTopHealerDpsForBossAsync(triggerId, isCM, limit, fromDate, ct);
 
         return new BossLeaderboard(
             triggerId,

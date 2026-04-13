@@ -122,9 +122,9 @@ public class SessionNotificationHandler : INotificationHandler
             if (shameStats != null)
             {
                 var shameLines = new List<string>();
-                if (shameStats.MostDeathsCount > 0)
+                if (shameStats.MostFirstDeathsCount > 0)
                 {
-                    shameLines.Add($"💀 Most Deaths: **{shameStats.MostDeathsPlayer}** ({shameStats.MostDeathsCount})");
+                    shameLines.Add($"💀 Most First Deaths: **{shameStats.MostFirstDeathsPlayer}** ({shameStats.MostFirstDeathsCount})");
                 }
                 if (shameStats.MostDownsCount > 0)
                 {

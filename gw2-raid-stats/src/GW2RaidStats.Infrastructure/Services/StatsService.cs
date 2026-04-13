@@ -401,9 +401,7 @@ public class StatsService
 
     /// <summary>
     /// Get "wall of shame" stats for the most recent session.
-    /// Deaths are filtered to exclude:
-    /// - Deaths within 5 seconds of encounter end (likely squad wipe or /ff)
-    /// - Deaths without a preceding downed event (instant death via /ff command)
+    /// "Most First Deaths" counts how many times a player was the first to die in an encounter.
     /// </summary>
     public async Task<SessionShameStats?> GetSessionShameStatsAsync(CancellationToken ct = default)
     {
@@ -421,72 +419,46 @@ public class StatsService
         var sessionStart = new DateTimeOffset(sessionDate, encounterOffset);
         var sessionEnd = sessionStart.AddDays(1);
 
-        // Get encounters for this session with their durations
-        var sessionEncounters = await _db.Encounters
+        // Get encounters for this session
+        var sessionEncounterIds = await _db.Encounters
             .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd)
-            .Select(e => new { e.Id, e.DurationMs })
+            .Select(e => e.Id)
             .ToListAsync(ct);
 
-        if (sessionEncounters.Count == 0) return null;
-
-        var sessionEncounterIds = sessionEncounters.Select(e => e.Id).ToList();
-        var encounterDurations = sessionEncounters.ToDictionary(e => e.Id, e => e.DurationMs);
+        if (sessionEncounterIds.Count == 0) return null;
 
         // Get included players (guild members)
         var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
         var includedList = includedAccounts.ToList();
 
-        // Get all "Dead" and "Downed" mechanic events for the session
+        // Get all "Dead" mechanic events for the session
         var mechanicEvents = await _db.MechanicEvents
             .InnerJoin(_db.Players, (m, p) => m.PlayerId == p.Id, (m, p) => new { m, p })
             .Where(x => sessionEncounterIds.Contains(x.m.EncounterId))
             .Where(x => includedList.Contains(x.p.AccountName))
-            .Where(x => x.m.MechanicName == "Dead" || x.m.MechanicName == "Downed")
+            .Where(x => x.m.MechanicName == "Dead")
             .Select(x => new
             {
                 x.m.EncounterId,
                 x.m.PlayerId,
                 x.p.AccountName,
-                x.m.MechanicName,
                 x.m.EventTimeMs
             })
             .ToListAsync(ct);
 
-        // Filter deaths to only count "legitimate" ones
-        // Rules: First death in encounter always counts, or death more than 5 seconds before fight end
-        var deathEvents = mechanicEvents.Where(m => m.MechanicName == "Dead").ToList();
-
-        const int endOfFightThresholdMs = 5000; // Exclude deaths within 5 seconds of encounter end
-
-        // Find first death time per encounter for "first to die" rule
-        var firstDeathPerEncounter = deathEvents
+        // Find first death time per encounter
+        var firstDeathPerEncounter = mechanicEvents
             .GroupBy(d => d.EncounterId)
             .ToDictionary(g => g.Key, g => g.Min(d => d.EventTimeMs));
 
-        var legitimateDeaths = deathEvents.Where(death =>
-        {
-            // First death in an encounter always counts (handles instant-kill mechanics, /gg detection)
-            if (firstDeathPerEncounter.TryGetValue(death.EncounterId, out var firstDeathTime) &&
+        // Count first deaths per player (how many times each player was the first to die in an encounter)
+        var firstDeathsByPlayer = mechanicEvents
+            .Where(death =>
+                firstDeathPerEncounter.TryGetValue(death.EncounterId, out var firstDeathTime) &&
                 death.EventTimeMs == firstDeathTime)
-            {
-                return true;
-            }
-
-            // Otherwise, exclude deaths within 5 seconds of encounter end
-            if (encounterDurations.TryGetValue(death.EncounterId, out var durationMs))
-            {
-                if (death.EventTimeMs > durationMs - endOfFightThresholdMs)
-                    return false;
-            }
-
-            return true;
-        }).ToList();
-
-        // Count legitimate deaths per player
-        var deathsByPlayer = legitimateDeaths
             .GroupBy(d => d.AccountName)
-            .Select(g => new { AccountName = g.Key, TotalDeaths = g.Count() })
-            .OrderByDescending(p => p.TotalDeaths)
+            .Select(g => new { AccountName = g.Key, FirstDeathCount = g.Count() })
+            .OrderByDescending(p => p.FirstDeathCount)
             .ToList();
 
         // Get additional stats from PlayerEncounters (downs, CC, damage taken)
@@ -504,17 +476,17 @@ public class StatsService
             })
             .ToListAsync(ct);
 
-        if (deathsByPlayer.Count == 0 && playerStats.Count == 0) return null;
+        if (firstDeathsByPlayer.Count == 0 && playerStats.Count == 0) return null;
 
-        // Find the player with most legitimate deaths
-        var mostDeaths = deathsByPlayer.FirstOrDefault();
+        // Find the player with most first deaths
+        var mostFirstDeaths = firstDeathsByPlayer.FirstOrDefault();
         var mostDowns = playerStats.OrderByDescending(p => p.TotalDowns).FirstOrDefault();
         var leastCc = playerStats.OrderBy(p => p.TotalBreakbarDamage).FirstOrDefault();
         var mostDamageTaken = playerStats.OrderByDescending(p => p.TotalDamageTaken).FirstOrDefault();
 
         return new SessionShameStats(
-            MostDeathsPlayer: mostDeaths?.AccountName ?? "",
-            MostDeathsCount: mostDeaths?.TotalDeaths ?? 0,
+            MostFirstDeathsPlayer: mostFirstDeaths?.AccountName ?? "",
+            MostFirstDeathsCount: mostFirstDeaths?.FirstDeathCount ?? 0,
             MostDownsPlayer: mostDowns?.AccountName ?? "",
             MostDownsCount: mostDowns?.TotalDowns ?? 0,
             LeastCcPlayer: leastCc?.AccountName ?? "",
@@ -693,8 +665,8 @@ public record SessionMvpStats(
 );
 
 public record SessionShameStats(
-    string MostDeathsPlayer,
-    int MostDeathsCount,
+    string MostFirstDeathsPlayer,
+    int MostFirstDeathsCount,
     string MostDownsPlayer,
     int MostDownsCount,
     string LeastCcPlayer,

@@ -1,4 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
+using LinqToDB;
+using LinqToDB.Async;
+using GW2RaidStats.Infrastructure.Database;
 using GW2RaidStats.Infrastructure.Services;
 
 namespace GW2RaidStats.Server.Controllers;
@@ -8,19 +11,23 @@ namespace GW2RaidStats.Server.Controllers;
 public class LeaderboardController : ControllerBase
 {
     private readonly LeaderboardService _leaderboardService;
+    private readonly RaidStatsDb _db;
 
-    public LeaderboardController(LeaderboardService leaderboardService)
+    public LeaderboardController(LeaderboardService leaderboardService, RaidStatsDb db)
     {
         _leaderboardService = leaderboardService;
+        _db = db;
     }
 
     /// <summary>
     /// Get list of all bosses with kill counts
     /// </summary>
     [HttpGet("bosses")]
-    public async Task<ActionResult<List<BossInfo>>> GetBosses(CancellationToken ct)
+    public async Task<ActionResult<List<BossInfo>>> GetBosses(
+        [FromQuery] DateTimeOffset? fromDate = null,
+        CancellationToken ct = default)
     {
-        var bosses = await _leaderboardService.GetBossListAsync(ct);
+        var bosses = await _leaderboardService.GetBossListAsync(fromDate, ct);
         return Ok(bosses);
     }
 
@@ -28,9 +35,11 @@ public class LeaderboardController : ControllerBase
     /// Get all boss records with top DPS for the leaderboard table
     /// </summary>
     [HttpGet("all")]
-    public async Task<ActionResult<List<BossRecord>>> GetAllBossRecords(CancellationToken ct)
+    public async Task<ActionResult<List<BossRecord>>> GetAllBossRecords(
+        [FromQuery] DateTimeOffset? fromDate = null,
+        CancellationToken ct = default)
     {
-        var records = await _leaderboardService.GetAllBossRecordsAsync(ct);
+        var records = await _leaderboardService.GetAllBossRecordsAsync(fromDate, ct);
         return Ok(records);
     }
 
@@ -42,9 +51,10 @@ public class LeaderboardController : ControllerBase
         int triggerId,
         [FromQuery] bool cm = false,
         [FromQuery] int limit = 10,
+        [FromQuery] DateTimeOffset? fromDate = null,
         CancellationToken ct = default)
     {
-        var leaderboard = await _leaderboardService.GetBossLeaderboardAsync(triggerId, cm, limit, ct);
+        var leaderboard = await _leaderboardService.GetBossLeaderboardAsync(triggerId, cm, limit, fromDate, ct);
         return Ok(leaderboard);
     }
 
@@ -56,9 +66,10 @@ public class LeaderboardController : ControllerBase
         int triggerId,
         [FromQuery] bool cm = false,
         [FromQuery] int limit = 10,
+        [FromQuery] DateTimeOffset? fromDate = null,
         CancellationToken ct = default)
     {
-        var entries = await _leaderboardService.GetTopDpsForBossAsync(triggerId, cm, limit, ct);
+        var entries = await _leaderboardService.GetTopDpsForBossAsync(triggerId, cm, limit, fromDate, ct);
         return Ok(entries);
     }
 
@@ -70,10 +81,24 @@ public class LeaderboardController : ControllerBase
         int triggerId,
         [FromQuery] bool cm = false,
         [FromQuery] int limit = 10,
+        [FromQuery] DateTimeOffset? fromDate = null,
         CancellationToken ct = default)
     {
-        var entries = await _leaderboardService.GetTopBoonDpsForBossAsync(triggerId, cm, limit, ct);
+        var entries = await _leaderboardService.GetTopBoonDpsForBossAsync(triggerId, cm, limit, fromDate, ct);
         return Ok(entries);
+    }
+
+    /// <summary>
+    /// Get leaderboard patch dates for the patch selector
+    /// </summary>
+    [HttpGet("patches")]
+    public async Task<ActionResult<List<LeaderboardPatchDto>>> GetPatches(CancellationToken ct)
+    {
+        var patches = await _db.LeaderboardPatches
+            .OrderByDescending(p => p.StartDate)
+            .Select(p => new LeaderboardPatchDto(p.Id, p.Name, p.StartDate))
+            .ToListAsync(ct);
+        return Ok(patches);
     }
 
     /// <summary>
@@ -86,3 +111,5 @@ public class LeaderboardController : ControllerBase
         return Ok(triggerIds);
     }
 }
+
+public record LeaderboardPatchDto(Guid Id, string Name, DateTimeOffset StartDate);

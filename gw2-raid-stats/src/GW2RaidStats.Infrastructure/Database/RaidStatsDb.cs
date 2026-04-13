@@ -23,4 +23,5 @@ public class RaidStatsDb : DataConnection
     public ITable<AppVersionEntity> AppVersions => this.GetTable<AppVersionEntity>();
     public ITable<PlayerAchievementEntity> PlayerAchievements => this.GetTable<PlayerAchievementEntity>();
     public ITable<GuildAchievementEntity> GuildAchievements => this.GetTable<GuildAchievementEntity>();
+    public ITable<LeaderboardPatchEntity> LeaderboardPatches => this.GetTable<LeaderboardPatchEntity>();
 }

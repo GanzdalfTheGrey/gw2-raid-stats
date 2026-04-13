@@ -239,16 +239,86 @@
             }
         </MudPaper>
     </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Leaderboard" Class="mr-2" />
+                Leaderboard Patches
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                Add balance patch dates to reset the leaderboard. The most recent patch is shown by default on the leaderboards page.
+                Users can switch between patches or view all-time records.
+            </MudText>
+
+            @if (_loading)
+            {
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+            }
+
+            @if (_leaderboardPatches.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Current Patches:</MudText>
+                <MudTable Items="@_leaderboardPatches" Dense="true" Hover="true" Class="mb-4">
+                    <HeaderContent>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Start Date</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.Name</MudTd>
+                        <MudTd>@context.StartDate.LocalDateTime.ToString("MMM d, yyyy")</MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error"
+                                           Size="Size.Small"
+                                           OnClick="@(() => RemoveLeaderboardPatch(context.Id))" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Add New Patch:</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="5">
+                    <MudTextField @bind-Value="_newPatchName" Label="Patch Name"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Placeholder="e.g., April 2026 Balance" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudDatePicker @bind-Date="_newPatchDate" Label="Start Date"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               Disabled="@(string.IsNullOrWhiteSpace(_newPatchName) || _newPatchDate == null || _addingPatch)"
+                               OnClick="AddLeaderboardPatch"
+                               StartIcon="@Icons.Material.Filled.Add"
+                               Class="mt-1">
+                        @if (_addingPatch)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        Add Patch
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
 </MudGrid>
 </AdminAuth>
 
 @code {
     private bool _loading = true;
     private bool _adding = false;
+    private bool _addingPatch = false;
     private bool _updatingThreshold = false;
     private bool _updatingGuildName = false;
     private List<IgnoredBoss> _ignoredBosses = new();
     private List<AvailableBoss> _availableBosses = new();
+    private List<LeaderboardPatch> _leaderboardPatches = new();
+    private string _newPatchName = "";
+    private DateTime? _newPatchDate;
     private List<IncludedPlayer> _includedPlayers = new();
     private List<AvailablePlayer> _availablePlayers = new();
     private AvailableBoss? _selectedBoss;
@@ -274,8 +344,9 @@
             var thresholdTask = Http.GetFromJsonAsync<ThresholdResponse>("api/admin/included-players/threshold");
             var recapBossesTask = Http.GetFromJsonAsync<RecapBossesResponse>("api/admin/included-players/recap-include-all-bosses");
             var guildNameTask = Http.GetFromJsonAsync<GuildNameResponse>("api/settings/guild-name");
+            var patchesTask = Http.GetFromJsonAsync<List<LeaderboardPatch>>("api/admin/leaderboard/patches");
 
-            await Task.WhenAll(ignoredTask, availableTask, includedTask, availablePlayersTask, thresholdTask, recapBossesTask, guildNameTask);
+            await Task.WhenAll(ignoredTask, availableTask, includedTask, availablePlayersTask, thresholdTask, recapBossesTask, guildNameTask, patchesTask);
 
             _ignoredBosses = ignoredTask.Result ?? new();
             _availableBosses = availableTask.Result ?? new();
@@ -284,6 +355,7 @@
             _threshold = thresholdTask.Result?.Threshold ?? 300;
             _recapIncludeAllBosses = recapBossesTask.Result?.IncludeAll ?? false;
             _guildName = guildNameTask.Result?.GuildName ?? "GW2 Raid Stats";
+            _leaderboardPatches = patchesTask.Result ?? new();
         }
         catch (Exception ex)
         {
@@ -473,7 +545,65 @@
         }
     }
 
+    private async Task AddLeaderboardPatch()
+    {
+        if (string.IsNullOrWhiteSpace(_newPatchName) || _newPatchDate == null) return;
+
+        _addingPatch = true;
+        try
+        {
+            var startDate = new DateTimeOffset(_newPatchDate.Value, TimeSpan.Zero);
+            var request = new AddPatchRequest(_newPatchName.Trim(), startDate);
+
+            var response = await Http.PostAsJsonAsync("api/admin/leaderboard/patches", request);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Added patch '{_newPatchName}'", Severity.Success);
+                _newPatchName = "";
+                _newPatchDate = null;
+                await LoadDataAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to add patch", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _addingPatch = false;
+        }
+    }
+
+    private async Task RemoveLeaderboardPatch(Guid id)
+    {
+        try
+        {
+            var response = await Http.DeleteAsync($"api/admin/leaderboard/patches/{id}");
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Patch removed", Severity.Success);
+                await LoadDataAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to remove patch", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
     // DTOs
+    public record LeaderboardPatch(Guid Id, string Name, DateTimeOffset StartDate);
+
+    public record AddPatchRequest(string Name, DateTimeOffset StartDate);
+
     public record IgnoredBoss(
         Guid Id,
         int TriggerId,

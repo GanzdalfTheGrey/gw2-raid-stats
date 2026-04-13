@@ -39,6 +39,18 @@
         <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
             <MudText Typo="Typo.h6">Boss Records</MudText>
             <MudStack Row="true" Spacing="2">
+                <MudSelect T="string" Value="_selectedPatchId" ValueChanged="OnPatchChanged"
+                           Label="Patch" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Style="min-width: 200px;">
+                    <MudSelectItem T="string" Value="@("")">All Time</MudSelectItem>
+                    @if (_patches != null)
+                    {
+                        @foreach (var patch in _patches)
+                        {
+                            <MudSelectItem T="string" Value="@patch.Id.ToString()">@patch.Name</MudSelectItem>
+                        }
+                    }
+                </MudSelect>
                 <MudTextField @bind-Value="_searchString"
                               Placeholder="Search boss..."
                               Adornment="Adornment.Start"
@@ -279,7 +291,9 @@
     private bool _loading = true;
     private string _searchString = "";
     private string _modeFilter = "all";
+    private string _selectedPatchId = "";
     private List<BossRecord>? _bosses;
+    private List<LeaderboardPatch>? _patches;
 
     private IEnumerable<BossRecord> ApplyFilters(IEnumerable<BossRecord> bosses) => bosses
         .Where(b => string.IsNullOrEmpty(_searchString) ||
@@ -298,7 +312,36 @@
 
     protected override async Task OnInitializedAsync()
     {
+        try
+        {
+            _patches = await Http.GetFromJsonAsync<List<LeaderboardPatch>>("api/leaderboard/patches");
+            // Default to the most recent patch
+            if (_patches != null && _patches.Count > 0)
+            {
+                _selectedPatchId = _patches[0].Id.ToString();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading patches: {ex.Message}");
+        }
+
         await LoadDataAsync();
+    }
+
+    private async Task OnPatchChanged(string patchId)
+    {
+        _selectedPatchId = patchId;
+        await LoadDataAsync();
+    }
+
+    private DateTimeOffset? GetSelectedFromDate()
+    {
+        if (string.IsNullOrEmpty(_selectedPatchId) || _patches == null)
+            return null;
+
+        var patch = _patches.FirstOrDefault(p => p.Id.ToString() == _selectedPatchId);
+        return patch?.StartDate;
     }
 
     private async Task LoadDataAsync()
@@ -306,7 +349,13 @@
         _loading = true;
         try
         {
-            _bosses = await Http.GetFromJsonAsync<List<BossRecord>>("api/leaderboard/all");
+            var fromDate = GetSelectedFromDate();
+            var url = "api/leaderboard/all";
+            if (fromDate.HasValue)
+            {
+                url += $"?fromDate={fromDate.Value:O}";
+            }
+            _bosses = await Http.GetFromJsonAsync<List<BossRecord>>(url);
         }
         catch (Exception ex)
         {
@@ -346,6 +395,8 @@
         string? BoonType = null,
         bool WasProvidingBoons = false
     );
+
+    public record LeaderboardPatch(Guid Id, string Name, DateTimeOffset StartDate);
 
     public record BoonSupport(
         string AccountName,

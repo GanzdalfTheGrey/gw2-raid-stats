@@ -5,6 +5,16 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-04-13
+
+### Added
+- Leaderboard patch reset system: admin can add balance patch dates to reset the leaderboard
+- Patch selector on leaderboards page (defaults to most recent patch, with "All Time" option)
+- Admin Manage Data page section for adding/removing leaderboard patches
+
+### Changed
+- Wall of Shame: replaced "Most Deaths" with "Most First Deaths" (counts how many times a player was the first to die in an encounter)
+
 ## [1.11.3]  - 2026-03-10
 
 ### Added
