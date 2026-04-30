@@ -33,7 +33,21 @@
                           Immediate="true"
                           DebounceInterval="200" />
         </div>
-        <div class="filter-toggle">
+        <div class="filter-role">
+            <MudAutocomplete T="RoleFilter"
+                             Value="_roleFilter"
+                             ValueChanged="@(v => _roleFilter = v)"
+                             SearchFunc="@SearchRoleOptions"
+                             ToStringFunc="@(o => o?.Label ?? "")"
+                             Label="Filter to role"
+                             Placeholder="Pick a role to see who can do it..."
+                             Clearable="true"
+                             Variant="Variant.Outlined"
+                             Margin="Margin.Dense"
+                             ResetValueOnEmptyText="true"
+                             CoerceText="true" />
+        </div>
+        <div class="filter-toggle" hidden="@(_roleFilter != null)">
             <MudText Typo="Typo.body2" Color="Color.Secondary" Class="filter-label">Show:</MudText>
             <MudToggleGroup T="string" @bind-Value="_showMode" Color="Color.Primary" Size="Size.Small" CheckMark="false">
                 <MudToggleItem Value="@("both")" Text="Both" />
@@ -42,6 +56,18 @@
             </MudToggleGroup>
         </div>
     </div>
+    @if (_roleFilter != null && _matrix != null)
+    {
+        var summary = ComputeFilterSummary();
+        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mt-2" Wrap="Wrap.Wrap">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Counts for <strong>@_roleFilter.Label</strong>:</MudText>
+            <span class="stat-pill stat-can">@summary.Can Can</span>
+            <span class="stat-pill stat-maybe">@summary.Maybe Maybe</span>
+            <span class="stat-pill stat-learn">@summary.Learn Learn</span>
+            <span class="stat-pill stat-cant">@summary.Cant Can't</span>
+            <span class="stat-pill stat-unset">@summary.Unset Unset</span>
+        </MudStack>
+    }
 </MudPaper>
 
 @if (_loading)
@@ -56,6 +82,72 @@ else
 {
     <MudPaper Class="pa-2" Elevation="1">
         <div class="matrix-scroll">
+        @if (_roleFilter != null)
+        {
+            <table class="role-matrix focused">
+                <thead>
+                    <tr>
+                        <th class="player-col">Player</th>
+                        <th>@_roleFilter.Label</th>
+                        <th class="stats-col">Stats</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in FilteredRows)
+                    {
+                        var status = GetRowStatus(row, _roleFilter);
+                        var captureRow = row;
+                        var captureFilter = _roleFilter;
+                        <tr class="player-row">
+                            <td class="player-col">
+                                <MudLink Href="@($"/players/{Uri.EscapeDataString(row.AccountName)}/roles")" Underline="Underline.Hover">
+                                    @row.AccountName
+                                </MudLink>
+                            </td>
+                            <td>
+                                <MudMenu ActivationEvent="@MouseEvent.LeftClick" Dense="true" AnchorOrigin="Origin.BottomCenter">
+                                    <ActivatorContent>
+                                        <MudTooltip Text="@($"{captureFilter.Label}: {StatusLabel(status)}")" Arrow="true">
+                                            <div class="@DotClass(status)"></div>
+                                        </MudTooltip>
+                                    </ActivatorContent>
+                                    <ChildContent>
+                                        @foreach (var s in _editStatuses)
+                                        {
+                                            var captureStatus = s;
+                                            <MudMenuItem OnClick="@(() => SetByFilterAsync(captureRow, captureFilter, captureStatus))">
+                                                <div class="menu-row">
+                                                    <div class="@DotClass(captureStatus)"></div>
+                                                    <span>@StatusLabel(captureStatus)</span>
+                                                </div>
+                                            </MudMenuItem>
+                                        }
+                                        <MudDivider />
+                                        <MudMenuItem OnClick="@(() => SetByFilterAsync(captureRow, captureFilter, null))">
+                                            <div class="menu-row">
+                                                <div class="role-dot role-dot-empty"></div>
+                                                <span class="text-muted">Clear</span>
+                                            </div>
+                                        </MudMenuItem>
+                                    </ChildContent>
+                                </MudMenu>
+                            </td>
+                            <td class="stats-col">
+                                @{ var stats = ComputeStats(row); }
+                                <div class="stats-pills">
+                                    <MudTooltip Text="Can" Arrow="true"><span class="stat-pill stat-can">@stats.Can</span></MudTooltip>
+                                    <MudTooltip Text="Maybe" Arrow="true"><span class="stat-pill stat-maybe">@stats.Maybe</span></MudTooltip>
+                                    <MudTooltip Text="Want to learn" Arrow="true"><span class="stat-pill stat-learn">@stats.Learn</span></MudTooltip>
+                                    <MudTooltip Text="Can't" Arrow="true"><span class="stat-pill stat-cant">@stats.Cant</span></MudTooltip>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
             <table class="role-matrix">
                 <thead>
                     <tr>
@@ -200,6 +292,7 @@ else
                     }
                 </tbody>
             </table>
+        }
         </div>
 
         @if (!FilteredRows.Any())
@@ -220,6 +313,10 @@ else
     .filter-search {
         flex: 1 1 260px;
         min-width: 240px;
+    }
+    .filter-role {
+        flex: 1 1 320px;
+        min-width: 280px;
     }
     .filter-toggle {
         flex: 0 0 auto;
@@ -318,6 +415,7 @@ else
     .stat-maybe { background: #ff9800; }
     .stat-cant { background: #f44336; }
     .stat-learn { background: #2196f3; }
+    .stat-unset { background: var(--mud-palette-text-secondary); }
     .stat-pill:empty::before { content: "0"; }
 
     .role-dot {
@@ -352,6 +450,7 @@ else
     private RolesMatrixDto? _matrix;
     private string _search = "";
     private string _showMode = "both";
+    private RoleFilter? _roleFilter;
 
     private static readonly GenericRole[] _genericRoles = Enum.GetValues<GenericRole>().OrderBy(r => (int)r).ToArray();
     private static readonly RoleCapabilityStatus[] _editStatuses = new[]
@@ -419,8 +518,108 @@ else
             {
                 q = q.Where(r => r.AccountName.Contains(_search, StringComparison.OrdinalIgnoreCase));
             }
+            if (_roleFilter != null)
+            {
+                var filter = _roleFilter;
+                q = q.OrderBy(r => StatusPriority(GetRowStatus(r, filter)))
+                     .ThenBy(r => r.AccountName, StringComparer.OrdinalIgnoreCase);
+            }
             return q;
         }
+    }
+
+    private static int StatusPriority(RoleCapabilityStatus? s) => s switch
+    {
+        RoleCapabilityStatus.Can => 0,
+        RoleCapabilityStatus.Maybe => 1,
+        RoleCapabilityStatus.WantToLearn => 2,
+        RoleCapabilityStatus.Cant => 3,
+        null => 4,
+        _ => 5
+    };
+
+    private RoleCapabilityStatus? GetRowStatus(RolesMatrixRowDto row, RoleFilter filter)
+    {
+        if (filter.Kind == "Generic" && filter.GenericRole.HasValue)
+        {
+            return row.GenericByRole.ContainsKey((int)filter.GenericRole.Value)
+                ? row.GenericByRole[(int)filter.GenericRole.Value]
+                : (RoleCapabilityStatus?)null;
+        }
+        if (filter.Mechanic != null)
+        {
+            return row.MechanicById.ContainsKey(filter.Mechanic.Id)
+                ? row.MechanicById[filter.Mechanic.Id]
+                : (RoleCapabilityStatus?)null;
+        }
+        return null;
+    }
+
+    private async Task SetByFilterAsync(RolesMatrixRowDto row, RoleFilter filter, RoleCapabilityStatus? status)
+    {
+        if (filter.Kind == "Generic" && filter.GenericRole.HasValue)
+        {
+            await SetGenericAsync(row, filter.GenericRole.Value, status);
+        }
+        else if (filter.Mechanic != null)
+        {
+            await SetMechanicAsync(row, filter.Mechanic, status);
+        }
+    }
+
+    private List<RoleFilter> AllRoleOptions()
+    {
+        var opts = _genericRoles
+            .Select(r => new RoleFilter("Generic", r, null))
+            .ToList();
+        if (_matrix != null)
+        {
+            opts.AddRange(_matrix.Mechanics
+                .OrderBy(m => WingMapping.GetWing(m.TriggerId) ?? 99)
+                .ThenBy(m => WingMapping.GetEncounterOrder(m.TriggerId))
+                .ThenBy(m => m.SortOrder)
+                .ThenBy(m => m.Name)
+                .Select(m => new RoleFilter("Mechanic", null, m)));
+        }
+        return opts;
+    }
+
+    private Task<IEnumerable<RoleFilter>> SearchRoleOptions(string? value, CancellationToken ct)
+    {
+        var all = AllRoleOptions();
+        IEnumerable<RoleFilter> results = string.IsNullOrWhiteSpace(value)
+            ? all
+            : all.Where(o => o.Label.Contains(value, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult(results.Take(50));
+    }
+
+    private FilterSummary ComputeFilterSummary()
+    {
+        if (_matrix == null || _roleFilter == null) return new FilterSummary(0, 0, 0, 0, 0);
+        int can = 0, maybe = 0, cant = 0, learn = 0, unset = 0;
+        var visible = FilteredRows.ToList();
+        foreach (var r in visible)
+        {
+            var s = GetRowStatus(r, _roleFilter);
+            switch (s)
+            {
+                case RoleCapabilityStatus.Can: can++; break;
+                case RoleCapabilityStatus.Maybe: maybe++; break;
+                case RoleCapabilityStatus.Cant: cant++; break;
+                case RoleCapabilityStatus.WantToLearn: learn++; break;
+                case null: unset++; break;
+            }
+        }
+        return new FilterSummary(can, maybe, cant, learn, unset);
+    }
+
+    private record FilterSummary(int Can, int Maybe, int Cant, int Learn, int Unset);
+
+    public record RoleFilter(string Kind, GenericRole? GenericRole, MechanicRoleDto? Mechanic)
+    {
+        public string Label => Kind == "Generic"
+            ? GenericRole!.Value.DisplayName()
+            : $"W{(WingMapping.GetWing(Mechanic!.TriggerId) ?? 99)} {Mechanic.BossName} — {Mechanic.Name}";
     }
 
     private async Task SetGenericAsync(RolesMatrixRowDto row, GenericRole role, RoleCapabilityStatus? status)
