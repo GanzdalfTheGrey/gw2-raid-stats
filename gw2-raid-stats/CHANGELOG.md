@@ -5,6 +5,29 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-04-30
+
+### Added
+- **Player Roles tracking** — mark which roles you can / can't / maybe / want to learn. Open your **Player Profile → Roles** to set your status across the 8 generic roles (Alac/Quick Heal, Alac/Quick DPS Power & Condi, pure DPS Power & Condi) plus boss-specific mechanic roles (pylon kite, hand kiter, tank slots, cannons, etc.).
+- **Roles Matrix** (Stats → Roles Matrix) — heatmap view of who-can-do-what across the whole guild. Colored dots per cell (green Can, orange Maybe, red Can't, blue Want to Learn); click any cell to update. Open to all members so anyone can keep their own row current.
+  - **Filter to role** dropdown collapses the matrix to a single column sorted by capability with a summary like "5 Can · 2 Maybe · 1 Learn · 0 Can't · 3 Unset" — answers "who can heal alac tonight?" in a glance.
+- **Squad Builder** (Admin → Squad Builder) — pick your players, the night's bosses, and pug count, then randomize a 10-person comp.
+  - Honors capabilities (uses Can players first, falls back to Maybe; ignores Can't and Want-to-Learn).
+  - Respects per-mechanic constraints (Sabetha cannons require DPS, Deimos hand kiter is pure DPS, Adina tank is healer, etc.).
+  - **Manual edit** any slot — swap a player, mark a DPS as PUG, or clear. **Lock** slots before clicking **Re-randomize unlocked** to keep the picks you like.
+  - **Conflict reset** — if a mechanic can't be filled because the only capable players are stuck on incompatible base roles, click *Reset from <boss>* to re-solve from that boss onward. The earlier bosses keep their assignment; you'll see a "Roles change at <boss>" diff banner.
+  - **Post to Discord** — sends the final composition as an embed to your notification channel with the squad, per-boss mechanics, mid-set swaps, and @-mentions for `/link`'d members.
+- **Mechanic Role Catalog** (Admin → Mechanic Roles) — admin-editable list of boss-specific mechanic roles with slot constraints (Any / Prefer Healer / Requires DPS / Requires Pure DPS / etc.) and per-mechanic min/max counts (e.g., Qadim Lamp 2-3). Seeded with Wings 1-7; Wing 8 ready for you to populate.
+- **Manual exclusion override** (Admin → Manage Data) — if a player passes the auto-include threshold but hasn't played in a year, click **Exclude** on their row. They drop out of leaderboards, the Roles Matrix, and the Squad Builder until you remove the exclusion.
+
+### Changed
+- Roles Matrix uses case-insensitive sorting for player names, and the filter bar wraps gracefully on narrower screens.
+
+### Fixed
+- Mechanic Role Catalog group headers now show the actual boss name instead of the literal word "Boss".
+- Roles Matrix sticky player column no longer shows dots bleeding through during horizontal scroll on a hovered row.
+- Squad Builder boss picker now shows all bosses (Cairn, Samarog, Sabir, Wing 8) even when they have no mechanic roles defined.
+
 ## [1.12.0] - 2026-04-13
 
 ### Added
