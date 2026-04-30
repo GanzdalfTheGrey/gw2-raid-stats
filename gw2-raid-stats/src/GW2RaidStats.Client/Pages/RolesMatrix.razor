@@ -20,10 +20,10 @@
     </MudButton>
 </MudStack>
 
-@* Filter bar *@
+@* Filter bar — wraps gracefully on narrow screens *@
 <MudPaper Class="pa-3 mb-3" Elevation="1">
-    <MudGrid AlignItems="AlignItems.Center">
-        <MudItem xs="12" md="4">
+    <div class="filter-bar">
+        <div class="filter-search">
             <MudTextField @bind-Value="_search"
                           Placeholder="Search players..."
                           Adornment="Adornment.Start"
@@ -32,39 +32,35 @@
                           Margin="Margin.Dense"
                           Immediate="true"
                           DebounceInterval="200" />
-        </MudItem>
-        <MudItem xs="12" md="5">
-            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Wrap="Wrap.Wrap">
-                <MudText Typo="Typo.body2" Color="Color.Secondary">Show only:</MudText>
-                @foreach (var opt in _statusFilterOptions)
-                {
-                    var captureKey = opt.Key;
-                    var isOn = _statusFilter.Contains(captureKey);
-                    <MudChip T="string"
-                             Size="Size.Small"
-                             Color="@opt.Color"
-                             Variant="@(isOn ? Variant.Filled : Variant.Outlined)"
-                             OnClick="@(() => ToggleStatusFilter(captureKey))">
-                        @opt.Label
-                    </MudChip>
-                }
-                @if (_statusFilter.Count > 0)
-                {
-                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => _statusFilter.Clear())">Clear</MudButton>
-                }
-            </MudStack>
-        </MudItem>
-        <MudItem xs="12" md="3">
-            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.FlexEnd">
-                <MudText Typo="Typo.body2" Color="Color.Secondary">Show:</MudText>
-                <MudToggleGroup T="string" @bind-Value="_showMode" Color="Color.Primary" Size="Size.Small" CheckMark="false">
-                    <MudToggleItem Value="@("both")" Text="Both" />
-                    <MudToggleItem Value="@("generic")" Text="Generic" />
-                    <MudToggleItem Value="@("mechanics")" Text="Mechanics" />
-                </MudToggleGroup>
-            </MudStack>
-        </MudItem>
-    </MudGrid>
+        </div>
+        <div class="filter-pills">
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="filter-label">Show only:</MudText>
+            @foreach (var opt in _statusFilterOptions)
+            {
+                var captureKey = opt.Key;
+                var isOn = _statusFilter.Contains(captureKey);
+                <MudChip T="string"
+                         Size="Size.Small"
+                         Color="@opt.Color"
+                         Variant="@(isOn ? Variant.Filled : Variant.Outlined)"
+                         OnClick="@(() => ToggleStatusFilter(captureKey))">
+                    @opt.Label
+                </MudChip>
+            }
+            @if (_statusFilter.Count > 0)
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => _statusFilter.Clear())">Clear</MudButton>
+            }
+        </div>
+        <div class="filter-toggle">
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="filter-label">Show:</MudText>
+            <MudToggleGroup T="string" @bind-Value="_showMode" Color="Color.Primary" Size="Size.Small" CheckMark="false">
+                <MudToggleItem Value="@("both")" Text="Both" />
+                <MudToggleItem Value="@("generic")" Text="Generic" />
+                <MudToggleItem Value="@("mechanics")" Text="Mechanics" />
+            </MudToggleGroup>
+        </div>
+    </div>
 </MudPaper>
 
 @if (_loading)
@@ -233,6 +229,34 @@ else
 }
 
 <style>
+    /* Filter bar: flex with wrap so it adapts to any width */
+    .filter-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 16px;
+    }
+    .filter-search {
+        flex: 1 1 260px;
+        min-width: 240px;
+    }
+    .filter-pills {
+        flex: 1 1 380px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+    }
+    .filter-toggle {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .filter-label {
+        white-space: nowrap;
+    }
+
     .matrix-scroll {
         overflow-x: auto;
         max-width: 100%;
@@ -283,8 +307,10 @@ else
     .role-matrix tbody tr.player-row:nth-child(even) td {
         background: var(--mud-palette-background-gray);
     }
+    /* Hover tint via inset box-shadow so sticky cells keep their opaque background
+       and don't reveal the dots scrolling behind them. */
     .role-matrix tbody tr.player-row:hover td {
-        background: rgba(33, 150, 243, 0.06);
+        box-shadow: inset 0 0 0 9999px rgba(33, 150, 243, 0.06);
     }
     .heal-tint, td.heal-tint { background: rgba(76, 175, 80, 0.08); }
     .boondps-tint, td.boondps-tint { background: rgba(33, 150, 243, 0.08); }
