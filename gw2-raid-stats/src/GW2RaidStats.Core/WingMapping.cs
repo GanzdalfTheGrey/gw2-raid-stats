@@ -192,4 +192,53 @@ public static class WingMapping
         8 => "Mount Balrior",
         _ => "Unknown"
     };
+
+    /// <summary>
+    /// Canonical list of raid bosses across all wings (one entry per boss; skips events
+    /// and combined-encounter trigger variants like Nikare/Kenut). Used by the Squad
+    /// Builder's boss picker and the Mechanic Role Catalog admin page so bosses without
+    /// mechanic roles still appear as selectable.
+    /// </summary>
+    public static IReadOnlyList<BossInfo> AllBosses { get; } = new[]
+    {
+        // Wing 1 - Spirit Vale
+        new BossInfo(15438, "Vale Guardian", 1, 1),
+        new BossInfo(15429, "Gorseval", 1, 2),
+        new BossInfo(15375, "Sabetha", 1, 3),
+
+        // Wing 2 - Salvation Pass (Bandit Trio is an event, skipped)
+        new BossInfo(16123, "Slothasor", 2, 1),
+        new BossInfo(16137, "Matthias", 2, 3),
+
+        // Wing 3 - Stronghold of the Faithful (Twisted Castle is an event, skipped)
+        new BossInfo(16235, "Keep Construct", 3, 2),
+        new BossInfo(16246, "Xera", 3, 4),
+
+        // Wing 4 - Bastion of the Penitent
+        new BossInfo(17194, "Cairn", 4, 1),
+        new BossInfo(17172, "Mursaat Overseer", 4, 2),
+        new BossInfo(17188, "Samarog", 4, 3),
+        new BossInfo(17154, "Deimos", 4, 4),
+
+        // Wing 5 - Hall of Chains (River of Souls + Statues are events, skipped)
+        new BossInfo(19767, "Soulless Horror", 5, 1),
+        new BossInfo(19450, "Dhuum", 5, 2),
+
+        // Wing 6 - Mythwright Gambit
+        new BossInfo(43974, "Conjured Amalgamate", 6, 1),
+        new BossInfo(21105, "Twin Largos", 6, 2),
+        new BossInfo(20934, "Qadim", 6, 3),
+
+        // Wing 7 - The Key of Ahdashim
+        new BossInfo(22006, "Cardinal Adina", 7, 1),
+        new BossInfo(21964, "Cardinal Sabir", 7, 2),
+        new BossInfo(22000, "Qadim the Peerless", 7, 3),
+
+        // Wing 8 - Mount Balrior
+        new BossInfo(26725, "Greer", 8, 1),
+        new BossInfo(26774, "Decima", 8, 2),
+        new BossInfo(26712, "Ura", 8, 3),
+    };
 }
+
+public record BossInfo(int TriggerId, string Name, int Wing, int Order);

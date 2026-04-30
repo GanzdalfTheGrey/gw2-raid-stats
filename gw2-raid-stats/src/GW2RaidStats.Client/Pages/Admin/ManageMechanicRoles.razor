@@ -217,36 +217,8 @@
 
     private void BuildBossOptions()
     {
-        var pairs = new (int triggerId, string name)[]
-        {
-            (15438, "Vale Guardian"),
-            (15429, "Gorseval"),
-            (15375, "Sabetha"),
-            (16123, "Slothasor"),
-            (16137, "Matthias"),
-            (16235, "Keep Construct"),
-            (16246, "Xera"),
-            (17194, "Cairn"),
-            (17172, "Mursaat Overseer"),
-            (17188, "Samarog"),
-            (17154, "Deimos"),
-            (19767, "Soulless Horror"),
-            (19450, "Dhuum"),
-            (43974, "Conjured Amalgamate"),
-            (21105, "Twin Largos"),
-            (20934, "Qadim"),
-            (22006, "Cardinal Adina"),
-            (21964, "Cardinal Sabir"),
-            (22000, "Qadim the Peerless"),
-            (26725, "Greer"),
-            (26774, "Decima"),
-            (26712, "Ura"),
-        };
-
-        _bossOptions = pairs
-            .Select(p => new BossOption(p.triggerId, p.name, WingMapping.GetWing(p.triggerId) ?? 99))
-            .OrderBy(b => b.Wing)
-            .ThenBy(b => WingMapping.GetEncounterOrder(b.TriggerId))
+        _bossOptions = WingMapping.AllBosses
+            .Select(b => new BossOption(b.TriggerId, b.Name, b.Wing))
             .ToList();
     }
 

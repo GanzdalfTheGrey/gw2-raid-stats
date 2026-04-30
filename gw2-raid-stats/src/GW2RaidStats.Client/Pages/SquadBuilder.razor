@@ -368,32 +368,17 @@
         }
     }
 
-    private async Task LoadMechanicsAsync()
+    private Task LoadMechanicsAsync()
     {
         _loadingMechanics = true;
-        try
-        {
-            var mechanics = await Http.GetFromJsonAsync<List<MechanicRoleDto>>("api/mechanic-roles") ?? new();
-            _allBosses = mechanics
-                .GroupBy(m => new { m.TriggerId, m.BossName })
-                .Select(g => new BossOption(
-                    g.Key.TriggerId,
-                    g.Key.BossName,
-                    WingMapping.GetWing(g.Key.TriggerId) ?? 99,
-                    WingMapping.GetEncounterOrder(g.Key.TriggerId)))
-                .OrderBy(b => b.Wing)
-                .ThenBy(b => b.EncounterOrder)
-                .ToList();
-        }
-        catch
-        {
-            _allBosses = new();
-        }
-        finally
-        {
-            _loadingMechanics = false;
-            StateHasChanged();
-        }
+        // Use the canonical boss list so bosses without mechanic roles (Cairn, Samarog,
+        // Sabir, Wing 8 if not yet seeded) still appear as selectable.
+        _allBosses = WingMapping.AllBosses
+            .Select(b => new BossOption(b.TriggerId, b.Name, b.Wing, b.Order))
+            .ToList();
+        _loadingMechanics = false;
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 
     private string SelectedPlayerNames(List<string> selectedValues)
