@@ -1,0 +1,962 @@
+@page "/squad/builder"
+@using GW2RaidStats.Core
+@using GW2RaidStats.Core.Roles
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+
+<PageTitle>GW2 Raid Stats - Squad Builder</PageTitle>
+
+<AdminAuth>
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+        <MudStack Spacing="0">
+            <MudText Typo="Typo.h4">Squad Builder</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Pick players and bosses, randomize roles, manual-tweak as needed, post to Discord.
+            </MudText>
+        </MudStack>
+    </MudStack>
+
+    @* Inputs *@
+    <MudPaper Class="pa-4 mb-4" Elevation="2">
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Players (max 10)</MudText>
+                @if (_loadingPlayers)
+                {
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                }
+                else
+                {
+                    <MudSelect T="Guid"
+                               SelectedValues="@_selectedPlayerIds"
+                               SelectedValuesChanged="@(v => _selectedPlayerIds = v.ToHashSet())"
+                               MultiSelection="true"
+                               Label="Select players"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               MultiSelectionTextFunc="@SelectedPlayerNames"
+                               AnchorOrigin="Origin.BottomCenter">
+                        @foreach (var p in _allPlayers)
+                        {
+                            <MudSelectItem T="Guid" Value="@p.Id">@p.AccountName</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+            </MudItem>
+            <MudItem xs="6" md="2">
+                <MudNumericField @bind-Value="_pugCount"
+                                 Label="Pug DPS"
+                                 Variant="Variant.Outlined"
+                                 Margin="Margin.Dense"
+                                 Min="0"
+                                 Max="@(10 - _selectedPlayerIds.Count)" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    @_selectedPlayerIds.Count guildie(s) + @_pugCount pug(s) = @(_selectedPlayerIds.Count + _pugCount) / 10 slots
+                </MudText>
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Bosses (in order)</MudText>
+                @if (_loadingMechanics)
+                {
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                }
+                else
+                {
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                        @foreach (var boss in _allBosses)
+                        {
+                            var isSelected = _selectedBossOrder.Contains(boss.TriggerId);
+                            <MudChip T="string"
+                                     OnClick="@(() => ToggleBoss(boss.TriggerId))"
+                                     Color="@(isSelected ? Color.Primary : Color.Default)"
+                                     Variant="@(isSelected ? Variant.Filled : Variant.Outlined)">
+                                W@(boss.Wing) @boss.Name
+                                @if (isSelected)
+                                {
+                                    <span style="margin-left: 6px; opacity: 0.8;">#@(_selectedBossOrder.IndexOf(boss.TriggerId) + 1)</span>
+                                }
+                            </MudChip>
+                        }
+                    </MudStack>
+                }
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Shuffle"
+                               Disabled="@(_building || (_selectedPlayerIds.Count == 0 && _pugCount == 0) || _selectedBossOrder.Count == 0)"
+                               OnClick="@(() => RandomizeAsync(respectLocks: false))">
+                        @if (_building)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        Randomize
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.LockReset"
+                               Disabled="@(_building || _grid.Count == 0)"
+                               OnClick="@(() => RandomizeAsync(respectLocks: true))">
+                        Re-randomize unlocked
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.Clear"
+                               OnClick="@Clear">
+                        Clear
+                    </MudButton>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Tertiary"
+                               StartIcon="@Icons.Material.Filled.Send"
+                               Disabled="@(_grid.Count == 0 || _publishing)"
+                               OnClick="@PublishAsync">
+                        @if (_publishing)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        Post to Discord
+                    </MudButton>
+                </MudStack>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @* Result *@
+    @if (_grid.Count > 0)
+    {
+        @* Warnings *@
+        @foreach (var w in _warnings)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-2" Dense="true">@w</MudAlert>
+        }
+
+        @* Conflicts (with reset buttons) *@
+        @foreach (var c in ActiveConflicts())
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-2">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+                    <MudText Style="flex: 1;">
+                        <strong>@c.BossName — @c.MechanicName</strong>: filled @c.Filled / @c.Required.
+                        @if (c.BlockedCandidates.Count > 0)
+                        {
+                            <span> Could do but base-role-blocked: </span>
+                            @string.Join(", ", c.BlockedCandidates.Select(b => $"{b.AccountName} (on {b.CurrentBaseRole.DisplayName()})"))
+                        }
+                    </MudText>
+                    @if (CanResetFromBoss(c.BossTriggerId))
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning"
+                                   StartIcon="@Icons.Material.Filled.Restore"
+                                   Disabled="@_building"
+                                   OnClick="@(() => ResetFromAsync(c.BossTriggerId, c.MechanicRoleId))">
+                            Reset from @c.BossName
+                        </MudButton>
+                    }
+                </MudStack>
+            </MudAlert>
+        }
+
+        @* Reset segment banners with diff *@
+        @foreach (var seg in _resetSegments)
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-2">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+                    <MudText Style="flex: 1;">
+                        <strong>Roles change at @seg.FromBossName onward:</strong>
+                        @if (seg.Diff.Count == 0)
+                        {
+                            <span> (no base-role swaps; mechanics re-assigned only)</span>
+                        }
+                        else
+                        {
+                            <span> @string.Join(", ", seg.Diff.Select(d => $"{d.AccountName}: {d.FromRole?.DisplayName() ?? "—"} → {d.ToRole?.DisplayName() ?? "—"}"))</span>
+                        }
+                    </MudText>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                   OnClick="@(() => DismissReset(seg))" />
+                </MudStack>
+            </MudAlert>
+        }
+
+        @* Squad grid *@
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Squad</MudText>
+            <MudGrid>
+                @foreach (var sub in _grid)
+                {
+                    <MudItem xs="12" md="6">
+                        <MudPaper Class="pa-3" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
+                            <MudText Typo="Typo.subtitle1" Class="mb-2"><strong>Sub @sub.Index</strong></MudText>
+                            <MudStack Spacing="1">
+                                @foreach (var slot in sub.Slots)
+                                {
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                        <MudIconButton Icon="@(slot.IsLocked ? Icons.Material.Filled.Lock : Icons.Material.Filled.LockOpen)"
+                                                       Size="Size.Small"
+                                                       Color="@(slot.IsLocked ? Color.Warning : Color.Default)"
+                                                       OnClick="@(() => ToggleLock(slot))" />
+                                        <MudChip T="string" Size="Size.Small" Color="@SlotKindColor(slot.Kind)" Style="min-width: 90px;">@slot.Kind</MudChip>
+                                        <MudMenu ActivationEvent="@MouseEvent.LeftClick" AnchorOrigin="Origin.BottomLeft" Dense="true" Style="flex: 1;">
+                                            <ActivatorContent>
+                                                <MudButton Variant="Variant.Text" Size="Size.Small" FullWidth="true" Style="justify-content: flex-start;">
+                                                    @if (slot.PlayerId.HasValue && !string.IsNullOrEmpty(slot.AccountName))
+                                                    {
+                                                        <strong>@slot.AccountName</strong>
+                                                    }
+                                                    else if (slot.IsPug)
+                                                    {
+                                                        <MudText Typo="Typo.body2" Color="Color.Secondary">PUG</MudText>
+                                                    }
+                                                    else
+                                                    {
+                                                        <MudText Typo="Typo.body2" Color="Color.Error">— click to assign —</MudText>
+                                                    }
+                                                </MudButton>
+                                            </ActivatorContent>
+                                            <ChildContent>
+                                                @{ var captureSlot = slot; }
+                                                @foreach (var pick in AvailablePlayersFor(slot))
+                                                {
+                                                    var capturePick = pick;
+                                                    <MudMenuItem OnClick="@(() => AssignPlayerToSlot(captureSlot, capturePick.PlayerId))">
+                                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                                            <MudChip T="string" Size="Size.Small" Color="@StatusColor(capturePick.BestStatus)">@StatusLabel(capturePick.BestStatus)</MudChip>
+                                                            <MudText>@capturePick.AccountName</MudText>
+                                                        </MudStack>
+                                                    </MudMenuItem>
+                                                }
+                                                @if (slot.Kind == "Dps")
+                                                {
+                                                    <MudDivider />
+                                                    <MudMenuItem OnClick="@(() => MarkSlotPug(captureSlot))">
+                                                        <MudText Color="Color.Secondary">Mark as PUG</MudText>
+                                                    </MudMenuItem>
+                                                }
+                                                @if (slot.PlayerId.HasValue || slot.IsPug)
+                                                {
+                                                    <MudDivider />
+                                                    <MudMenuItem OnClick="@(() => ClearSlot(captureSlot))">
+                                                        <MudText Color="Color.Error">Clear slot</MudText>
+                                                    </MudMenuItem>
+                                                }
+                                            </ChildContent>
+                                        </MudMenu>
+                                        @if (slot.Role.HasValue)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@slot.Role.Value.DisplayName()</MudChip>
+                                        }
+                                    </MudStack>
+                                }
+                            </MudStack>
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudPaper>
+
+        @* Mechanics list — segment-aware *@
+        @if (_selectedBossOrder.Count > 0)
+        {
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">Mechanics</MudText>
+                <MudStack Spacing="3">
+                    @foreach (var triggerId in _selectedBossOrder)
+                    {
+                        var bossData = ResolveBossMechanics(triggerId);
+                        if (bossData == null) continue;
+                        <MudPaper Class="pa-3" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                                <MudText Typo="Typo.subtitle1"><strong>W@(bossData.Wing) — @bossData.BossName</strong></MudText>
+                                @if (bossData.IsResetSegment)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Info">Reset segment</MudChip>
+                                }
+                            </MudStack>
+                            @if (bossData.Mechanics.Count == 0)
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">No mechanic roles defined.</MudText>
+                            }
+                            @foreach (var mech in bossData.Mechanics)
+                            {
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-1">
+                                    <MudChip T="string" Size="Size.Small" Style="min-width: 140px;">@mech.Name</MudChip>
+                                    @{
+                                        var assignedNames = mech.AssignedPlayers
+                                            .Select(p => p.AccountName)
+                                            .Where(n => !string.IsNullOrEmpty(n))
+                                            .ToList();
+                                        var emptyCount = mech.MinCount - assignedNames.Count;
+                                    }
+                                    @if (assignedNames.Count > 0)
+                                    {
+                                        <MudText>@string.Join(", ", assignedNames)</MudText>
+                                    }
+                                    @if (emptyCount > 0)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined">
+                                            @emptyCount unfilled
+                                        </MudChip>
+                                    }
+                                </MudStack>
+                            }
+                        </MudPaper>
+                    }
+                </MudStack>
+            </MudPaper>
+        }
+    }
+</AdminAuth>
+
+@code {
+    private bool _loadingPlayers = true;
+    private bool _loadingMechanics = true;
+    private bool _building = false;
+    private bool _publishing = false;
+
+    private List<PlayerOption> _allPlayers = new();
+    private HashSet<Guid> _selectedPlayerIds = new();
+    private int _pugCount = 0;
+
+    private List<BossOption> _allBosses = new();
+    private List<int> _selectedBossOrder = new();
+
+    // Capability data — keyed by player id, used for the per-slot picker UI
+    private Dictionary<Guid, Dictionary<int, RoleCapabilityStatus>> _genericCaps = new();
+
+    // Mutable squad grid (state of truth after manual edits)
+    private List<GridSubGroup> _grid = new();
+    private SquadAssignmentDto? _baseAssignment;       // last full build (for diff)
+    private List<SquadConflictDto> _baseConflicts = new();
+    private List<string> _warnings = new();
+    private int _pugDpsCount = 0;
+
+    // Reset segments (one per accepted reset)
+    private List<ResetSegmentView> _resetSegments = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(LoadPlayersAsync(), LoadMechanicsAsync());
+    }
+
+    private async Task LoadPlayersAsync()
+    {
+        _loadingPlayers = true;
+        try
+        {
+            var matrix = await Http.GetFromJsonAsync<RolesMatrixDto>("api/roles/matrix");
+            _allPlayers = matrix?.Rows
+                .Select(r => new PlayerOption(r.PlayerId, r.AccountName))
+                .OrderBy(p => p.AccountName)
+                .ToList() ?? new();
+            _genericCaps = matrix?.Rows
+                .ToDictionary(r => r.PlayerId, r => r.GenericByRole) ?? new();
+        }
+        catch
+        {
+            _allPlayers = new();
+            _genericCaps = new();
+        }
+        finally
+        {
+            _loadingPlayers = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadMechanicsAsync()
+    {
+        _loadingMechanics = true;
+        try
+        {
+            var mechanics = await Http.GetFromJsonAsync<List<MechanicRoleDto>>("api/mechanic-roles") ?? new();
+            _allBosses = mechanics
+                .GroupBy(m => new { m.TriggerId, m.BossName })
+                .Select(g => new BossOption(
+                    g.Key.TriggerId,
+                    g.Key.BossName,
+                    WingMapping.GetWing(g.Key.TriggerId) ?? 99,
+                    WingMapping.GetEncounterOrder(g.Key.TriggerId)))
+                .OrderBy(b => b.Wing)
+                .ThenBy(b => b.EncounterOrder)
+                .ToList();
+        }
+        catch
+        {
+            _allBosses = new();
+        }
+        finally
+        {
+            _loadingMechanics = false;
+            StateHasChanged();
+        }
+    }
+
+    private string SelectedPlayerNames(List<string> selectedValues)
+    {
+        if (selectedValues.Count == 0) return "(none selected)";
+        if (selectedValues.Count > 3) return $"{selectedValues.Count} players selected";
+        var names = _selectedPlayerIds
+            .Select(id => _allPlayers.FirstOrDefault(p => p.Id == id)?.AccountName)
+            .Where(n => !string.IsNullOrEmpty(n));
+        return string.Join(", ", names);
+    }
+
+    private void ToggleBoss(int triggerId)
+    {
+        if (_selectedBossOrder.Contains(triggerId)) _selectedBossOrder.Remove(triggerId);
+        else _selectedBossOrder.Add(triggerId);
+    }
+
+    // --- Build / re-randomize ---
+
+    private async Task RandomizeAsync(bool respectLocks)
+    {
+        if (_selectedPlayerIds.Count + _pugCount > 10)
+        {
+            Snackbar.Add("Players + pugs cannot exceed 10", Severity.Warning);
+            return;
+        }
+
+        var locks = respectLocks ? CollectLocksFromGrid() : null;
+
+        _building = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/squad/build", new SquadBuildRequest(
+                _selectedPlayerIds.ToList(),
+                _selectedBossOrder.ToList(),
+                _pugCount,
+                locks,
+                null,
+                null));
+
+            if (resp.IsSuccessStatusCode)
+            {
+                var result = await resp.Content.ReadFromJsonAsync<SquadBuildResult>();
+                if (result == null) return;
+                _baseAssignment = result.Assignment;
+                _baseConflicts = result.Conflicts;
+                _warnings = result.Warnings;
+                _pugDpsCount = result.Assignment.PugDpsCount;
+                _grid = BuildGrid(result.Assignment, locks);
+                _resetSegments.Clear();
+                Snackbar.Add(respectLocks ? "Re-rolled unlocked slots" : "Squad randomized", Severity.Success);
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                Snackbar.Add($"Failed to build: {msg}", Severity.Error);
+            }
+        }
+        finally
+        {
+            _building = false;
+        }
+    }
+
+    private List<GridSubGroup> BuildGrid(SquadAssignmentDto assignment, Dictionary<Guid, GenericRole>? lockSet)
+    {
+        var grid = new List<GridSubGroup>();
+        var pugsRemaining = assignment.PugDpsCount;
+        foreach (var sub in assignment.SubGroups)
+        {
+            var gs = new GridSubGroup { Index = sub.Index, Slots = new() };
+            for (int i = 0; i < sub.Slots.Count; i++)
+            {
+                var s = sub.Slots[i];
+                var hasPlayer = s.PlayerId.HasValue && !string.IsNullOrEmpty(s.AccountName);
+                var isPug = !hasPlayer && pugsRemaining > 0 && s.Kind == "Dps";
+                if (isPug) pugsRemaining--;
+                var locked = lockSet != null && s.PlayerId.HasValue && lockSet.ContainsKey(s.PlayerId.Value);
+                gs.Slots.Add(new GridSlot
+                {
+                    Index = i,
+                    Kind = s.Kind,
+                    PlayerId = hasPlayer ? s.PlayerId : null,
+                    AccountName = hasPlayer ? s.AccountName : null,
+                    Role = s.Role,
+                    IsPug = isPug,
+                    IsLocked = locked
+                });
+            }
+            grid.Add(gs);
+        }
+        return grid;
+    }
+
+    private Dictionary<Guid, GenericRole>? CollectLocksFromGrid()
+    {
+        var locks = new Dictionary<Guid, GenericRole>();
+        foreach (var sub in _grid)
+        {
+            foreach (var slot in sub.Slots)
+            {
+                if (slot.IsLocked && slot.PlayerId.HasValue && slot.Role.HasValue)
+                {
+                    locks[slot.PlayerId.Value] = slot.Role.Value;
+                }
+            }
+        }
+        return locks.Count == 0 ? null : locks;
+    }
+
+    private void Clear()
+    {
+        _grid = new();
+        _baseAssignment = null;
+        _baseConflicts = new();
+        _warnings = new();
+        _resetSegments.Clear();
+        _pugDpsCount = 0;
+    }
+
+    // --- Manual slot edit ---
+
+    private record AvailablePick(Guid PlayerId, string AccountName, RoleCapabilityStatus? BestStatus);
+
+    private List<AvailablePick> AvailablePlayersFor(GridSlot slot)
+    {
+        var assigned = _grid.SelectMany(s => s.Slots)
+            .Where(s => s.PlayerId.HasValue)
+            .Select(s => s.PlayerId!.Value)
+            .ToHashSet();
+        // Allow re-picking the current slot's player (no-op effectively, but UX safe)
+        if (slot.PlayerId.HasValue) assigned.Remove(slot.PlayerId.Value);
+
+        var subIndex = _grid.First(s => s.Slots.Contains(slot)).Index;
+        var roles = AcceptedRolesFor(slot.Kind, subIndex);
+
+        return _selectedPlayerIds
+            .Where(pid => !assigned.Contains(pid))
+            .Select(pid =>
+            {
+                var name = _allPlayers.FirstOrDefault(p => p.Id == pid)?.AccountName ?? "?";
+                var capsForRoles = roles.Select(r =>
+                {
+                    if (_genericCaps.TryGetValue(pid, out var roleMap)
+                        && roleMap.TryGetValue((int)r, out var st)) return (RoleCapabilityStatus?)st;
+                    return null;
+                }).ToList();
+                var best = capsForRoles
+                    .Where(s => s.HasValue)
+                    .OrderBy(s => s == RoleCapabilityStatus.Can ? 0
+                                : s == RoleCapabilityStatus.Maybe ? 1
+                                : s == RoleCapabilityStatus.WantToLearn ? 2
+                                : s == RoleCapabilityStatus.Cant ? 3 : 4)
+                    .FirstOrDefault();
+                return new AvailablePick(pid, name, best);
+            })
+            .OrderBy(p => p.BestStatus == RoleCapabilityStatus.Can ? 0
+                        : p.BestStatus == RoleCapabilityStatus.Maybe ? 1
+                        : p.BestStatus == RoleCapabilityStatus.WantToLearn ? 2
+                        : p.BestStatus == RoleCapabilityStatus.Cant ? 3 : 4)
+            .ThenBy(p => p.AccountName)
+            .ToList();
+    }
+
+    private static GenericRole[] AcceptedRolesFor(string kind, int subIndex) => (kind, subIndex) switch
+    {
+        ("Heal", 1) => new[] { GenericRole.AlacHeal },
+        ("Heal", 2) => new[] { GenericRole.QuickHeal },
+        ("BoonDps", 1) => new[] { GenericRole.QuickDpsPower, GenericRole.QuickDpsCondi },
+        ("BoonDps", 2) => new[] { GenericRole.AlacDpsPower, GenericRole.AlacDpsCondi },
+        ("Dps", _) => new[] { GenericRole.DpsPower, GenericRole.DpsCondi },
+        _ => Array.Empty<GenericRole>()
+    };
+
+    private void AssignPlayerToSlot(GridSlot slot, Guid playerId)
+    {
+        // Remove player from any other slot (move semantics)
+        foreach (var sub in _grid)
+        {
+            foreach (var s in sub.Slots)
+            {
+                if (s != slot && s.PlayerId == playerId)
+                {
+                    s.PlayerId = null;
+                    s.AccountName = null;
+                    s.Role = null;
+                    s.IsLocked = false;
+                }
+            }
+        }
+
+        var subIndex = _grid.First(s => s.Slots.Contains(slot)).Index;
+        var roles = AcceptedRolesFor(slot.Kind, subIndex);
+        var caps = _genericCaps.GetValueOrDefault(playerId) ?? new();
+        // Pick the role variant with the best capability for this player
+        GenericRole? chosen = null;
+        foreach (var r in roles)
+        {
+            if (caps.TryGetValue((int)r, out var st)
+                && (st == RoleCapabilityStatus.Can || st == RoleCapabilityStatus.Maybe))
+            {
+                chosen = r;
+                break;
+            }
+        }
+        chosen ??= roles.FirstOrDefault();
+
+        var name = _allPlayers.FirstOrDefault(p => p.Id == playerId)?.AccountName ?? "?";
+        slot.PlayerId = playerId;
+        slot.AccountName = name;
+        slot.Role = chosen;
+        slot.IsPug = false;
+    }
+
+    private void MarkSlotPug(GridSlot slot)
+    {
+        if (slot.Kind != "Dps") return;
+        slot.PlayerId = null;
+        slot.AccountName = null;
+        slot.Role = null;
+        slot.IsPug = true;
+        slot.IsLocked = false;
+    }
+
+    private void ClearSlot(GridSlot slot)
+    {
+        slot.PlayerId = null;
+        slot.AccountName = null;
+        slot.Role = null;
+        slot.IsPug = false;
+        slot.IsLocked = false;
+    }
+
+    private void ToggleLock(GridSlot slot)
+    {
+        slot.IsLocked = !slot.IsLocked;
+    }
+
+    // --- Conflict reset flow ---
+
+    private bool CanResetFromBoss(int triggerId)
+    {
+        // Only show reset for bosses not already covered by a reset segment
+        return !_resetSegments.Any(r => _selectedBossOrder.IndexOf(r.FromBossTriggerId) <= _selectedBossOrder.IndexOf(triggerId));
+    }
+
+    private async Task ResetFromAsync(int triggerId, Guid forceCoverableMechanicId)
+    {
+        var idx = _selectedBossOrder.IndexOf(triggerId);
+        if (idx < 0) return;
+        var tail = _selectedBossOrder.Skip(idx).ToList();
+
+        _building = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/squad/build", new SquadBuildRequest(
+                _selectedPlayerIds.ToList(),
+                tail,
+                _pugCount,
+                null,
+                forceCoverableMechanicId,
+                null));
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Reset build failed", Severity.Error);
+                return;
+            }
+            var result = await resp.Content.ReadFromJsonAsync<SquadBuildResult>();
+            if (result == null) return;
+
+            // Diff against the active assignment (latest segment or base)
+            var prior = ActiveAssignmentBefore(triggerId);
+            var diff = ComputeRoleDiff(prior, result.Assignment);
+            var bossName = _allBosses.FirstOrDefault(b => b.TriggerId == triggerId)?.Name ?? "?";
+
+            _resetSegments.Add(new ResetSegmentView(
+                triggerId,
+                bossName,
+                result.Assignment,
+                result.Conflicts,
+                diff));
+
+            Snackbar.Add($"Reset segment created from {bossName}", Severity.Success);
+        }
+        finally
+        {
+            _building = false;
+        }
+    }
+
+    private void DismissReset(ResetSegmentView seg)
+    {
+        _resetSegments.Remove(seg);
+    }
+
+    private SquadAssignmentDto? ActiveAssignmentBefore(int triggerId)
+    {
+        // Walk reset segments; the latest one whose FromBoss is BEFORE triggerId is active
+        var idx = _selectedBossOrder.IndexOf(triggerId);
+        SquadAssignmentDto? active = _baseAssignment;
+        foreach (var seg in _resetSegments)
+        {
+            var segIdx = _selectedBossOrder.IndexOf(seg.FromBossTriggerId);
+            if (segIdx >= 0 && segIdx < idx) active = seg.Assignment;
+        }
+        return active;
+    }
+
+    private List<RoleSwap> ComputeRoleDiff(SquadAssignmentDto? from, SquadAssignmentDto to)
+    {
+        if (from == null) return new();
+        var fromMap = from.SubGroups.SelectMany(s => s.Slots)
+            .Where(s => s.PlayerId.HasValue)
+            .ToDictionary(s => s.PlayerId!.Value, s => s.Role);
+        var toMap = to.SubGroups.SelectMany(s => s.Slots)
+            .Where(s => s.PlayerId.HasValue)
+            .ToDictionary(s => s.PlayerId!.Value, s => s.Role);
+
+        var diffs = new List<RoleSwap>();
+        var allIds = fromMap.Keys.Union(toMap.Keys);
+        foreach (var pid in allIds)
+        {
+            var fromR = fromMap.GetValueOrDefault(pid);
+            var toR = toMap.GetValueOrDefault(pid);
+            if (fromR == toR) continue;
+            var name = _allPlayers.FirstOrDefault(p => p.Id == pid)?.AccountName ?? "?";
+            diffs.Add(new RoleSwap(pid, name, fromR, toR));
+        }
+        return diffs;
+    }
+
+    private List<SquadConflictDto> ActiveConflicts()
+    {
+        // Only surface conflicts NOT yet covered by an accepted reset segment.
+        // Conflicts from the most recent reset segment are also surfaced.
+        var covered = _resetSegments
+            .Select(r => _selectedBossOrder.IndexOf(r.FromBossTriggerId))
+            .DefaultIfEmpty(int.MaxValue)
+            .Min();
+
+        var baseRemaining = _baseConflicts
+            .Where(c => _selectedBossOrder.IndexOf(c.BossTriggerId) < covered)
+            .ToList();
+
+        var segmentConflicts = _resetSegments.SelectMany(r => r.Conflicts).ToList();
+
+        return baseRemaining.Concat(segmentConflicts).ToList();
+    }
+
+    // --- Mechanics resolution ---
+
+    private record BossMechanicsView(string BossName, int Wing, List<MechanicAssignmentDto> Mechanics, bool IsResetSegment);
+
+    private BossMechanicsView? ResolveBossMechanics(int triggerId)
+    {
+        var idx = _selectedBossOrder.IndexOf(triggerId);
+        if (idx < 0) return null;
+
+        // Find the assignment that owns this boss: latest reset segment whose FromBoss <= this boss, else base
+        SquadAssignmentDto? source = _baseAssignment;
+        var isSegment = false;
+        foreach (var seg in _resetSegments)
+        {
+            var segIdx = _selectedBossOrder.IndexOf(seg.FromBossTriggerId);
+            if (segIdx >= 0 && segIdx <= idx)
+            {
+                source = seg.Assignment;
+                isSegment = true;
+            }
+        }
+
+        if (source == null) return null;
+        var bossEntry = source.PerBoss.FirstOrDefault(b => b.TriggerId == triggerId);
+        if (bossEntry == null)
+        {
+            var bossOpt = _allBosses.FirstOrDefault(b => b.TriggerId == triggerId);
+            return new BossMechanicsView(bossOpt?.Name ?? "?", bossOpt?.Wing ?? 99, new(), isSegment);
+        }
+        return new BossMechanicsView(bossEntry.BossName, bossEntry.Wing, bossEntry.Mechanics, isSegment);
+    }
+
+    // --- Publish ---
+
+    private async Task PublishAsync()
+    {
+        if (_grid.Count == 0) return;
+        _publishing = true;
+        try
+        {
+            var bossNames = _selectedBossOrder
+                .Select(t => _allBosses.FirstOrDefault(b => b.TriggerId == t)?.Name)
+                .Where(n => !string.IsNullOrEmpty(n))
+                .ToList();
+            var bossesText = bossNames.Count == 0 ? "(no bosses)" : string.Join(", ", bossNames);
+
+            var subPayloads = _grid.Select(s => new SquadPublishSubGroup(
+                s.Index,
+                s.Slots.Select(slot => new SquadPublishSlot(
+                    slot.Kind,
+                    slot.Role?.ToString(),
+                    slot.PlayerId,
+                    slot.AccountName,
+                    slot.IsPug)).ToList()
+            )).ToList();
+
+            var bossPayloads = _selectedBossOrder.Select(triggerId =>
+            {
+                var view = ResolveBossMechanics(triggerId);
+                if (view == null) return null;
+                return new SquadPublishBoss(
+                    view.BossName,
+                    view.Mechanics.Select(m => new SquadPublishMechanic(
+                        m.Name,
+                        m.AssignedPlayers.Select(p => new SquadPublishMechanicSlot(p.PlayerId, p.AccountName)).ToList()
+                    )).ToList(),
+                    view.IsResetSegment);
+            }).Where(b => b != null).Cast<SquadPublishBoss>().ToList();
+
+            var swaps = _resetSegments.Select(seg => new SquadPublishSwap(
+                seg.FromBossName,
+                seg.Diff.Select(d => new SquadPublishSwapEntry(
+                    d.AccountName,
+                    d.FromRole?.ToString(),
+                    d.ToRole?.ToString())).ToList()
+            )).ToList();
+
+            var pugCount = _grid.SelectMany(s => s.Slots).Count(s => s.IsPug);
+
+            var payload = new SquadPublishPayload(
+                "Tonight's Squad",
+                bossesText,
+                subPayloads,
+                pugCount,
+                bossPayloads,
+                _warnings,
+                swaps,
+                null);
+
+            var resp = await Http.PostAsJsonAsync("api/squad/publish", payload);
+            if (resp.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Posted to Discord (will appear in ~5s)", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Failed to post", Severity.Error);
+            }
+        }
+        finally
+        {
+            _publishing = false;
+        }
+    }
+
+    // --- Display helpers ---
+
+    private static Color SlotKindColor(string kind) => kind switch
+    {
+        "Heal" => Color.Success,
+        "BoonDps" => Color.Info,
+        "Dps" => Color.Error,
+        _ => Color.Default
+    };
+
+    private static Color StatusColor(RoleCapabilityStatus? s) => s switch
+    {
+        RoleCapabilityStatus.Can => Color.Success,
+        RoleCapabilityStatus.Maybe => Color.Warning,
+        RoleCapabilityStatus.Cant => Color.Error,
+        RoleCapabilityStatus.WantToLearn => Color.Info,
+        _ => Color.Default
+    };
+
+    private static string StatusLabel(RoleCapabilityStatus? s) => s switch
+    {
+        null => "Unset",
+        RoleCapabilityStatus.Can => "Can",
+        RoleCapabilityStatus.Maybe => "Maybe",
+        RoleCapabilityStatus.Cant => "Can't",
+        RoleCapabilityStatus.WantToLearn => "Learn",
+        _ => "?"
+    };
+
+    // --- Models ---
+
+    public record PlayerOption(Guid Id, string AccountName);
+    public record BossOption(int TriggerId, string Name, int Wing, int EncounterOrder);
+
+    private class GridSubGroup
+    {
+        public int Index { get; set; }
+        public List<GridSlot> Slots { get; set; } = new();
+    }
+
+    private class GridSlot
+    {
+        public int Index { get; set; }
+        public string Kind { get; set; } = "";
+        public Guid? PlayerId { get; set; }
+        public string? AccountName { get; set; }
+        public GenericRole? Role { get; set; }
+        public bool IsPug { get; set; }
+        public bool IsLocked { get; set; }
+    }
+
+    private record ResetSegmentView(
+        int FromBossTriggerId,
+        string FromBossName,
+        SquadAssignmentDto Assignment,
+        List<SquadConflictDto> Conflicts,
+        List<RoleSwap> Diff);
+
+    private record RoleSwap(Guid PlayerId, string AccountName, GenericRole? FromRole, GenericRole? ToRole);
+
+    @* DTOs mirror the server *@
+    public record RolesMatrixDto(List<MechanicRoleDto> Mechanics, List<RolesMatrixRowDto> Rows);
+    public record RolesMatrixRowDto(Guid PlayerId, string AccountName,
+        Dictionary<int, RoleCapabilityStatus> GenericByRole,
+        Dictionary<Guid, RoleCapabilityStatus> MechanicById);
+    public record MechanicRoleDto(Guid Id, int TriggerId, string BossName, string Name,
+        MechanicConstraint Constraint, int MinCount, int MaxCount, int SortOrder);
+
+    public record SquadBuildRequest(
+        List<Guid> PlayerIds,
+        List<int> BossTriggerIds,
+        int PugCount,
+        Dictionary<Guid, GenericRole>? Locks,
+        Guid? ForceCoverableMechanicId,
+        int? Seed);
+
+    public record SquadBuildResult(
+        SquadAssignmentDto Assignment,
+        List<SquadConflictDto> Conflicts,
+        List<string> Warnings);
+
+    public record SquadAssignmentDto(
+        List<SubGroupDto> SubGroups,
+        int PugDpsCount,
+        List<BossAssignmentDto> PerBoss);
+
+    public record SubGroupDto(int Index, List<SlotAssignmentDto> Slots);
+    public record SlotAssignmentDto(string Kind, GenericRole? Role, Guid? PlayerId, string? AccountName);
+    public record BossAssignmentDto(int TriggerId, string BossName, int Wing, int EncounterOrder, List<MechanicAssignmentDto> Mechanics);
+    public record MechanicAssignmentDto(Guid MechanicRoleId, string Name, MechanicConstraint Constraint,
+        int MinCount, int MaxCount, List<MechanicSlotDto> AssignedPlayers);
+    public record MechanicSlotDto(Guid? PlayerId, string? AccountName, RoleCapabilityStatus? StatusUsed);
+    public record SquadConflictDto(int BossTriggerId, string BossName, Guid MechanicRoleId, string MechanicName,
+        int Required, int Filled, List<BlockedCandidateDto> BlockedCandidates);
+    public record BlockedCandidateDto(Guid PlayerId, string AccountName, GenericRole CurrentBaseRole, string ReasonBlocked);
+
+    public record SquadPublishPayload(
+        string Title, string BossesText,
+        List<SquadPublishSubGroup> SubGroups, int PugDpsCount,
+        List<SquadPublishBoss> PerBoss, List<string> Warnings,
+        List<SquadPublishSwap> Swaps,
+        string? CommanderName);
+    public record SquadPublishSubGroup(int Index, List<SquadPublishSlot> Slots);
+    public record SquadPublishSlot(string Kind, string? Role, Guid? PlayerId, string? AccountName, bool IsPug);
+    public record SquadPublishBoss(string BossName, List<SquadPublishMechanic> Mechanics, bool IsResetSegment);
+    public record SquadPublishMechanic(string Name, List<SquadPublishMechanicSlot> AssignedPlayers);
+    public record SquadPublishMechanicSlot(Guid? PlayerId, string? AccountName);
+    public record SquadPublishSwap(string FromBossName, List<SquadPublishSwapEntry> Entries);
+    public record SquadPublishSwapEntry(string AccountName, string? FromRole, string? ToRole);
+}

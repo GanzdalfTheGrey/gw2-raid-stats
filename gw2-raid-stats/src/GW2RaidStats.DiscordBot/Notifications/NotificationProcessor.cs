@@ -136,6 +136,7 @@ public class NotificationProcessor : BackgroundService
             "htcm_progress" => _serviceProvider.GetService<HtcmProgressNotificationHandler>(),
             "top_5" => _serviceProvider.GetService<Top5NotificationHandler>(),
             "achievement_unlocked" => _serviceProvider.GetService<AchievementNotificationHandler>(),
+            "squad_composition" => _serviceProvider.GetService<SquadCompositionNotificationHandler>(),
             _ => null
         };
     }
