@@ -33,7 +33,8 @@ public class IncludedPlayerService
     }
 
     /// <summary>
-    /// Get set of included account names (both manually included and auto-included by threshold)
+    /// Get set of included account names (manually included or auto-included by threshold),
+    /// minus any names in the excluded list.
     /// </summary>
     public async Task<HashSet<string>> GetIncludedAccountNamesAsync(CancellationToken ct = default)
     {
@@ -58,11 +59,20 @@ public class IncludedPlayerService
             .Select(p => p.AccountName)
             .ToListAsync(ct);
 
-        // Combine both lists
+        // Get manually excluded players (overrides everything)
+        var excluded = await _db.ExcludedPlayers
+            .Select(p => p.AccountName)
+            .ToListAsync(ct);
+
+        // Combine both lists, then remove excluded
         var allIncluded = new HashSet<string>(manuallyIncluded, StringComparer.OrdinalIgnoreCase);
         foreach (var name in autoIncludedNames)
         {
             allIncluded.Add(name);
+        }
+        foreach (var name in excluded)
+        {
+            allIncluded.Remove(name);
         }
 
         return allIncluded;
@@ -75,6 +85,11 @@ public class IncludedPlayerService
     public async Task<List<AvailablePlayerDto>> GetAvailablePlayersAsync(CancellationToken ct = default)
     {
         var manuallyIncluded = (await _db.IncludedPlayers
+            .Select(p => p.AccountName)
+            .ToListAsync(ct))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var manuallyExcluded = (await _db.ExcludedPlayers
             .Select(p => p.AccountName)
             .ToListAsync(ct))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -102,9 +117,41 @@ public class IncludedPlayerService
                 p.AccountName,
                 p.FirstSeen,
                 p.EncounterCount,
-                p.EncounterCount >= threshold // Auto-included based on threshold
+                p.EncounterCount >= threshold, // Auto-included based on threshold
+                manuallyExcluded.Contains(p.AccountName) // Manually excluded
             ))
             .ToList();
+    }
+
+    // --- Excluded players (overrides for the include set) ---
+
+    public async Task<List<ExcludedPlayerDto>> GetExcludedAsync(CancellationToken ct = default)
+    {
+        return await _db.ExcludedPlayers
+            .OrderBy(p => p.AccountName)
+            .Select(p => new ExcludedPlayerDto(p.Id, p.AccountName, p.Reason, p.CreatedAt))
+            .ToListAsync(ct);
+    }
+
+    public async Task<ExcludedPlayerDto> AddExcludedAsync(string accountName, string? reason, CancellationToken ct = default)
+    {
+        var entity = new ExcludedPlayerEntity
+        {
+            Id = Guid.NewGuid(),
+            AccountName = accountName,
+            Reason = reason,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        await _db.InsertAsync(entity, token: ct);
+        return new ExcludedPlayerDto(entity.Id, entity.AccountName, entity.Reason, entity.CreatedAt);
+    }
+
+    public async Task<bool> RemoveExcludedAsync(Guid id, CancellationToken ct = default)
+    {
+        var deleted = await _db.ExcludedPlayers
+            .Where(p => p.Id == id)
+            .DeleteAsync(ct);
+        return deleted > 0;
     }
 
     /// <summary>
@@ -164,5 +211,13 @@ public record AvailablePlayerDto(
     string AccountName,
     DateTimeOffset FirstSeen,
     int EncounterCount,
-    bool IsAutoIncluded
+    bool IsAutoIncluded,
+    bool IsExcluded
+);
+
+public record ExcludedPlayerDto(
+    Guid Id,
+    string AccountName,
+    string? Reason,
+    DateTimeOffset CreatedAt
 );

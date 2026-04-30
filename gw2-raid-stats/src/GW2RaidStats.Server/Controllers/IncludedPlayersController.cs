@@ -118,6 +118,42 @@ public class IncludedPlayersController : ControllerBase
     }
 }
 
+[ApiController]
+[Route("api/admin/excluded-players")]
+public class ExcludedPlayersController : ControllerBase
+{
+    private readonly IncludedPlayerService _service;
+
+    public ExcludedPlayersController(IncludedPlayerService service)
+    {
+        _service = service;
+    }
+
+    [HttpGet]
+    public async Task<ActionResult<List<ExcludedPlayerDto>>> GetAll(CancellationToken ct)
+    {
+        return Ok(await _service.GetExcludedAsync(ct));
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<ExcludedPlayerDto>> Add(
+        [FromBody] AddExcludedPlayerRequest request,
+        CancellationToken ct)
+    {
+        var result = await _service.AddExcludedAsync(request.AccountName, request.Reason, ct);
+        return Ok(result);
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<ActionResult> Remove(Guid id, CancellationToken ct)
+    {
+        var removed = await _service.RemoveExcludedAsync(id, ct);
+        return removed ? NoContent() : NotFound();
+    }
+}
+
+public record AddExcludedPlayerRequest(string AccountName, string? Reason);
+
 public record AddIncludedPlayerRequest(
     string AccountName,
     string? Reason

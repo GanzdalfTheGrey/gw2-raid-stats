@@ -197,6 +197,31 @@
                 </MudTable>
             }
 
+            @* Manually Excluded Players (overrides auto-include) *@
+            @if (_excludedPlayers.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Manually Excluded (overrides auto-include):</MudText>
+                <MudTable Items="@_excludedPlayers" Dense="true" Hover="true" Class="mb-4">
+                    <HeaderContent>
+                        <MudTh>Account Name</MudTh>
+                        <MudTh>Reason</MudTh>
+                        <MudTh>Added</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.AccountName</MudTd>
+                        <MudTd>@(context.Reason ?? "-")</MudTd>
+                        <MudTd>@context.CreatedAt.LocalDateTime.ToString("MMM d, yyyy")</MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error"
+                                           Size="Size.Small"
+                                           OnClick="@(() => RemoveExcludedPlayer(context.Id))" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+
             @* Available Players (sorted by encounter count) *@
             <MudText Typo="Typo.subtitle2" Class="mb-2">All Players (by encounter count):</MudText>
             @if (_availablePlayers.Count == 0 && !_loading)
@@ -216,7 +241,11 @@
                         <MudTd>@context.AccountName</MudTd>
                         <MudTd>@context.EncounterCount.ToString("N0")</MudTd>
                         <MudTd>
-                            @if (context.IsAutoIncluded)
+                            @if (context.IsExcluded)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Warning">Excluded</MudChip>
+                            }
+                            else if (context.IsAutoIncluded)
                             {
                                 <MudChip T="string" Size="Size.Small" Color="Color.Success">Auto-Included</MudChip>
                             }
@@ -226,7 +255,25 @@
                             }
                         </MudTd>
                         <MudTd>
-                            @if (!context.IsAutoIncluded)
+                            @if (context.IsExcluded)
+                            {
+                                var excludeRow = _excludedPlayers.FirstOrDefault(e => string.Equals(e.AccountName, context.AccountName, StringComparison.OrdinalIgnoreCase));
+                                if (excludeRow != null)
+                                {
+                                    <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
+                                               OnClick="@(() => RemoveExcludedPlayer(excludeRow.Id))">
+                                        Remove exclusion
+                                    </MudButton>
+                                }
+                            }
+                            else if (context.IsAutoIncluded)
+                            {
+                                <MudButton Variant="Variant.Text" Color="Color.Warning" Size="Size.Small"
+                                           OnClick="@(() => AddExcludedPlayer(context.AccountName))">
+                                    Exclude
+                                </MudButton>
+                            }
+                            else
                             {
                                 <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
                                            OnClick="@(() => AddIncludedPlayer(context.AccountName))">
@@ -321,6 +368,7 @@
     private DateTime? _newPatchDate;
     private List<IncludedPlayer> _includedPlayers = new();
     private List<AvailablePlayer> _availablePlayers = new();
+    private List<ExcludedPlayer> _excludedPlayers = new();
     private AvailableBoss? _selectedBoss;
     private string _reason = "";
     private int _threshold = 300;
@@ -341,17 +389,19 @@
             var availableTask = Http.GetFromJsonAsync<List<AvailableBoss>>("api/admin/ignored-bosses/available");
             var includedTask = Http.GetFromJsonAsync<List<IncludedPlayer>>("api/admin/included-players");
             var availablePlayersTask = Http.GetFromJsonAsync<List<AvailablePlayer>>("api/admin/included-players/available");
+            var excludedTask = Http.GetFromJsonAsync<List<ExcludedPlayer>>("api/admin/excluded-players");
             var thresholdTask = Http.GetFromJsonAsync<ThresholdResponse>("api/admin/included-players/threshold");
             var recapBossesTask = Http.GetFromJsonAsync<RecapBossesResponse>("api/admin/included-players/recap-include-all-bosses");
             var guildNameTask = Http.GetFromJsonAsync<GuildNameResponse>("api/settings/guild-name");
             var patchesTask = Http.GetFromJsonAsync<List<LeaderboardPatch>>("api/admin/leaderboard/patches");
 
-            await Task.WhenAll(ignoredTask, availableTask, includedTask, availablePlayersTask, thresholdTask, recapBossesTask, guildNameTask, patchesTask);
+            await Task.WhenAll(ignoredTask, availableTask, includedTask, availablePlayersTask, excludedTask, thresholdTask, recapBossesTask, guildNameTask, patchesTask);
 
             _ignoredBosses = ignoredTask.Result ?? new();
             _availableBosses = availableTask.Result ?? new();
             _includedPlayers = includedTask.Result ?? new();
             _availablePlayers = availablePlayersTask.Result ?? new();
+            _excludedPlayers = excludedTask.Result ?? new();
             _threshold = thresholdTask.Result?.Threshold ?? 300;
             _recapIncludeAllBosses = recapBossesTask.Result?.IncludeAll ?? false;
             _guildName = guildNameTask.Result?.GuildName ?? "GW2 Raid Stats";
@@ -545,6 +595,49 @@
         }
     }
 
+    private async Task AddExcludedPlayer(string accountName)
+    {
+        try
+        {
+            var request = new AddExcludedPlayerRequest(accountName, "Manually excluded");
+            var response = await Http.PostAsJsonAsync("api/admin/excluded-players", request);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Excluded {accountName}", Severity.Success);
+                await LoadDataAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to exclude player", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RemoveExcludedPlayer(Guid id)
+    {
+        try
+        {
+            var response = await Http.DeleteAsync($"api/admin/excluded-players/{id}");
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Exclusion removed", Severity.Success);
+                await LoadDataAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to remove exclusion", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
     private async Task AddLeaderboardPatch()
     {
         if (string.IsNullOrWhiteSpace(_newPatchName) || _newPatchDate == null) return;
@@ -643,10 +736,23 @@
         string AccountName,
         DateTimeOffset FirstSeen,
         int EncounterCount,
-        bool IsAutoIncluded
+        bool IsAutoIncluded,
+        bool IsExcluded
     );
 
     public record AddIncludedPlayerRequest(
+        string AccountName,
+        string? Reason
+    );
+
+    public record ExcludedPlayer(
+        Guid Id,
+        string AccountName,
+        string? Reason,
+        DateTimeOffset CreatedAt
+    );
+
+    public record AddExcludedPlayerRequest(
         string AccountName,
         string? Reason
     );
