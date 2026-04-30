@@ -1,0 +1,393 @@
+@page "/players/{AccountName}/roles"
+@using GW2RaidStats.Core
+@using GW2RaidStats.Core.Roles
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>GW2 Raid Stats - @AccountName Roles</PageTitle>
+
+@if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+    }
+    else if (_data == null)
+    {
+        <MudAlert Severity="Severity.Error">Player not found.</MudAlert>
+    }
+    else
+    {
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+            <MudStack Spacing="0">
+                <MudText Typo="Typo.h4">@_data.AccountName — Roles</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    Mark which roles this player can, can't, maybe, or wants to learn.
+                </MudText>
+            </MudStack>
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.ArrowBack"
+                       Href="@($"/players/{Uri.EscapeDataString(AccountName)}")">
+                Back to Profile
+            </MudButton>
+        </MudStack>
+
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.WorkspacePremium" Class="mr-2" />
+                Generic Roles
+            </MudText>
+            <MudTable Items="@_genericRows" Dense="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>Role</MudTh>
+                    <MudTh Style="width: 460px;">Status</MudTh>
+                    <MudTh>Notes</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    @{ var row = context; }
+                    <MudTd DataLabel="Role">@row.Role.DisplayName()</MudTd>
+                    <MudTd DataLabel="Status">
+                        <MudToggleGroup T="RoleCapabilityStatus?"
+                                        Value="@row.Status"
+                                        ValueChanged="@(v => OnGenericStatusChangedAsync(row, v))"
+                                        SelectionMode="SelectionMode.SingleSelection"
+                                        Color="Color.Primary"
+                                        CheckMark="false"
+                                        Size="Size.Small">
+                            <MudToggleItem Value="@((RoleCapabilityStatus?)RoleCapabilityStatus.Can)" Text="Can" />
+                            <MudToggleItem Value="@((RoleCapabilityStatus?)RoleCapabilityStatus.Maybe)" Text="Maybe" />
+                            <MudToggleItem Value="@((RoleCapabilityStatus?)RoleCapabilityStatus.Cant)" Text="Can't" />
+                            <MudToggleItem Value="@((RoleCapabilityStatus?)RoleCapabilityStatus.WantToLearn)" Text="Learn" />
+                        </MudToggleGroup>
+                        @if (row.Status != null)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Clear"
+                                           Size="Size.Small"
+                                           OnClick="@(() => OnGenericStatusChangedAsync(row, null))"
+                                           Class="ml-2" />
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Notes">
+                        <MudTextField Value="@row.Notes"
+                                      ValueChanged="@((string v) => row.Notes = v)"
+                                      T="string"
+                                      OnBlur="@(() => OnGenericNotesBlurAsync(row))"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Placeholder="Optional notes..." />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Sports" Class="mr-2" />
+                Mechanic Roles
+            </MudText>
+            @if (_mechanicGroups.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">No mechanic roles in the catalog yet.</MudAlert>
+            }
+            else
+            {
+                <MudExpansionPanels MultiExpansion="true">
+                    @foreach (var group in _mechanicGroups)
+                    {
+                        <MudExpansionPanel>
+                            <TitleContent>
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                    <MudText><strong>@group.WingLabel</strong> — @group.BossName</MudText>
+                                    @{ var setCount = group.Rows.Count(r => r.Status != null); }
+                                    @if (setCount > 0)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Default">@setCount / @group.Rows.Count set</MudChip>
+                                    }
+                                </MudStack>
+                            </TitleContent>
+                            <ChildContent>
+                                <MudTable Items="@group.Rows" Dense="true" Hover="true">
+                                    <HeaderContent>
+                                        <MudTh>Role</MudTh>
+                                        <MudTh>Constraint</MudTh>
+                                        <MudTh Style="width: 460px;">Status</MudTh>
+                                        <MudTh>Notes</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        @{ var row = context; }
+                                        <MudTd DataLabel="Role">
+                                            @row.Catalog.Name
+                                            @if (row.Catalog.MinCount != row.Catalog.MaxCount)
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                    (×@row.Catalog.MinCount–@row.Catalog.MaxCount)
+                                                </MudText>
+                                            }
+                                            else if (row.Catalog.MinCount > 1)
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                    (×@row.Catalog.MinCount)
+                                                </MudText>
+                                            }
+                                        </MudTd>
+                                        <MudTd DataLabel="Constraint">
+                                            <MudChip T="string" Size="Size.Small" Color="@ConstraintColor(row.Catalog.Constraint)">
+                                                @row.Catalog.Constraint.DisplayName()
+                                            </MudChip>
+                                        </MudTd>
+                                        <MudTd DataLabel="Status">
+                                            <MudToggleGroup T="RoleCapabilityStatus?"
+                                                            Value="@row.Status"
+                                                            ValueChanged="@(v => OnMechanicStatusChangedAsync(row, v))"
+                                                            SelectionMode="SelectionMode.SingleSelection"
+                                                            Color="Color.Primary"
+                                                            CheckMark="false"
+                                                            Size="Size.Small">
+                                                <MudToggleItem Value="@((RoleCapabilityStatus?)RoleCapabilityStatus.Can)" Text="Can" />
+                                                <MudToggleItem Value="@((RoleCapabilityStatus?)RoleCapabilityStatus.Maybe)" Text="Maybe" />
+                                                <MudToggleItem Value="@((RoleCapabilityStatus?)RoleCapabilityStatus.Cant)" Text="Can't" />
+                                                <MudToggleItem Value="@((RoleCapabilityStatus?)RoleCapabilityStatus.WantToLearn)" Text="Learn" />
+                                            </MudToggleGroup>
+                                            @if (row.Status != null)
+                                            {
+                                                <MudIconButton Icon="@Icons.Material.Filled.Clear"
+                                                               Size="Size.Small"
+                                                               OnClick="@(() => OnMechanicStatusChangedAsync(row, null))"
+                                                               Class="ml-2" />
+                                            }
+                                        </MudTd>
+                                        <MudTd DataLabel="Notes">
+                                            <MudTextField Value="@row.Notes"
+                                                          ValueChanged="@((string v) => row.Notes = v)"
+                                                          T="string"
+                                                          OnBlur="@(() => OnMechanicNotesBlurAsync(row))"
+                                                          Variant="Variant.Outlined"
+                                                          Margin="Margin.Dense"
+                                                          Placeholder="Optional notes..." />
+                                        </MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            </ChildContent>
+                        </MudExpansionPanel>
+                    }
+                </MudExpansionPanels>
+            }
+        </MudPaper>
+    }
+
+@code {
+    [Parameter] public string AccountName { get; set; } = "";
+
+    private bool _loading = true;
+    private PlayerRoleCapabilitiesDto? _data;
+    private List<MechanicRoleDto> _catalog = new();
+    private List<GenericRoleRow> _genericRows = new();
+    private List<MechanicGroup> _mechanicGroups = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var dataTask = Http.GetFromJsonAsync<PlayerRoleCapabilitiesDto>(
+                $"api/players/{Uri.EscapeDataString(AccountName)}/roles");
+            var catalogTask = Http.GetFromJsonAsync<List<MechanicRoleDto>>("api/mechanic-roles");
+            await Task.WhenAll(dataTask, catalogTask);
+
+            _data = dataTask.Result;
+            _catalog = catalogTask.Result ?? new();
+
+            BuildRows();
+        }
+        catch
+        {
+            _data = null;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void BuildRows()
+    {
+        if (_data == null) return;
+
+        var genericLookup = _data.Generic.ToDictionary(g => g.Role);
+        _genericRows = Enum.GetValues<GenericRole>()
+            .OrderBy(r => (int)r)
+            .Select(r =>
+            {
+                var existing = genericLookup.GetValueOrDefault(r);
+                return new GenericRoleRow
+                {
+                    Role = r,
+                    Status = existing == null ? null : existing.Status,
+                    Notes = existing?.Notes ?? "",
+                    LastSavedNotes = existing?.Notes ?? ""
+                };
+            })
+            .ToList();
+
+        var mechLookup = _data.Mechanic.ToDictionary(m => m.MechanicRoleId);
+
+        _mechanicGroups = _catalog
+            .GroupBy(c => new { c.TriggerId, c.BossName })
+            .Select(g =>
+            {
+                var wing = WingMapping.GetWing(g.Key.TriggerId);
+                var order = WingMapping.GetEncounterOrder(g.Key.TriggerId);
+                var wingLabel = wing.HasValue ? $"W{wing.Value}" : "—";
+                var rows = g.OrderBy(c => c.SortOrder).ThenBy(c => c.Name)
+                    .Select(c =>
+                    {
+                        var existing = mechLookup.GetValueOrDefault(c.Id);
+                        return new MechanicRoleRow
+                        {
+                            Catalog = c,
+                            Status = existing == null ? null : existing.Status,
+                            Notes = existing?.Notes ?? "",
+                            LastSavedNotes = existing?.Notes ?? ""
+                        };
+                    }).ToList();
+                return new MechanicGroup
+                {
+                    Wing = wing ?? 99,
+                    EncounterOrder = order,
+                    WingLabel = wingLabel,
+                    BossName = g.Key.BossName,
+                    Rows = rows
+                };
+            })
+            .OrderBy(g => g.Wing).ThenBy(g => g.EncounterOrder).ThenBy(g => g.BossName)
+            .ToList();
+    }
+
+    private async Task OnGenericStatusChangedAsync(GenericRoleRow row, RoleCapabilityStatus? status)
+    {
+        row.Status = status;
+        await PutGenericAsync(row);
+    }
+
+    private async Task OnGenericNotesBlurAsync(GenericRoleRow row)
+    {
+        if (row.Notes == row.LastSavedNotes) return;
+        await PutGenericAsync(row);
+    }
+
+    private async Task PutGenericAsync(GenericRoleRow row)
+    {
+        var resp = await Http.PutAsJsonAsync(
+            $"api/admin/players/{Uri.EscapeDataString(AccountName)}/roles/generic/{row.Role}",
+            new SetRoleStatusRequest(row.Status, string.IsNullOrWhiteSpace(row.Notes) ? null : row.Notes));
+        if (resp.IsSuccessStatusCode)
+        {
+            row.LastSavedNotes = row.Notes;
+            Snackbar.Add($"{row.Role.DisplayName()} updated", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add("Failed to save", Severity.Error);
+        }
+    }
+
+    private async Task OnMechanicStatusChangedAsync(MechanicRoleRow row, RoleCapabilityStatus? status)
+    {
+        row.Status = status;
+        await PutMechanicAsync(row);
+    }
+
+    private async Task OnMechanicNotesBlurAsync(MechanicRoleRow row)
+    {
+        if (row.Notes == row.LastSavedNotes) return;
+        await PutMechanicAsync(row);
+    }
+
+    private async Task PutMechanicAsync(MechanicRoleRow row)
+    {
+        var resp = await Http.PutAsJsonAsync(
+            $"api/admin/players/{Uri.EscapeDataString(AccountName)}/roles/mechanic/{row.Catalog.Id}",
+            new SetRoleStatusRequest(row.Status, string.IsNullOrWhiteSpace(row.Notes) ? null : row.Notes));
+        if (resp.IsSuccessStatusCode)
+        {
+            row.LastSavedNotes = row.Notes;
+            Snackbar.Add($"{row.Catalog.BossName}: {row.Catalog.Name} updated", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add("Failed to save", Severity.Error);
+        }
+    }
+
+    private static Color ConstraintColor(MechanicConstraint c) => c switch
+    {
+        MechanicConstraint.Any => Color.Default,
+        MechanicConstraint.PreferHealer or MechanicConstraint.RequiresHealer => Color.Success,
+        MechanicConstraint.PreferBoonDps or MechanicConstraint.RequiresBoonDps => Color.Info,
+        MechanicConstraint.PreferDps or MechanicConstraint.RequiresDps or MechanicConstraint.RequiresPureDps => Color.Error,
+        _ => Color.Default
+    };
+
+    private class GenericRoleRow
+    {
+        public GenericRole Role { get; set; }
+        public RoleCapabilityStatus? Status { get; set; }
+        public string Notes { get; set; } = "";
+        public string LastSavedNotes { get; set; } = "";
+    }
+
+    private class MechanicRoleRow
+    {
+        public MechanicRoleDto Catalog { get; set; } = null!;
+        public RoleCapabilityStatus? Status { get; set; }
+        public string Notes { get; set; } = "";
+        public string LastSavedNotes { get; set; } = "";
+    }
+
+    private class MechanicGroup
+    {
+        public int Wing { get; set; }
+        public int EncounterOrder { get; set; }
+        public string WingLabel { get; set; } = "";
+        public string BossName { get; set; } = "";
+        public List<MechanicRoleRow> Rows { get; set; } = new();
+    }
+
+    public record PlayerRoleCapabilitiesDto(
+        Guid PlayerId,
+        string AccountName,
+        List<GenericRoleCapabilityDto> Generic,
+        List<MechanicRoleCapabilityDto> Mechanic);
+
+    public record GenericRoleCapabilityDto(
+        GenericRole Role,
+        RoleCapabilityStatus Status,
+        string? Notes,
+        DateTimeOffset UpdatedAt);
+
+    public record MechanicRoleCapabilityDto(
+        Guid MechanicRoleId,
+        int TriggerId,
+        string BossName,
+        string Name,
+        RoleCapabilityStatus Status,
+        string? Notes,
+        DateTimeOffset UpdatedAt);
+
+    public record MechanicRoleDto(
+        Guid Id,
+        int TriggerId,
+        string BossName,
+        string Name,
+        MechanicConstraint Constraint,
+        int MinCount,
+        int MaxCount,
+        int SortOrder);
+
+    public record SetRoleStatusRequest(RoleCapabilityStatus? Status, string? Notes);
+}

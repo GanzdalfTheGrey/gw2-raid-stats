@@ -1,0 +1,327 @@
+@page "/roles/matrix"
+@using GW2RaidStats.Core
+@using GW2RaidStats.Core.Roles
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>GW2 Raid Stats - Roles Matrix</PageTitle>
+
+<AdminAuth>
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+        <MudStack Spacing="0">
+            <MudText Typo="Typo.h4">Roles Matrix</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Who can play what. Click any cell to change a player's status.
+            </MudText>
+        </MudStack>
+        <MudStack Row="true" Spacing="2">
+            <MudTextField @bind-Value="_search"
+                          Placeholder="Search by account name..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Immediate="true"
+                          DebounceInterval="200"
+                          Style="min-width: 280px;" />
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.ArrowBack"
+                       Href="/players">
+                Players
+            </MudButton>
+        </MudStack>
+    </MudStack>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+    }
+    else if (_matrix == null || _matrix.Rows.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">No included guild members yet. Mark players as included on the Manage Data page first.</MudAlert>
+    }
+    else
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Generic Roles</MudText>
+            <div style="overflow-x: auto;">
+                <MudTable Items="@FilteredRows" Dense="true" Hover="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Player</MudTh>
+                        @foreach (var role in _genericRoles)
+                        {
+                            <MudTh Style="text-align: center; min-width: 110px;">@role.DisplayName()</MudTh>
+                        }
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <MudLink Href="@($"/players/{Uri.EscapeDataString(context.AccountName)}/roles")">
+                                @context.AccountName
+                            </MudLink>
+                        </MudTd>
+                        @foreach (var role in _genericRoles)
+                        {
+                            var status = context.GenericByRole.GetValueOrDefault((int)role) is var v && context.GenericByRole.ContainsKey((int)role) ? (RoleCapabilityStatus?)v : null;
+                            <MudTd Style="text-align: center;">
+                                @{ var captureRow = context; var captureRole = role; }
+                                <MudMenu ActivationEvent="@MouseEvent.LeftClick" AnchorOrigin="Origin.CenterCenter" Dense="true">
+                                    <ActivatorContent>
+                                        @if (status == null)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">—</MudChip>
+                                        }
+                                        else
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="@StatusColor(status.Value)">@StatusLabel(status)</MudChip>
+                                        }
+                                    </ActivatorContent>
+                                    <ChildContent>
+                                        @foreach (var s in _allStatuses)
+                                        {
+                                            var captureStatus = s;
+                                            <MudMenuItem OnClick="@(() => SetGenericAsync(captureRow, captureRole, captureStatus))">
+                                                @StatusLabel(captureStatus)
+                                            </MudMenuItem>
+                                        }
+                                        <MudDivider />
+                                        <MudMenuItem OnClick="@(() => SetGenericAsync(captureRow, captureRole, null))">
+                                            <MudText Color="Color.Secondary">Clear</MudText>
+                                        </MudMenuItem>
+                                    </ChildContent>
+                                </MudMenu>
+                            </MudTd>
+                        }
+                    </RowTemplate>
+                </MudTable>
+            </div>
+        </MudPaper>
+
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Mechanic Roles</MudText>
+            @if (_wingTabs.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">No mechanic roles in the catalog yet.</MudAlert>
+            }
+            else
+            {
+                <MudTabs Outlined="true" KeepPanelsAlive="true">
+                    @foreach (var tab in _wingTabs)
+                    {
+                        <MudTabPanel Text="@tab.Label">
+                            <div style="overflow-x: auto;">
+                                <MudTable Items="@FilteredRows" Dense="true" Hover="true" Striped="true">
+                                    <HeaderContent>
+                                        <MudTh>Player</MudTh>
+                                        @foreach (var col in tab.Columns)
+                                        {
+                                            <MudTh Style="text-align: center; min-width: 130px;">
+                                                <MudStack Spacing="0">
+                                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@col.BossName</MudText>
+                                                    <MudText Typo="Typo.body2">@col.Name</MudText>
+                                                </MudStack>
+                                            </MudTh>
+                                        }
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd>
+                                            <MudLink Href="@($"/players/{Uri.EscapeDataString(context.AccountName)}/roles")">
+                                                @context.AccountName
+                                            </MudLink>
+                                        </MudTd>
+                                        @foreach (var col in tab.Columns)
+                                        {
+                                            var status = context.MechanicById.ContainsKey(col.Id) ? (RoleCapabilityStatus?)context.MechanicById[col.Id] : null;
+                                            <MudTd Style="text-align: center;">
+                                                @{ var captureRow = context; var captureCol = col; }
+                                                <MudMenu ActivationEvent="@MouseEvent.LeftClick" AnchorOrigin="Origin.CenterCenter" Dense="true">
+                                                    <ActivatorContent>
+                                                        @if (status == null)
+                                                        {
+                                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">—</MudChip>
+                                                        }
+                                                        else
+                                                        {
+                                                            <MudChip T="string" Size="Size.Small" Color="@StatusColor(status.Value)">@StatusLabel(status)</MudChip>
+                                                        }
+                                                    </ActivatorContent>
+                                                    <ChildContent>
+                                                        @foreach (var s in _allStatuses)
+                                                        {
+                                                            var captureStatus = s;
+                                                            <MudMenuItem OnClick="@(() => SetMechanicAsync(captureRow, captureCol, captureStatus))">
+                                                                @StatusLabel(captureStatus)
+                                                            </MudMenuItem>
+                                                        }
+                                                        <MudDivider />
+                                                        <MudMenuItem OnClick="@(() => SetMechanicAsync(captureRow, captureCol, null))">
+                                                            <MudText Color="Color.Secondary">Clear</MudText>
+                                                        </MudMenuItem>
+                                                    </ChildContent>
+                                                </MudMenu>
+                                            </MudTd>
+                                        }
+                                    </RowTemplate>
+                                </MudTable>
+                            </div>
+                        </MudTabPanel>
+                    }
+                </MudTabs>
+            }
+        </MudPaper>
+    }
+</AdminAuth>
+
+@code {
+    private bool _loading = true;
+    private RolesMatrixDto? _matrix;
+    private string _search = "";
+
+    private static readonly GenericRole[] _genericRoles = Enum.GetValues<GenericRole>().OrderBy(r => (int)r).ToArray();
+    private static readonly RoleCapabilityStatus[] _allStatuses = new[]
+    {
+        RoleCapabilityStatus.Can,
+        RoleCapabilityStatus.Maybe,
+        RoleCapabilityStatus.Cant,
+        RoleCapabilityStatus.WantToLearn,
+    };
+
+    private List<WingTab> _wingTabs = new();
+
+    private IEnumerable<RolesMatrixRowDto> FilteredRows =>
+        _matrix == null
+            ? Enumerable.Empty<RolesMatrixRowDto>()
+            : (string.IsNullOrWhiteSpace(_search)
+                ? _matrix.Rows
+                : _matrix.Rows.Where(r => r.AccountName.Contains(_search, StringComparison.OrdinalIgnoreCase)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _matrix = await Http.GetFromJsonAsync<RolesMatrixDto>("api/roles/matrix");
+            BuildTabs();
+        }
+        catch
+        {
+            _matrix = null;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void BuildTabs()
+    {
+        if (_matrix == null) { _wingTabs = new(); return; }
+
+        _wingTabs = _matrix.Mechanics
+            .GroupBy(m => WingMapping.GetWing(m.TriggerId) ?? 99)
+            .Select(g => new WingTab
+            {
+                Wing = g.Key,
+                Label = g.Key == 99 ? "Other" : $"W{g.Key} - {WingMapping.GetWingName(g.Key)}",
+                Columns = g
+                    .OrderBy(c => WingMapping.GetEncounterOrder(c.TriggerId))
+                    .ThenBy(c => c.SortOrder)
+                    .ThenBy(c => c.Name)
+                    .ToList()
+            })
+            .OrderBy(t => t.Wing)
+            .ToList();
+    }
+
+    private async Task SetGenericAsync(RolesMatrixRowDto row, GenericRole role, RoleCapabilityStatus? status)
+    {
+        var resp = await Http.PutAsJsonAsync(
+            $"api/admin/players/{Uri.EscapeDataString(row.AccountName)}/roles/generic/{role}",
+            new SetRoleStatusRequest(status, null));
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            Snackbar.Add("Failed to save", Severity.Error);
+            return;
+        }
+
+        if (status == null) row.GenericByRole.Remove((int)role);
+        else row.GenericByRole[(int)role] = status.Value;
+        Snackbar.Add($"{row.AccountName}: {role.DisplayName()} → {StatusLabel(status)}", Severity.Success);
+        StateHasChanged();
+    }
+
+    private async Task SetMechanicAsync(RolesMatrixRowDto row, MechanicRoleDto col, RoleCapabilityStatus? status)
+    {
+        var resp = await Http.PutAsJsonAsync(
+            $"api/admin/players/{Uri.EscapeDataString(row.AccountName)}/roles/mechanic/{col.Id}",
+            new SetRoleStatusRequest(status, null));
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            Snackbar.Add("Failed to save", Severity.Error);
+            return;
+        }
+
+        if (status == null) row.MechanicById.Remove(col.Id);
+        else row.MechanicById[col.Id] = status.Value;
+        Snackbar.Add($"{row.AccountName}: {col.BossName} {col.Name} → {StatusLabel(status)}", Severity.Success);
+        StateHasChanged();
+    }
+
+    private static string StatusLabel(RoleCapabilityStatus? s) => s switch
+    {
+        null => "Unset",
+        RoleCapabilityStatus.Can => "Can",
+        RoleCapabilityStatus.Maybe => "Maybe",
+        RoleCapabilityStatus.Cant => "Can't",
+        RoleCapabilityStatus.WantToLearn => "Learn",
+        _ => "?"
+    };
+
+    private static Color StatusColor(RoleCapabilityStatus s) => s switch
+    {
+        RoleCapabilityStatus.Can => Color.Success,
+        RoleCapabilityStatus.Maybe => Color.Warning,
+        RoleCapabilityStatus.Cant => Color.Error,
+        RoleCapabilityStatus.WantToLearn => Color.Info,
+        _ => Color.Default
+    };
+
+    private class WingTab
+    {
+        public int Wing { get; set; }
+        public string Label { get; set; } = "";
+        public List<MechanicRoleDto> Columns { get; set; } = new();
+    }
+
+    public record RolesMatrixDto(
+        List<MechanicRoleDto> Mechanics,
+        List<RolesMatrixRowDto> Rows);
+
+    public class RolesMatrixRowDto
+    {
+        public Guid PlayerId { get; set; }
+        public string AccountName { get; set; } = "";
+        public Dictionary<int, RoleCapabilityStatus> GenericByRole { get; set; } = new();
+        public Dictionary<Guid, RoleCapabilityStatus> MechanicById { get; set; } = new();
+    }
+
+    public record MechanicRoleDto(
+        Guid Id,
+        int TriggerId,
+        string BossName,
+        string Name,
+        MechanicConstraint Constraint,
+        int MinCount,
+        int MaxCount,
+        int SortOrder);
+
+    public record SetRoleStatusRequest(RoleCapabilityStatus? Status, string? Notes);
+}

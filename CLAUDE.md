@@ -58,12 +58,14 @@ GW2RaidStats.Server       → ASP.NET Core REST API
 GW2RaidStats.Infrastructure → Database (LINQ2DB), services, business logic
 GW2RaidStats.Core         → Shared models, DTOs, Elite Insights log parsing types
 GW2RaidStats.Processor    → Background worker that runs GW2 Elite Insights CLI
+GW2RaidStats.DiscordBot   → Discord.Net bot: slash commands + notification dispatcher
 ```
 
 ### Multi-Process Design
 
 - **Server** (app container): Hosts API + serves Blazor WASM client
 - **Processor** (processor container): Background worker polling for `.zevtc` files, runs GW2 Elite Insights CLI to parse logs
+- **DiscordBot** (discordbot container): Discord.Net gateway client, serves slash commands and polls the DB every 5s for queued notifications to dispatch (built from `Dockerfile.discordbot`)
 
 ### Data Flow
 
@@ -90,6 +92,18 @@ GW2RaidStats.Processor    → Background worker that runs GW2 Elite Insights CLI
 - `MechanicEventEntity` - Tracked mechanics from logs
 - `IncludedPlayerEntity` - Accounts marked as guild members (filters out pugs)
 - `IgnoredBossEntity` - Encounters excluded from stats
+
+### Discord Bot (GW2RaidStats.DiscordBot/)
+
+- Built on Discord.Net (Core/WebSocket/Interactions); references `Core` + `Infrastructure` and shares the same Postgres DB via LINQ2DB
+- Entry point: `Program.cs`; main host: `Services/DiscordBotService.cs`
+- **Slash commands** (`Commands/`):
+  - `ConfigCommands` (`/config notifications|shame|status`) — per-guild bot configuration
+  - `LinkCommands` (`/link`, `/unlink`, `/whoami`, `/mystats`) — Discord ↔ GW2 account linking
+  - `StatsCommands` (`/help`, `/stats`, `/session`, `/leaderboard`, `/leaderboard-unique`, `/leaderboard-healer`, `/boss`, `/htcm`, `/recent`, `/mybossrecords`, `/myboonrecords`)
+  - `PatchNotesCommands` (`/patchnotes`, `/versions`)
+- **Notifications** (`Notifications/`): `NotificationProcessor` polls the DB every 5s and dispatches queued notifications to handlers — `Session`, `Record`, `Milestone`, `HtcmProgress`, `Top5`, `Achievement`
+- **Patch notes broadcast**: `Services/PatchNotesService.cs` reads `CHANGELOG.md` and posts new versions to configured guilds on startup
 
 ## File Paths
 

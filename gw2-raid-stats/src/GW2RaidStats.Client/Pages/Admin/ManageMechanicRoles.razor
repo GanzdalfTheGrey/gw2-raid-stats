@@ -1,0 +1,402 @@
+@page "/admin/mechanic-roles"
+@using GW2RaidStats.Core
+@using GW2RaidStats.Core.Roles
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+
+<PageTitle>GW2 Raid Stats - Manage Mechanic Roles</PageTitle>
+
+<AdminAuth>
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+        <MudStack Spacing="0">
+            <MudText Typo="Typo.h4">Mechanic Role Catalog</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Per-boss roles that overlay on top of base roles (e.g., pylon kite, hand kiter).
+            </MudText>
+        </MudStack>
+    </MudStack>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+    }
+
+    <MudPaper Class="pa-4 mb-4" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-3">Add Mechanic Role</MudText>
+        <MudGrid>
+            <MudItem xs="12" md="3">
+                <MudSelect T="BossOption" @bind-Value="_newBoss" Label="Boss" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var boss in _bossOptions)
+                    {
+                        <MudSelectItem Value="@boss">W@(boss.Wing) — @boss.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="2">
+                <MudTextField @bind-Value="_newName" Label="Role Name" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Placeholder="e.g., Pylon Kite" />
+            </MudItem>
+            <MudItem xs="12" md="2">
+                <MudSelect T="MechanicConstraint" @bind-Value="_newConstraint" Label="Constraint" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var c in _constraints)
+                    {
+                        <MudSelectItem Value="@c">@c.DisplayName()</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="6" md="1">
+                <MudNumericField @bind-Value="_newMin" Label="Min" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="10" />
+            </MudItem>
+            <MudItem xs="6" md="1">
+                <MudNumericField @bind-Value="_newMax" Label="Max" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="10" />
+            </MudItem>
+            <MudItem xs="6" md="1">
+                <MudNumericField @bind-Value="_newSort" Label="Sort" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="999" />
+            </MudItem>
+            <MudItem xs="6" md="2">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           Disabled="@(_newBoss == null || string.IsNullOrWhiteSpace(_newName) || _adding)"
+                           OnClick="AddAsync"
+                           FullWidth="true"
+                           Class="mt-1">
+                    @if (_adding)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    }
+                    Add
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudPaper Class="pa-4" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-3">Catalog</MudText>
+        @if (_catalog.Count == 0 && !_loading)
+        {
+            <MudAlert Severity="Severity.Info">No mechanic roles defined yet.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@SortedCatalog" Dense="true" Hover="true" GroupBy="@_groupDef" GroupHeaderStyle="background-color: var(--mud-palette-background-gray);">
+                <ColGroup>
+                    <col style="width: 200px;" />
+                    <col style="width: 200px;" />
+                    <col style="width: 100px;" />
+                    <col style="width: 100px;" />
+                    <col style="width: 80px;" />
+                    <col />
+                </ColGroup>
+                <HeaderContent>
+                    <MudTh>Name</MudTh>
+                    <MudTh>Constraint</MudTh>
+                    <MudTh>Min</MudTh>
+                    <MudTh>Max</MudTh>
+                    <MudTh>Sort</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+                <GroupHeaderTemplate>
+                    <MudTh colspan="6">
+                        <MudText Typo="Typo.subtitle2">@context.GroupName</MudText>
+                    </MudTh>
+                </GroupHeaderTemplate>
+                <RowTemplate>
+                    @{ var r = context; }
+                    <MudTd>
+                        @if (_editingId == r.Id)
+                        {
+                            <MudTextField @bind-Value="_editName" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        }
+                        else
+                        {
+                            @r.Name
+                        }
+                    </MudTd>
+                    <MudTd>
+                        @if (_editingId == r.Id)
+                        {
+                            <MudSelect T="MechanicConstraint" @bind-Value="_editConstraint" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                @foreach (var c in _constraints)
+                                {
+                                    <MudSelectItem Value="@c">@c.DisplayName()</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="@ConstraintColor(r.Constraint)">@r.Constraint.DisplayName()</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd>
+                        @if (_editingId == r.Id)
+                        {
+                            <MudNumericField @bind-Value="_editMin" Min="1" Max="10" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        }
+                        else { @r.MinCount }
+                    </MudTd>
+                    <MudTd>
+                        @if (_editingId == r.Id)
+                        {
+                            <MudNumericField @bind-Value="_editMax" Min="1" Max="10" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        }
+                        else { @r.MaxCount }
+                    </MudTd>
+                    <MudTd>
+                        @if (_editingId == r.Id)
+                        {
+                            <MudNumericField @bind-Value="_editSort" Min="0" Max="999" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        }
+                        else { @r.SortOrder }
+                    </MudTd>
+                    <MudTd>
+                        @if (_editingId == r.Id)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Save" Size="Size.Small" Color="Color.Primary"
+                                           OnClick="@(() => SaveEditAsync(r))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Cancel" Size="Size.Small"
+                                           OnClick="CancelEdit" />
+                        }
+                        else
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           OnClick="@(() => StartEdit(r))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                           OnClick="@(() => DeleteAsync(r))" />
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+</AdminAuth>
+
+@code {
+    private bool _loading = true;
+    private bool _adding = false;
+    private List<MechanicRoleDto> _catalog = new();
+
+    private static readonly MechanicConstraint[] _constraints = Enum.GetValues<MechanicConstraint>();
+
+    private List<BossOption> _bossOptions = new();
+    private BossOption? _newBoss;
+    private string _newName = "";
+    private MechanicConstraint _newConstraint = MechanicConstraint.Any;
+    private int _newMin = 1;
+    private int _newMax = 1;
+    private int _newSort = 0;
+
+    private Guid? _editingId;
+    private string _editName = "";
+    private MechanicConstraint _editConstraint = MechanicConstraint.Any;
+    private int _editMin = 1;
+    private int _editMax = 1;
+    private int _editSort = 0;
+
+    private TableGroupDefinition<MechanicRoleDto> _groupDef = new()
+    {
+        GroupName = "Boss",
+        Indentation = false,
+        Expandable = false,
+        Selector = m => $"W{(WingMapping.GetWing(m.TriggerId) ?? 0)} — {m.BossName}"
+    };
+
+    private IEnumerable<MechanicRoleDto> SortedCatalog =>
+        _catalog
+            .OrderBy(m => WingMapping.GetWing(m.TriggerId) ?? 99)
+            .ThenBy(m => WingMapping.GetEncounterOrder(m.TriggerId))
+            .ThenBy(m => m.BossName)
+            .ThenBy(m => m.SortOrder)
+            .ThenBy(m => m.Name);
+
+    protected override async Task OnInitializedAsync()
+    {
+        BuildBossOptions();
+        await LoadAsync();
+    }
+
+    private void BuildBossOptions()
+    {
+        var pairs = new (int triggerId, string name)[]
+        {
+            (15438, "Vale Guardian"),
+            (15429, "Gorseval"),
+            (15375, "Sabetha"),
+            (16123, "Slothasor"),
+            (16137, "Matthias"),
+            (16235, "Keep Construct"),
+            (16246, "Xera"),
+            (17194, "Cairn"),
+            (17172, "Mursaat Overseer"),
+            (17188, "Samarog"),
+            (17154, "Deimos"),
+            (19767, "Soulless Horror"),
+            (19450, "Dhuum"),
+            (43974, "Conjured Amalgamate"),
+            (21105, "Twin Largos"),
+            (20934, "Qadim"),
+            (22006, "Cardinal Adina"),
+            (21964, "Cardinal Sabir"),
+            (22000, "Qadim the Peerless"),
+            (26725, "Greer"),
+            (26774, "Decima"),
+            (26712, "Ura"),
+        };
+
+        _bossOptions = pairs
+            .Select(p => new BossOption(p.triggerId, p.name, WingMapping.GetWing(p.triggerId) ?? 99))
+            .OrderBy(b => b.Wing)
+            .ThenBy(b => WingMapping.GetEncounterOrder(b.TriggerId))
+            .ToList();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _catalog = await Http.GetFromJsonAsync<List<MechanicRoleDto>>("api/mechanic-roles") ?? new();
+        }
+        catch
+        {
+            _catalog = new();
+            Snackbar.Add("Failed to load mechanic roles", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AddAsync()
+    {
+        if (_newBoss == null || string.IsNullOrWhiteSpace(_newName)) return;
+        if (_newMax < _newMin)
+        {
+            Snackbar.Add("Max must be >= Min", Severity.Warning);
+            return;
+        }
+
+        _adding = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/admin/mechanic-roles", new
+            {
+                triggerId = _newBoss.TriggerId,
+                bossName = _newBoss.Name,
+                name = _newName.Trim(),
+                constraint = _newConstraint,
+                minCount = _newMin,
+                maxCount = _newMax,
+                sortOrder = _newSort
+            });
+
+            if (resp.IsSuccessStatusCode)
+            {
+                var created = await resp.Content.ReadFromJsonAsync<MechanicRoleDto>();
+                if (created != null) _catalog.Add(created);
+                _newName = "";
+                _newConstraint = MechanicConstraint.Any;
+                _newMin = 1;
+                _newMax = 1;
+                _newSort = 0;
+                Snackbar.Add("Role added", Severity.Success);
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                Snackbar.Add($"Failed to add: {msg}", Severity.Error);
+            }
+        }
+        finally
+        {
+            _adding = false;
+        }
+    }
+
+    private void StartEdit(MechanicRoleDto r)
+    {
+        _editingId = r.Id;
+        _editName = r.Name;
+        _editConstraint = r.Constraint;
+        _editMin = r.MinCount;
+        _editMax = r.MaxCount;
+        _editSort = r.SortOrder;
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+    }
+
+    private async Task SaveEditAsync(MechanicRoleDto r)
+    {
+        if (_editMax < _editMin)
+        {
+            Snackbar.Add("Max must be >= Min", Severity.Warning);
+            return;
+        }
+
+        var resp = await Http.PutAsJsonAsync($"api/admin/mechanic-roles/{r.Id}", new
+        {
+            name = _editName.Trim(),
+            constraint = _editConstraint,
+            minCount = _editMin,
+            maxCount = _editMax,
+            sortOrder = _editSort
+        });
+
+        if (resp.IsSuccessStatusCode)
+        {
+            var updated = await resp.Content.ReadFromJsonAsync<MechanicRoleDto>();
+            if (updated != null)
+            {
+                var idx = _catalog.FindIndex(m => m.Id == r.Id);
+                if (idx >= 0) _catalog[idx] = updated;
+            }
+            _editingId = null;
+            Snackbar.Add("Role updated", Severity.Success);
+        }
+        else
+        {
+            var msg = await resp.Content.ReadAsStringAsync();
+            Snackbar.Add($"Failed to update: {msg}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteAsync(MechanicRoleDto r)
+    {
+        var resp = await Http.DeleteAsync($"api/admin/mechanic-roles/{r.Id}");
+        if (resp.IsSuccessStatusCode)
+        {
+            _catalog.RemoveAll(m => m.Id == r.Id);
+            Snackbar.Add("Role removed", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add("Failed to remove", Severity.Error);
+        }
+    }
+
+    private static Color ConstraintColor(MechanicConstraint c) => c switch
+    {
+        MechanicConstraint.Any => Color.Default,
+        MechanicConstraint.PreferHealer or MechanicConstraint.RequiresHealer => Color.Success,
+        MechanicConstraint.PreferBoonDps or MechanicConstraint.RequiresBoonDps => Color.Info,
+        MechanicConstraint.PreferDps or MechanicConstraint.RequiresDps or MechanicConstraint.RequiresPureDps => Color.Error,
+        _ => Color.Default
+    };
+
+    public record BossOption(int TriggerId, string Name, int Wing);
+
+    public record MechanicRoleDto(
+        Guid Id,
+        int TriggerId,
+        string BossName,
+        string Name,
+        MechanicConstraint Constraint,
+        int MinCount,
+        int MaxCount,
+        int SortOrder);
+}
