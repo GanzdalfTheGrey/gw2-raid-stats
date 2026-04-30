@@ -78,11 +78,15 @@ public class PlayerRolesService
     {
         var includedNames = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
 
-        var players = await _db.Players
+        var rawPlayers = await _db.Players
             .Where(p => includedNames.Contains(p.AccountName))
-            .OrderBy(p => p.AccountName)
             .Select(p => new { p.Id, p.AccountName })
             .ToListAsync(ct);
+
+        // Case-insensitive sort (Postgres default collation puts uppercase before lowercase)
+        var players = rawPlayers
+            .OrderBy(p => p.AccountName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         var playerIds = players.Select(p => p.Id).ToList();
 

@@ -33,25 +33,6 @@
                           Immediate="true"
                           DebounceInterval="200" />
         </div>
-        <div class="filter-pills">
-            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="filter-label">Show only:</MudText>
-            @foreach (var opt in _statusFilterOptions)
-            {
-                var captureKey = opt.Key;
-                var isOn = _statusFilter.Contains(captureKey);
-                <MudChip T="string"
-                         Size="Size.Small"
-                         Color="@opt.Color"
-                         Variant="@(isOn ? Variant.Filled : Variant.Outlined)"
-                         OnClick="@(() => ToggleStatusFilter(captureKey))">
-                    @opt.Label
-                </MudChip>
-            }
-            @if (_statusFilter.Count > 0)
-            {
-                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => _statusFilter.Clear())">Clear</MudButton>
-            }
-        </div>
         <div class="filter-toggle">
             <MudText Typo="Typo.body2" Color="Color.Secondary" Class="filter-label">Show:</MudText>
             <MudToggleGroup T="string" @bind-Value="_showMode" Color="Color.Primary" Size="Size.Small" CheckMark="false">
@@ -240,13 +221,6 @@ else
         flex: 1 1 260px;
         min-width: 240px;
     }
-    .filter-pills {
-        flex: 1 1 380px;
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 6px;
-    }
     .filter-toggle {
         flex: 0 0 auto;
         display: flex;
@@ -377,7 +351,6 @@ else
     private bool _loading = true;
     private RolesMatrixDto? _matrix;
     private string _search = "";
-    private HashSet<string> _statusFilter = new();
     private string _showMode = "both";
 
     private static readonly GenericRole[] _genericRoles = Enum.GetValues<GenericRole>().OrderBy(r => (int)r).ToArray();
@@ -387,16 +360,6 @@ else
         RoleCapabilityStatus.Maybe,
         RoleCapabilityStatus.WantToLearn,
         RoleCapabilityStatus.Cant,
-    };
-
-    private record StatusFilterOption(string Key, string Label, Color Color);
-    private static readonly StatusFilterOption[] _statusFilterOptions = new[]
-    {
-        new StatusFilterOption("Can", "Can", Color.Success),
-        new StatusFilterOption("Maybe", "Maybe", Color.Warning),
-        new StatusFilterOption("WantToLearn", "Learn", Color.Info),
-        new StatusFilterOption("Cant", "Can't", Color.Error),
-        new StatusFilterOption("Unset", "Unset", Color.Default),
     };
 
     private List<BossColumnGroup> _bossGroups = new();
@@ -456,50 +419,8 @@ else
             {
                 q = q.Where(r => r.AccountName.Contains(_search, StringComparison.OrdinalIgnoreCase));
             }
-            if (_statusFilter.Count > 0)
-            {
-                q = q.Where(RowMatchesStatusFilter);
-            }
             return q;
         }
-    }
-
-    private bool RowMatchesStatusFilter(RolesMatrixRowDto row)
-    {
-        // Determine which roles are visible per current show mode.
-        IEnumerable<RoleCapabilityStatus?> visibleStatuses()
-        {
-            if (ShowGeneric)
-            {
-                foreach (var role in _genericRoles)
-                {
-                    yield return row.GenericByRole.ContainsKey((int)role) ? row.GenericByRole[(int)role] : (RoleCapabilityStatus?)null;
-                }
-            }
-            if (ShowMechanics)
-            {
-                foreach (var grp in _bossGroups)
-                {
-                    foreach (var col in grp.Columns)
-                    {
-                        yield return row.MechanicById.ContainsKey(col.Id) ? row.MechanicById[col.Id] : (RoleCapabilityStatus?)null;
-                    }
-                }
-            }
-        }
-
-        foreach (var s in visibleStatuses())
-        {
-            var key = s?.ToString() ?? "Unset";
-            if (_statusFilter.Contains(key)) return true;
-        }
-        return false;
-    }
-
-    private void ToggleStatusFilter(string key)
-    {
-        if (_statusFilter.Contains(key)) _statusFilter.Remove(key);
-        else _statusFilter.Add(key);
     }
 
     private async Task SetGenericAsync(RolesMatrixRowDto row, GenericRole role, RoleCapabilityStatus? status)
