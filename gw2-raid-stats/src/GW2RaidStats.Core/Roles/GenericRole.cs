@@ -42,4 +42,19 @@ public static class GenericRoleExtensions
         GenericRole.DpsCondi => "DPS Condi",
         _ => role.ToString()
     };
+
+    /// <summary>
+    /// Squad-display label that drops the Power/Condi variant. Used in the Squad Builder
+    /// grid and Discord embed where the boon/slot pairing matters but Power vs Condi is
+    /// a build detail the commander can sort out at the boss.
+    /// </summary>
+    public static string SquadDisplayName(this GenericRole role) => role switch
+    {
+        GenericRole.AlacHeal => "Alac Heal",
+        GenericRole.QuickHeal => "Quick Heal",
+        GenericRole.AlacDpsPower or GenericRole.AlacDpsCondi => "Alac DPS",
+        GenericRole.QuickDpsPower or GenericRole.QuickDpsCondi => "Quick DPS",
+        GenericRole.DpsPower or GenericRole.DpsCondi => "DPS",
+        _ => role.ToString()
+    };
 }

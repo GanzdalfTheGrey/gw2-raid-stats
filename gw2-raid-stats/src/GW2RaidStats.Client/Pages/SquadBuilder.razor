@@ -145,7 +145,7 @@
                         @if (c.BlockedCandidates.Count > 0)
                         {
                             <span> Could do but base-role-blocked: </span>
-                            @string.Join(", ", c.BlockedCandidates.Select(b => $"{b.AccountName} (on {b.CurrentBaseRole.DisplayName()})"))
+                            @string.Join(", ", c.BlockedCandidates.Select(b => $"{b.AccountName} (on {b.CurrentBaseRole.SquadDisplayName()})"))
                         }
                     </MudText>
                     @if (CanResetFromBoss(c.BossTriggerId))
@@ -174,7 +174,7 @@
                         }
                         else
                         {
-                            <span> @string.Join(", ", seg.Diff.Select(d => $"{d.AccountName}: {d.FromRole?.DisplayName() ?? "—"} → {d.ToRole?.DisplayName() ?? "—"}"))</span>
+                            <span> @string.Join(", ", seg.Diff.Select(d => $"{d.AccountName}: {d.FromRole?.SquadDisplayName() ?? "—"} → {d.ToRole?.SquadDisplayName() ?? "—"}"))</span>
                         }
                     </MudText>
                     <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
@@ -248,7 +248,7 @@
                                         </MudMenu>
                                         @if (slot.Role.HasValue)
                                         {
-                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@slot.Role.Value.DisplayName()</MudChip>
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@slot.Role.Value.SquadDisplayName()</MudChip>
                                         }
                                     </MudStack>
                                 }

@@ -181,16 +181,15 @@ public class SquadCompositionNotificationHandler : INotificationHandler
         await channel.SendMessageAsync(embed: embed.Build());
     }
 
+    // Squad-display label drops the Power/Condi variant; the boon/slot pairing is what
+    // the commander coordinates around, Power vs Condi is a build detail per boss.
     private static string FormatRole(string? roleEnumName) => roleEnumName switch
     {
         "AlacHeal" => "Alac Heal",
         "QuickHeal" => "Quick Heal",
-        "AlacDpsPower" => "Alac DPS Power",
-        "AlacDpsCondi" => "Alac DPS Condi",
-        "QuickDpsPower" => "Quick DPS Power",
-        "QuickDpsCondi" => "Quick DPS Condi",
-        "DpsPower" => "DPS Power",
-        "DpsCondi" => "DPS Condi",
+        "AlacDpsPower" or "AlacDpsCondi" => "Alac DPS",
+        "QuickDpsPower" or "QuickDpsCondi" => "Quick DPS",
+        "DpsPower" or "DpsCondi" => "DPS",
         _ => roleEnumName ?? ""
     };
 }
