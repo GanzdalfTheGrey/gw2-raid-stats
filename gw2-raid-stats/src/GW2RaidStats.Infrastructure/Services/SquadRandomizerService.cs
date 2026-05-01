@@ -30,6 +30,8 @@ public class SquadRandomizerService
         _db = db;
     }
 
+    private const int MaxAttempts = 20;
+
     public async Task<SquadBuildResult> BuildAsync(SquadBuildRequest req, CancellationToken ct = default)
     {
         if (req.PlayerIds.Count + req.PugCount > 10)
@@ -41,9 +43,7 @@ public class SquadRandomizerService
             throw new ArgumentException("At least one player or pug must be selected");
         }
 
-        var rng = new Random(req.Seed ?? Environment.TickCount);
-
-        // Load data
+        // Load data once; per-attempt work is pure in-memory compute.
         var players = await _db.Players
             .Where(p => req.PlayerIds.Contains(p.Id))
             .Select(p => new { p.Id, p.AccountName })
@@ -62,6 +62,44 @@ public class SquadRandomizerService
 
         var capability = new CapabilityIndex(capRows);
 
+        // Run multiple attempts with different RNG seeds, score each, return the best.
+        // Score = (unfilled mechanic slots, total Maybe fallbacks); lower is better; lex compare.
+        // Early-exit on a perfect result (zero conflicts, zero Maybe fallbacks).
+        var baseSeed = req.Seed ?? Environment.TickCount;
+        SquadBuildResult? best = null;
+        int bestUnfilled = int.MaxValue;
+        int bestMaybes = int.MaxValue;
+
+        for (int i = 0; i < MaxAttempts; i++)
+        {
+            var rng = new Random(unchecked(baseSeed + i * 31));
+            var (result, totalMaybes) = SolveOnce(req, capability, allMechanics, mechanicsByBoss, nameById, rng);
+            var unfilled = result.Conflicts.Sum(c => c.Required - c.Filled);
+
+            var isBetter = unfilled < bestUnfilled
+                || (unfilled == bestUnfilled && totalMaybes < bestMaybes);
+
+            if (best == null || isBetter)
+            {
+                best = result;
+                bestUnfilled = unfilled;
+                bestMaybes = totalMaybes;
+            }
+
+            if (unfilled == 0 && totalMaybes == 0) break;
+        }
+
+        return best!;
+    }
+
+    private (SquadBuildResult Result, int TotalMaybeFallbacks) SolveOnce(
+        SquadBuildRequest req,
+        CapabilityIndex capability,
+        List<MechanicRoleEntity> allMechanics,
+        Dictionary<int, List<MechanicRoleEntity>> mechanicsByBoss,
+        Dictionary<Guid, string> nameById,
+        Random rng)
+    {
         // If reset flow asked for a mechanic to be coverable, pre-pin capable players to compatible
         // base roles before the greedy solver runs.
         var locks = new Dictionary<Guid, GenericRole>(req.Locks ?? new());
@@ -75,7 +113,7 @@ public class SquadRandomizerService
         }
 
         // Solve base roles (locks honored, hardest-first greedy with random tie-break)
-        var (subGroups, leftoverPlayers) = SolveBaseRoles(
+        var (subGroups, leftoverPlayers, baseMaybes) = SolveBaseRoles(
             req.PlayerIds, capability, locks, nameById, rng);
 
         var pugDpsCount = Math.Min(req.PugCount, 10 - req.PlayerIds.Count + leftoverPlayers.Count);
@@ -84,6 +122,7 @@ public class SquadRandomizerService
         var perBoss = new List<BossAssignmentDto>();
         var conflicts = new List<SquadConflictDto>();
         var warnings = new List<string>();
+        var mechMaybes = 0;
 
         var assignedSquad = subGroups
             .SelectMany(s => s.Slots)
@@ -112,6 +151,7 @@ public class SquadRandomizerService
                 foreach (var slot in assignedSlots)
                 {
                     if (slot.PlayerId.HasValue) alreadyAssignedOnThisBoss.Add(slot.PlayerId.Value);
+                    if (slot.StatusUsed == RoleCapabilityStatus.Maybe) mechMaybes++;
                 }
 
                 mechanicAssignments.Add(new MechanicAssignmentDto(
@@ -160,10 +200,12 @@ public class SquadRandomizerService
                 mechanicAssignments));
         }
 
-        return new SquadBuildResult(
+        var result = new SquadBuildResult(
             new SquadAssignmentDto(subGroups, pugDpsCount, perBoss),
             conflicts,
             warnings);
+
+        return (result, baseMaybes + mechMaybes);
     }
 
     // --- Force-coverage helper ---
@@ -224,7 +266,7 @@ public class SquadRandomizerService
 
     // --- Base role solving ---
 
-    private (List<SubGroupDto> SubGroups, List<Guid> Leftover) SolveBaseRoles(
+    private (List<SubGroupDto> SubGroups, List<Guid> Leftover, int MaybeFallbacks) SolveBaseRoles(
         List<Guid> playerIds,
         CapabilityIndex capability,
         Dictionary<Guid, GenericRole> locks,
@@ -249,6 +291,7 @@ public class SquadRandomizerService
 
         var assignments = new List<(SlotDef Def, Guid? PlayerId, GenericRole? Role)>();
         var unassigned = new HashSet<Guid>(playerIds);
+        var maybeFallbacks = 0;
 
         // Pre-apply locks
         var lockedSlotIndices = new HashSet<int>();
@@ -283,6 +326,7 @@ public class SquadRandomizerService
             if (chosenPlayerId == null)
             {
                 (chosenPlayerId, chosenRole) = PickCandidate(unassigned, def, capability, RoleCapabilityStatus.Maybe, rng);
+                if (chosenPlayerId.HasValue) maybeFallbacks++;
             }
 
             if (chosenPlayerId.HasValue)
@@ -310,7 +354,7 @@ public class SquadRandomizerService
         }
 
         var result = subGroups.Select(s => new SubGroupDto(s.Index, s.Slots)).ToList();
-        return (result, unassigned.ToList());
+        return (result, unassigned.ToList(), maybeFallbacks);
     }
 
     private (Guid? PlayerId, GenericRole? Role) PickCandidate(
