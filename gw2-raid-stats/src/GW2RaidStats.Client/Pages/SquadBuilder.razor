@@ -534,7 +534,9 @@
                                 : s == RoleCapabilityStatus.WantToLearn ? 2
                                 : s == RoleCapabilityStatus.Cant ? 3 : 4)
                     .FirstOrDefault();
-                return new AvailablePick(pid, name, best);
+                // Treat unset (no row at all) as Can't — same priority and same red badge,
+                // so unset players don't get accidentally promoted above explicit Can'ts.
+                return new AvailablePick(pid, name, best ?? RoleCapabilityStatus.Cant);
             })
             .OrderBy(p => p.BestStatus == RoleCapabilityStatus.Can ? 0
                         : p.BestStatus == RoleCapabilityStatus.Maybe ? 1

@@ -341,6 +341,31 @@ public class SquadRandomizerService
             }
         }
 
+        // Fallback pass: any guildie we couldn't seat (no Can/Maybe data for any slot they
+        // could've taken) gets placed into an empty DPS slot as a pug-equivalent — their name
+        // is recorded but no specific role variant. This handles the common case of a member
+        // who hasn't filled out their roles at all.
+        if (unassigned.Count > 0)
+        {
+            var leftoverShuffled = unassigned.OrderBy(_ => rng.Next()).ToList();
+            foreach (var pid in leftoverShuffled)
+            {
+                var emptyDpsIdx = -1;
+                for (int j = 0; j < assignments.Count; j++)
+                {
+                    if (assignments[j].Def.Kind == "Dps" && assignments[j].PlayerId == null)
+                    {
+                        emptyDpsIdx = j;
+                        break;
+                    }
+                }
+                if (emptyDpsIdx < 0) break;
+                var existing = assignments[emptyDpsIdx];
+                assignments[emptyDpsIdx] = (existing.Def, pid, null);  // null Role = generic DPS
+                unassigned.Remove(pid);
+            }
+        }
+
         // Build sub-groups
         var subGroups = new[] { new SubGroupBuilder(1), new SubGroupBuilder(2) };
         foreach (var (def, playerId, role) in assignments)
