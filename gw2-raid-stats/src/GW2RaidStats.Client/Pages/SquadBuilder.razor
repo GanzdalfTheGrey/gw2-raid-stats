@@ -73,13 +73,18 @@
                                 <MudNumericField T="int" @bind-Value="_randomCount"
                                                  Label="Count" Variant="Variant.Outlined" Margin="Margin.Dense"
                                                  Min="1" Max="@_allBosses.Count" />
-                                <MudSelect T="int" @bind-Value="_randomWing"
-                                           Label="Wing" Variant="Variant.Outlined" Margin="Margin.Dense">
-                                    <MudSelectItem T="int" Value="0">All Wings</MudSelectItem>
+                                <MudSelect T="int"
+                                           SelectedValues="@_randomWings"
+                                           SelectedValuesChanged="@(v => _randomWings = v.ToHashSet())"
+                                           MultiSelection="true"
+                                           Label="Wings (none = all)"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           MultiSelectionTextFunc="@WingsLabel">
                                     @for (int w = 1; w <= 8; w++)
                                     {
                                         var captureW = w;
-                                        <MudSelectItem T="int" Value="captureW">W@(captureW) — @WingMapping.GetWingName(captureW)</MudSelectItem>
+                                        <MudSelectItem T="int" Value="@captureW">W@(captureW) — @WingMapping.GetWingName(captureW)</MudSelectItem>
                                     }
                                 </MudSelect>
                                 <MudSwitch T="bool" @bind-Value="_randomReplace" Color="Color.Primary"
@@ -361,8 +366,15 @@
 
     // Random boss picker state
     private int _randomCount = 5;
-    private int _randomWing = 0; // 0 = all wings
+    private HashSet<int> _randomWings = new(); // empty = all wings
     private bool _randomReplace = true;
+
+    private string WingsLabel(List<string> selectedValues)
+    {
+        if (selectedValues.Count == 0) return "All wings";
+        if (selectedValues.Count > 3) return $"{selectedValues.Count} wings selected";
+        return string.Join(", ", _randomWings.OrderBy(w => w).Select(w => $"W{w}"));
+    }
 
     // Capability data — keyed by player id, used for the per-slot picker UI
     private Dictionary<Guid, Dictionary<int, RoleCapabilityStatus>> _genericCaps = new();
@@ -438,9 +450,9 @@
 
     private void RollRandomBosses()
     {
-        // Pool of candidate bosses, optionally filtered by wing
+        // Pool of candidate bosses; empty wing set means all wings.
         var pool = _allBosses
-            .Where(b => _randomWing == 0 || b.Wing == _randomWing)
+            .Where(b => _randomWings.Count == 0 || _randomWings.Contains(b.Wing))
             .ToList();
 
         if (pool.Count == 0)
