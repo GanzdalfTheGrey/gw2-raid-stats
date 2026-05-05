@@ -61,20 +61,39 @@ public class SessionNotificationHandler : INotificationHandler
 
         embed.AddField("Encounters", string.Join("\n", bossLines));
 
-        // Add records if any — show every record broken this session, splitting across
-        // multiple fields if a single field would exceed Discord's 1024-char limit.
+        // Records, grouped by type so DPS / Boon DPS / Kill Time are visually distinct.
+        // Each group becomes its own embed field; if a single group would exceed Discord's
+        // 1024-char field limit, it splits across "(2)", "(3)", ... fields.
         if (highlights.Records.Count > 0)
         {
-            var recordLines = highlights.Records
-                .Select(r =>
-                {
-                    var patchTag = r.IsCurrentPatch ? " *(patch)*" : "";
-                    return r.RecordType == "Kill Time"
-                        ? $"⏱️ **{r.BossName}**{(r.IsCM ? " (CM)" : "")} - {FormatDuration(TimeSpan.FromSeconds(r.NewValue))}{patchTag}"
-                        : $"⚔️ **{r.BossName}**{(r.IsCM ? " (CM)" : "")} - {r.PlayerName} ({r.Profession}) - {r.NewValue:N0} DPS{patchTag}";
-                })
+            string PatchTag(RecordBroken r) => r.IsCurrentPatch ? " *(patch)*" : "";
+
+            var killTimeLines = highlights.Records
+                .Where(r => r.RecordType == "Kill Time")
+                .Select(r => $"⏱️ **{r.BossName}**{(r.IsCM ? " (CM)" : "")} - {FormatDuration(TimeSpan.FromSeconds(r.NewValue))}{PatchTag(r)}")
                 .ToList();
-            AddRecordsFields(embed, recordLines);
+            if (killTimeLines.Count > 0)
+            {
+                AddRecordsFields(embed, "Kill Time Records!", killTimeLines);
+            }
+
+            var dpsLines = highlights.Records
+                .Where(r => r.RecordType == "DPS")
+                .Select(r => $"⚔️ **{r.BossName}**{(r.IsCM ? " (CM)" : "")} - {r.PlayerName} ({r.Profession}) - {r.NewValue:N0}{PatchTag(r)}")
+                .ToList();
+            if (dpsLines.Count > 0)
+            {
+                AddRecordsFields(embed, "DPS Records!", dpsLines);
+            }
+
+            var boonDpsLines = highlights.Records
+                .Where(r => r.RecordType == "Boon DPS")
+                .Select(r => $"🎵 **{r.BossName}**{(r.IsCM ? " (CM)" : "")} - {r.PlayerName} ({r.Profession}) - {r.NewValue:N0}{PatchTag(r)}")
+                .ToList();
+            if (boonDpsLines.Count > 0)
+            {
+                AddRecordsFields(embed, "Boon DPS Records!", boonDpsLines);
+            }
         }
 
         // Add milestones if any
@@ -163,20 +182,19 @@ public class SessionNotificationHandler : INotificationHandler
 
     /// <summary>
     /// Adds record lines to the embed as one or more fields, splitting whenever the next line
-    /// would push a single field past Discord's 1024-char limit. First field is "New Records!",
-    /// subsequent fields are "More Records! (2)", etc.
+    /// would push a single field past Discord's 1024-char limit. First field uses baseTitle,
+    /// subsequent fields append " (2)", " (3)", etc.
     /// </summary>
-    private static void AddRecordsFields(EmbedBuilder embed, List<string> lines)
+    private static void AddRecordsFields(EmbedBuilder embed, string baseTitle, List<string> lines)
     {
         const int FieldLimit = 1024;
-        const string BaseTitle = "New Records!";
         var current = new System.Text.StringBuilder();
         var fieldIndex = 0;
 
         void Flush()
         {
             if (current.Length == 0) return;
-            var name = fieldIndex == 0 ? BaseTitle : $"More Records! ({fieldIndex + 1})";
+            var name = fieldIndex == 0 ? baseTitle : $"{baseTitle} ({fieldIndex + 1})";
             embed.AddField(name, current.ToString());
             current.Clear();
             fieldIndex++;
