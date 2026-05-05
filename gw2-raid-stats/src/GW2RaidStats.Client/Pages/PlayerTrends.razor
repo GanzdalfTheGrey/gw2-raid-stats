@@ -36,12 +36,14 @@ else
                                  Value="_selectedBoss"
                                  ValueChanged="OnBossChanged"
                                  SearchFunc="@SearchBosses"
-                                 ToStringFunc="@(b => b == null ? "" : $"{b.BossName}{(b.IsCM ? " (CM)" : "")} · {b.Count} kill(s)")"
+                                 ToStringFunc="@(b => b == null ? "" : FormatBossOption(b))"
                                  Label="Boss"
                                  Placeholder="Type to filter..."
                                  Variant="Variant.Outlined"
                                  Margin="Margin.Dense"
                                  ResetValueOnEmptyText="false"
+                                 SelectValueOnTab="true"
+                                 OpenOnFocus="true"
                                  CoerceText="true" />
             </MudItem>
             <MudItem xs="12" md="3">
@@ -219,12 +221,27 @@ else
 
     private Task<IEnumerable<BossEncounterCountDto>> SearchBosses(string? value, CancellationToken ct)
     {
+        // Empty input → show all bosses.
         if (string.IsNullOrWhiteSpace(value))
             return Task.FromResult<IEnumerable<BossEncounterCountDto>>(_bossOptions);
+
+        // When a boss is selected, the input displays the ToStringFunc output (e.g.
+        // "Cairn · 5 kill(s)"). MudAutocomplete then re-runs SearchFunc with that string
+        // as input on focus, which would normally yield zero matches and an empty list.
+        // Treat the case where the input equals the selected boss's display string as
+        // "show me all the options" so clicking back into the field reveals the list.
+        if (_selectedBoss != null && value == FormatBossOption(_selectedBoss))
+        {
+            return Task.FromResult<IEnumerable<BossEncounterCountDto>>(_bossOptions);
+        }
+
         return Task.FromResult<IEnumerable<BossEncounterCountDto>>(
             _bossOptions.Where(b => b.BossName.Contains(value, StringComparison.OrdinalIgnoreCase))
         );
     }
+
+    private static string FormatBossOption(BossEncounterCountDto b)
+        => $"{b.BossName}{(b.IsCM ? " (CM)" : "")} · {b.Count} kill(s)";
 
     private async Task OnBossChanged(BossEncounterCountDto value)
     {
