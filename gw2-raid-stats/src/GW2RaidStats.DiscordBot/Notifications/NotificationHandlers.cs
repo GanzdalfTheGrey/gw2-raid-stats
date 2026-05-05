@@ -83,12 +83,12 @@ public class SessionNotificationHandler : INotificationHandler
                 .ToList();
             if (dpsLines.Count > 0)
             {
-                AddRecordsFields(embed, "DPS Records!", dpsLines);
+                AddRecordsFields(embed, "📯 TOOT 📯 DPS Records!", dpsLines);
             }
 
             var boonDpsLines = highlights.Records
                 .Where(r => r.RecordType == "Boon DPS")
-                .Select(r => $"🎵 **{r.BossName}**{(r.IsCM ? " (CM)" : "")} - {r.PlayerName} ({r.Profession}) - {r.NewValue:N0}{PatchTag(r)}")
+                .Select(r => $"🛡️ **{r.BossName}**{(r.IsCM ? " (CM)" : "")} - {r.PlayerName} ({r.Profession}) - {r.NewValue:N0}{PatchTag(r)}")
                 .ToList();
             if (boonDpsLines.Count > 0)
             {
