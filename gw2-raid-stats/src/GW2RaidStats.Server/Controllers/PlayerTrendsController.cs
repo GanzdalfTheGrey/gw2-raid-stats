@@ -33,15 +33,17 @@ public class PlayerTrendsController : ControllerBase
     }
 
     /// <summary>
-    /// List of bosses the player has killed, with kill counts. Used by the trends page
-    /// to populate the boss dropdown and default to the most-killed.
+    /// List of bosses the player has killed within the given range, with per-range kill counts.
+    /// Used by the trends page to populate the boss autocomplete; the kill count shown
+    /// reflects the active range filter.
     /// </summary>
     [HttpGet("{accountName}/trends/bosses")]
     public async Task<ActionResult<List<BossEncounterCountDto>>> GetBosses(
         string accountName,
+        [FromQuery] string range = "all",
         CancellationToken ct = default)
     {
-        var list = await _trends.GetBossEncounterCountsAsync(accountName, ct);
+        var list = await _trends.GetBossEncounterCountsAsync(accountName, range, ct);
         return Ok(list);
     }
 }

@@ -97,20 +97,30 @@ public class PlayerTrendsService
     }
 
     /// <summary>
-    /// List of bosses the player has encountered, sorted by encounter count desc, so the UI can
-    /// default to their most-played boss in the dropdown.
+    /// Bosses the player has killed within the given range (patch / 90d / all),
+    /// with kill counts scoped to that range. Returned alphabetically (NM before CM)
+    /// for the autocomplete UI; the page picks the highest-Count entry as the default.
     /// </summary>
     public async Task<List<BossEncounterCountDto>> GetBossEncounterCountsAsync(
         string accountName,
+        string range = "all",
         CancellationToken ct = default)
     {
         var player = await _db.Players
             .FirstOrDefaultAsync(p => p.AccountName == accountName, ct);
         if (player == null) return new();
 
-        var counts = await _db.PlayerEncounters
+        var rangeStart = await ResolveRangeStartAsync(range, ct);
+
+        var query = _db.PlayerEncounters
             .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
-            .Where(x => x.pe.PlayerId == player.Id && x.e.Success)
+            .Where(x => x.pe.PlayerId == player.Id && x.e.Success);
+        if (rangeStart.HasValue)
+        {
+            query = query.Where(x => x.e.EncounterTime >= rangeStart.Value);
+        }
+
+        var counts = await query
             .GroupBy(x => new { x.e.TriggerId, x.e.BossName, x.e.IsCM })
             .Select(g => new
             {
@@ -123,8 +133,8 @@ public class PlayerTrendsService
 
         return counts
             .Select(c => new BossEncounterCountDto(c.TriggerId, c.BossName, c.IsCM, c.Count))
-            .OrderByDescending(c => c.Count)
-            .ThenBy(c => c.BossName)
+            .OrderBy(c => c.BossName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(c => c.IsCM)
             .ToList();
     }
 

@@ -32,19 +32,17 @@ else
     <MudPaper Class="pa-3 mb-4" Elevation="1">
         <MudGrid AlignItems="AlignItems.Center">
             <MudItem xs="12" md="5">
-                <MudSelect T="BossKey"
-                           Value="_selectedBoss"
-                           ValueChanged="OnBossChanged"
-                           Label="Boss"
-                           Variant="Variant.Outlined"
-                           Margin="Margin.Dense">
-                    @foreach (var b in _bossOptions)
-                    {
-                        <MudSelectItem T="BossKey" Value="@(new BossKey(b.TriggerId, b.IsCM))">
-                            @b.BossName@(b.IsCM ? " (CM)" : "") · @b.Count kill(s)
-                        </MudSelectItem>
-                    }
-                </MudSelect>
+                <MudAutocomplete T="BossEncounterCountDto"
+                                 Value="_selectedBoss"
+                                 ValueChanged="OnBossChanged"
+                                 SearchFunc="@SearchBosses"
+                                 ToStringFunc="@(b => b == null ? "" : $"{b.BossName}{(b.IsCM ? " (CM)" : "")} · {b.Count} kill(s)")"
+                                 Label="Boss"
+                                 Placeholder="Type to filter..."
+                                 Variant="Variant.Outlined"
+                                 Margin="Margin.Dense"
+                                 ResetValueOnEmptyText="false"
+                                 CoerceText="true" />
             </MudItem>
             <MudItem xs="12" md="3">
                 <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mr-2">Role:</MudText>
@@ -153,7 +151,7 @@ else
     private bool _loadingBosses = true;
     private bool _loadingTrends = false;
     private List<BossEncounterCountDto> _bossOptions = new();
-    private BossKey _selectedBoss;
+    private BossEncounterCountDto? _selectedBoss;
     private string _role = "DPS";
     private string _range = "all";
     private PlayerTrendsDto? _trends;
@@ -169,27 +167,44 @@ else
         _ => _role
     };
 
-    public record BossKey(int TriggerId, bool IsCM);
-
     protected override async Task OnParametersSetAsync()
     {
-        await LoadBossesAsync();
+        await LoadBossesAsync(initial: true);
     }
 
-    private async Task LoadBossesAsync()
+    private async Task LoadBossesAsync(bool initial = false)
     {
         _loadingBosses = true;
         try
         {
             var list = await Http.GetFromJsonAsync<List<BossEncounterCountDto>>(
-                $"api/players/{Uri.EscapeDataString(AccountName)}/trends/bosses");
+                $"api/players/{Uri.EscapeDataString(AccountName)}/trends/bosses?range={_range}");
             _bossOptions = list ?? new();
-            if (_bossOptions.Count > 0)
+
+            if (_bossOptions.Count == 0)
             {
-                var first = _bossOptions[0];
-                _selectedBoss = new BossKey(first.TriggerId, first.IsCM);
-                await LoadTrendsAsync();
+                _selectedBoss = null;
+                _trends = null;
+                return;
             }
+
+            // Default selection on initial load: highest kill count (most familiar boss).
+            // On subsequent loads (range change), keep the existing pick if still present;
+            // otherwise fall back to the highest count in the new range.
+            BossEncounterCountDto? newSelection = null;
+            if (initial)
+            {
+                newSelection = _bossOptions.OrderByDescending(b => b.Count).First();
+            }
+            else if (_selectedBoss != null)
+            {
+                newSelection = _bossOptions.FirstOrDefault(b =>
+                    b.TriggerId == _selectedBoss.TriggerId && b.IsCM == _selectedBoss.IsCM);
+            }
+            newSelection ??= _bossOptions.OrderByDescending(b => b.Count).First();
+
+            _selectedBoss = newSelection;
+            await LoadTrendsAsync();
         }
         catch
         {
@@ -202,7 +217,16 @@ else
         }
     }
 
-    private async Task OnBossChanged(BossKey value)
+    private Task<IEnumerable<BossEncounterCountDto>> SearchBosses(string? value, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return Task.FromResult<IEnumerable<BossEncounterCountDto>>(_bossOptions);
+        return Task.FromResult<IEnumerable<BossEncounterCountDto>>(
+            _bossOptions.Where(b => b.BossName.Contains(value, StringComparison.OrdinalIgnoreCase))
+        );
+    }
+
+    private async Task OnBossChanged(BossEncounterCountDto value)
     {
         _selectedBoss = value;
         await LoadTrendsAsync();
@@ -217,12 +241,18 @@ else
     private async Task OnRangeChanged(string value)
     {
         _range = value;
-        await LoadTrendsAsync();
+        // Reload the boss list so kill counts reflect the new range.
+        await LoadBossesAsync(initial: false);
     }
 
     private async Task LoadTrendsAsync()
     {
-        if (_selectedBoss == null) return;
+        if (_selectedBoss == null)
+        {
+            _trends = null;
+            BuildChart();
+            return;
+        }
         _loadingTrends = true;
         try
         {
