@@ -5,6 +5,15 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0] - 2026-05-05
+
+### Added
+- **Trends dashboard** (Player Profile → Trends): per-player progression chart for any boss in any role (DPS / Boon DPS). Plots your kills over time with the **guild median** and **guild record** overlaid, plus your personal best, a "last 5 vs prior 5" trend arrow, and a "X to beat (N%)" note showing how close you are to the record. Boss picker is a type-search autocomplete; kill counts on each option reflect the active range. Range toggle: **This Patch** (default) / **Last 90d** / **All Time**.
+- **Squad Builder random boss roll**: 🎲 button next to the boss picker rolls N random bosses with a **multi-select wing filter** (pick any combination, empty = all wings) and replace-vs-append.
+
+### Changed
+- **GW2 Elite Insights parser** bumped from v3.18.1.0 to v3.22.0.0. Notable: Mesmer/Mirage shatter clone double-counting fixed (was inflating their DPS), Gorseval subphases restored, Greer phase detection fixed on long splits, multi-target detection fixed on Kaineng Overlook + Arkk. Applies to new imports.
+
 ## [1.13.1] - 2026-05-05
 
 ### Added
