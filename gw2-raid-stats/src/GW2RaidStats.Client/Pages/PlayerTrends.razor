@@ -84,7 +84,7 @@ else
                     <MudText Typo="Typo.subtitle1" Class="mb-2">
                         <strong>@RoleLabel over time</strong> — @_trends.TotalKills kill(s)
                     </MudText>
-                    <MudChart ChartType="ChartType.Line"
+                    <MudChart ChartType="@_chartType"
                               ChartSeries="@_series"
                               XAxisLabels="@_xLabels"
                               Width="100%" Height="350px"
@@ -161,6 +161,12 @@ else
     private List<ChartSeries> _series = new();
     private string[] _xLabels = Array.Empty<string>();
     private ChartOptions _chartOptions = new() { LineStrokeWidth = 2, YAxisFormat = "n0" };
+
+    // Line charts need at least two points to render anything visible. Fall back to a
+    // bar chart for a single data point so the user actually sees their kill.
+    private ChartType _chartType => (_trends?.Points.Count ?? 0) <= 1
+        ? ChartType.Bar
+        : ChartType.Line;
 
     private string RoleLabel => _role switch
     {
