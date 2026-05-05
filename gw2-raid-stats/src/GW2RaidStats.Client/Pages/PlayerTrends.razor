@@ -140,6 +140,29 @@ else
                                 <MudText>—</MudText>
                             }
                         </MudStack>
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Guild Record</MudText>
+                            @if (_trends.GuildTop > 0)
+                            {
+                                <MudText Typo="Typo.h6" Color="Color.Warning">@_trends.GuildTop.ToString("N0")</MudText>
+                                @if (_trends.PersonalBest != null && _trends.GuildTop > _trends.PersonalBest.Value)
+                                {
+                                    var gap = _trends.GuildTop - _trends.PersonalBest.Value;
+                                    var pct = (decimal)gap / _trends.GuildTop * 100;
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        @gap.ToString("N0") to beat (@pct.ToString("F1")%)
+                                    </MudText>
+                                }
+                                else if (_trends.PersonalBest != null)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Success">you hold the record</MudText>
+                                }
+                            }
+                            else
+                            {
+                                <MudText>—</MudText>
+                            }
+                        </MudStack>
                     </MudStack>
                 </MudPaper>
             </MudItem>
@@ -155,7 +178,7 @@ else
     private List<BossEncounterCountDto> _bossOptions = new();
     private BossEncounterCountDto? _selectedBoss;
     private string _role = "DPS";
-    private string _range = "all";
+    private string _range = "patch";
     private PlayerTrendsDto? _trends;
 
     private List<ChartSeries> _series = new();
@@ -328,6 +351,15 @@ else
                     Data = new[] { med, med }
                 });
             }
+            if (_trends.GuildTop > 0)
+            {
+                var top = (double)_trends.GuildTop;
+                seriesList.Add(new ChartSeries
+                {
+                    Name = "Guild Record",
+                    Data = new[] { top, top }
+                });
+            }
             _series = seriesList;
             return;
         }
@@ -355,6 +387,18 @@ else
             });
         }
 
+        if (_trends.GuildTop > 0)
+        {
+            // Constant line at the guild record (top DPS in this role/range) so the
+            // user can see how close they were to breaking it.
+            var topValue = (double)_trends.GuildTop;
+            allSeries.Add(new ChartSeries
+            {
+                Name = "Guild Record",
+                Data = Enumerable.Repeat(topValue, _trends.Points.Count).ToArray()
+            });
+        }
+
         _series = allSeries;
     }
 
@@ -375,6 +419,7 @@ else
         List<TrendPoint> Points,
         TrendPoint? PersonalBest,
         int GuildMedian,
+        int GuildTop,
         decimal TrendPct,
         int TotalKills);
 

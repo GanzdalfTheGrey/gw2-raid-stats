@@ -76,8 +76,8 @@ public class PlayerTrendsService
         // Personal best within the range
         TrendPoint? pb = points.Count == 0 ? null : points.OrderByDescending(p => p.Value).First();
 
-        // Guild median across all included guild members in this role/boss/range
-        var guildMedian = await ComputeGuildMedianAsync(triggerId, isCm, role, useHps, rangeStart, ct);
+        // Guild median + top across all included guild members in this role/boss/range
+        var (guildMedian, guildTop) = await ComputeGuildMedianAndTopAsync(triggerId, isCm, role, useHps, rangeStart, ct);
 
         // Last-5 vs prior-5 trend (percentage change)
         decimal trendPct = 0;
@@ -92,6 +92,7 @@ public class PlayerTrendsService
             points,
             pb,
             guildMedian,
+            guildTop,
             trendPct,
             points.Count);
     }
@@ -166,7 +167,7 @@ public class PlayerTrendsService
         return rows.ToDictionary(x => x.EncounterId, x => x.AvgDps);
     }
 
-    private async Task<int> ComputeGuildMedianAsync(
+    private async Task<(int Median, int Top)> ComputeGuildMedianAndTopAsync(
         int triggerId,
         bool isCm,
         string role,
@@ -175,7 +176,7 @@ public class PlayerTrendsService
         CancellationToken ct)
     {
         var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
-        if (includedAccounts.Count == 0) return 0;
+        if (includedAccounts.Count == 0) return (0, 0);
 
         var query = _db.PlayerEncounters
             .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
@@ -190,7 +191,7 @@ public class PlayerTrendsService
         }
 
         var rows = await query.ToListAsync(ct);
-        if (rows.Count == 0) return 0;
+        if (rows.Count == 0) return (0, 0);
 
         // Reuse avg-DPS lookup so role classification is consistent
         var encIds = rows.Select(x => x.pe.EncounterId).Distinct().ToList();
@@ -206,13 +207,14 @@ public class PlayerTrendsService
             .OrderBy(v => v)
             .ToList();
 
-        if (values.Count == 0) return 0;
+        if (values.Count == 0) return (0, 0);
 
         // Median: midpoint for odd count, average of the two middles for even count
-        if (values.Count % 2 == 1) return values[values.Count / 2];
-        var lo = values[values.Count / 2 - 1];
-        var hi = values[values.Count / 2];
-        return (lo + hi) / 2;
+        var median = values.Count % 2 == 1
+            ? values[values.Count / 2]
+            : (values[values.Count / 2 - 1] + values[values.Count / 2]) / 2;
+        var top = values[^1]; // sorted ascending, last is max
+        return (median, top);
     }
 
     private static string ClassifyRole(decimal? quickness, decimal? alacrity, int dps, decimal avgDps)
@@ -233,6 +235,7 @@ public record PlayerTrendsDto(
     List<TrendPoint> Points,
     TrendPoint? PersonalBest,
     int GuildMedian,
+    int GuildTop,
     decimal TrendPct,
     int TotalKills);
 
