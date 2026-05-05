@@ -136,9 +136,8 @@ public class PlayerTrendsService
             var patch = await _db.LeaderboardPatches
                 .Where(p => p.StartDate <= asOf)
                 .OrderByDescending(p => p.StartDate)
-                .Select(p => (DateTimeOffset?)p.StartDate)
                 .FirstOrDefaultAsync(ct);
-            return patch;
+            return patch?.StartDate;
         }
         if (range == "90d") return DateTimeOffset.UtcNow.AddDays(-90);
         return null; // all time
