@@ -165,9 +165,14 @@ public class RecordNotificationHandler : INotificationHandler
         var record = JsonSerializer.Deserialize<RecordPayload>(payload);
         if (record == null) return;
 
+        var title = record.IsCurrentPatch
+            ? "📯 *TOOT* New Patch Record!"
+            : "📯 *TOOT* New Record!";
+        var color = record.IsCurrentPatch ? Color.Teal : Color.Gold;
+
         var embed = new EmbedBuilder()
-            .WithTitle("📯 *TOOT* New Record!")
-            .WithColor(Color.Gold)
+            .WithTitle(title)
+            .WithColor(color)
             .WithCurrentTimestamp();
 
         if (record.RecordType == "Kill Time")
@@ -300,7 +305,8 @@ public record RecordPayload(
     string? Profession,
     double NewValue,
     double? PreviousValue,
-    string? LogUrl
+    string? LogUrl,
+    bool IsCurrentPatch = false
 );
 
 public record MilestonePayload(

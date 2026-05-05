@@ -5,6 +5,11 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.1] - 2026-05-05
+
+### Added
+- **Patch-scoped DPS records** — the bot already toots when someone breaks an all-time DPS or Boon DPS record on a boss. Now it also toots when someone breaks the **current patch** record (i.e., they didn't beat the all-time best, but they set a new top within the active leaderboard patch). Patch-record toots use a teal color and "📯 *TOOT* New Patch Record!" title to distinguish them from all-time records (gold). If a kill sets *both* a new all-time record and a new patch record, only the all-time toot fires (since the all-time record is by definition also a patch record).
+
 ## [1.13.0] - 2026-04-30
 
 ### Added

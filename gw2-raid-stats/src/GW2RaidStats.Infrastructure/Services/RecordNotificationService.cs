@@ -118,6 +118,12 @@ public class RecordNotificationService
         var previousBestDps = previousTop5.FirstOrDefault()?.pe.Dps ?? 0;
         var previousTop5Threshold = previousTop5.Count >= 5 ? previousTop5.Last().pe.Dps : 0;
 
+        // Patch-scoped previous best DPS (current patch only)
+        var patchStart = await GetCurrentPatchStartAsync(encounter.EncounterTime, ct);
+        var (previousPatchHasRecords, previousPatchBestDps) = patchStart.HasValue
+            ? await GetPreviousPatchBestDpsAsync(encounter, includedAccounts, patchStart.Value, ct)
+            : (false, 0);
+
         // Get player performances for this encounter, sorted by DPS descending
         var playerEncounters = await _db.PlayerEncounters
             .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
@@ -153,6 +159,28 @@ public class RecordNotificationService
                     encounter.LogUrl
                 );
 
+                await QueueNotificationAsync("record_broken", payload, ct);
+                continue;
+            }
+
+            // Patch record: didn't beat all-time, but beat (or set) the current patch best.
+            // Mirrors the overall logic — first patch clear: top DPS only; otherwise: anyone who beats patch best.
+            if (!patchStart.HasValue) continue;
+            var isPatchFirstClear = !previousPatchHasRecords;
+            var beatsPatchRecord = current.pe.Dps > previousPatchBestDps;
+            if ((isPatchFirstClear && isTopDps) || (!isPatchFirstClear && beatsPatchRecord))
+            {
+                var payload = new RecordPayload(
+                    "DPS",
+                    encounter.BossName,
+                    encounter.IsCM,
+                    current.p.AccountName,
+                    current.pe.Profession,
+                    current.pe.Dps,
+                    previousPatchHasRecords ? (double?)previousPatchBestDps : null,
+                    encounter.LogUrl,
+                    IsCurrentPatch: true
+                );
                 await QueueNotificationAsync("record_broken", payload, ct);
             }
         }
@@ -207,6 +235,12 @@ public class RecordNotificationService
 
         var previousBestDps = previousBest?.pe.Dps ?? 0;
 
+        // Patch-scoped previous best boon DPS (current patch only)
+        var patchStart = await GetCurrentPatchStartAsync(encounter.EncounterTime, ct);
+        var (previousPatchHasRecords, previousPatchBestDps) = patchStart.HasValue
+            ? await GetPreviousPatchBestBoonDpsAsync(encounter, includedAccounts, patchStart.Value, ct)
+            : (false, 0);
+
         // Get boon DPS performances for this encounter, sorted by DPS descending
         var boonPlayers = await _db.PlayerEncounters
             .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id, (pe, p) => new { pe, p })
@@ -239,8 +273,86 @@ public class RecordNotificationService
                 );
 
                 await QueueNotificationAsync("record_broken", payload, ct);
+                continue;
+            }
+
+            // Patch record: didn't beat all-time, but beat (or set) the current patch best.
+            if (!patchStart.HasValue) continue;
+            var isPatchFirstClear = !previousPatchHasRecords;
+            var beatsPatchRecord = current.pe.Dps > previousPatchBestDps;
+            if ((isPatchFirstClear && isTopBoonDps) || (!isPatchFirstClear && beatsPatchRecord))
+            {
+                var payload = new RecordPayload(
+                    "Boon DPS",
+                    encounter.BossName,
+                    encounter.IsCM,
+                    current.p.AccountName,
+                    current.pe.Profession,
+                    current.pe.Dps,
+                    previousPatchHasRecords ? (double?)previousPatchBestDps : null,
+                    encounter.LogUrl,
+                    IsCurrentPatch: true
+                );
+                await QueueNotificationAsync("record_broken", payload, ct);
             }
         }
+    }
+
+    private async Task<DateTimeOffset?> GetCurrentPatchStartAsync(DateTimeOffset asOf, CancellationToken ct)
+    {
+        var patch = await _db.LeaderboardPatches
+            .Where(p => p.StartDate <= asOf)
+            .OrderByDescending(p => p.StartDate)
+            .FirstOrDefaultAsync(ct);
+        return patch?.StartDate;
+    }
+
+    private async Task<(bool HasRecords, int BestDps)> GetPreviousPatchBestDpsAsync(
+        EncounterEntity encounter,
+        List<string> includedAccounts,
+        DateTimeOffset patchStart,
+        CancellationToken ct)
+    {
+        var top = await _db.PlayerEncounters
+            .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+            .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
+            .Where(x => x.e.TriggerId == encounter.TriggerId
+                     && x.e.IsCM == encounter.IsCM
+                     && x.e.Success
+                     && x.e.Id != encounter.Id
+                     && x.e.EncounterTime < encounter.EncounterTime
+                     && x.e.EncounterTime >= patchStart)
+            .Where(x => includedAccounts.Contains(x.p.AccountName))
+            .OrderByDescending(x => x.pe.Dps)
+            .Select(x => (int?)x.pe.Dps)
+            .FirstOrDefaultAsync(ct);
+
+        return (top.HasValue, top ?? 0);
+    }
+
+    private async Task<(bool HasRecords, int BestDps)> GetPreviousPatchBestBoonDpsAsync(
+        EncounterEntity encounter,
+        List<string> includedAccounts,
+        DateTimeOffset patchStart,
+        CancellationToken ct)
+    {
+        var top = await _db.PlayerEncounters
+            .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+            .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
+            .Where(x => x.e.TriggerId == encounter.TriggerId
+                     && x.e.IsCM == encounter.IsCM
+                     && x.e.Success
+                     && x.e.Id != encounter.Id
+                     && x.e.EncounterTime < encounter.EncounterTime
+                     && x.e.EncounterTime >= patchStart)
+            .Where(x => includedAccounts.Contains(x.p.AccountName))
+            .Where(x => (x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
+                        (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold)
+            .OrderByDescending(x => x.pe.Dps)
+            .Select(x => (int?)x.pe.Dps)
+            .FirstOrDefaultAsync(ct);
+
+        return (top.HasValue, top ?? 0);
     }
 
     private async Task CheckFirstKillMilestoneAsync(EncounterEntity encounter, CancellationToken ct)
@@ -366,7 +478,8 @@ public class RecordNotificationService
         string? Profession,
         double NewValue,
         double? PreviousValue,
-        string? LogUrl
+        string? LogUrl,
+        bool IsCurrentPatch = false
     );
 
     private record MilestonePayload(
