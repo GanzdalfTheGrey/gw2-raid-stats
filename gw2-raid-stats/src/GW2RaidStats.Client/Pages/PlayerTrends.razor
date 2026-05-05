@@ -84,7 +84,7 @@ else
                     <MudText Typo="Typo.subtitle1" Class="mb-2">
                         <strong>@RoleLabel over time</strong> — @_trends.TotalKills kill(s)
                     </MudText>
-                    <MudChart ChartType="@_chartType"
+                    <MudChart ChartType="ChartType.Line"
                               ChartSeries="@_series"
                               XAxisLabels="@_xLabels"
                               Width="100%" Height="350px"
@@ -161,12 +161,6 @@ else
     private List<ChartSeries> _series = new();
     private string[] _xLabels = Array.Empty<string>();
     private ChartOptions _chartOptions = new() { LineStrokeWidth = 2, YAxisFormat = "n0" };
-
-    // Line charts need at least two points to render anything visible. Fall back to a
-    // bar chart for a single data point so the user actually sees their kill.
-    private ChartType _chartType => (_trends?.Points.Count ?? 0) <= 1
-        ? ChartType.Bar
-        : ChartType.Line;
 
     private string RoleLabel => _role switch
     {
@@ -307,6 +301,37 @@ else
             return;
         }
 
+        // MudChart's Line type can't render a path of length 1, which means a single
+        // kill produces an empty plot. Pad single-point data with a leading sentinel
+        // entry that repeats the same value so the line has horizontal length and the
+        // marker dot at the endpoint is visible. Median series is repeated to match.
+        if (_trends.Points.Count == 1)
+        {
+            var only = _trends.Points[0];
+            var label = only.EncounterTime.LocalDateTime.ToString("MMM d");
+            _xLabels = new[] { "", label };
+
+            var seriesList = new List<ChartSeries>
+            {
+                new ChartSeries
+                {
+                    Name = RoleLabel,
+                    Data = new[] { (double)only.Value, (double)only.Value }
+                }
+            };
+            if (_trends.GuildMedian > 0)
+            {
+                var med = (double)_trends.GuildMedian;
+                seriesList.Add(new ChartSeries
+                {
+                    Name = "Guild Median",
+                    Data = new[] { med, med }
+                });
+            }
+            _series = seriesList;
+            return;
+        }
+
         _xLabels = _trends.Points
             .Select(p => p.EncounterTime.LocalDateTime.ToString("MMM d"))
             .ToArray();
@@ -317,20 +342,20 @@ else
             Data = _trends.Points.Select(p => (double)p.Value).ToArray()
         };
 
-        var seriesList = new List<ChartSeries> { playerSeries };
+        var allSeries = new List<ChartSeries> { playerSeries };
 
         if (_trends.GuildMedian > 0)
         {
             // Constant line at guild median for easy visual comparison
             var medianValue = (double)_trends.GuildMedian;
-            seriesList.Add(new ChartSeries
+            allSeries.Add(new ChartSeries
             {
                 Name = "Guild Median",
                 Data = Enumerable.Repeat(medianValue, _trends.Points.Count).ToArray()
             });
         }
 
-        _series = seriesList;
+        _series = allSeries;
     }
 
     private static string TrendIcon(decimal pct)
