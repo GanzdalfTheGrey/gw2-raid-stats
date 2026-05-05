@@ -9,7 +9,7 @@
     <MudStack Spacing="0">
         <MudText Typo="Typo.h4">@AccountName — Trends</MudText>
         <MudText Typo="Typo.body2" Color="Color.Secondary">
-            DPS, Boon DPS, and Heals progression over time per boss.
+            DPS and Boon DPS progression over time per boss, with guild median and record overlays.
         </MudText>
     </MudStack>
     <MudButton Variant="Variant.Outlined"
@@ -32,19 +32,62 @@ else
     <MudPaper Class="pa-3 mb-4" Elevation="1">
         <MudGrid AlignItems="AlignItems.Center">
             <MudItem xs="12" md="5">
-                <MudAutocomplete T="BossEncounterCountDto"
-                                 Value="_selectedBoss"
-                                 ValueChanged="OnBossChanged"
-                                 SearchFunc="@SearchBosses"
-                                 ToStringFunc="@(b => b == null ? "" : FormatBossOption(b))"
-                                 Label="Boss"
-                                 Placeholder="Type to filter..."
-                                 Variant="Variant.Outlined"
-                                 Margin="Margin.Dense"
-                                 ResetValueOnEmptyText="false"
-                                 SelectValueOnTab="true"
-                                 OpenOnFocus="true"
-                                 CoerceText="true" />
+                <MudMenu ActivationEvent="@MouseEvent.LeftClick"
+                         AnchorOrigin="Origin.BottomLeft"
+                         TransformOrigin="Origin.TopLeft"
+                         Dense="true">
+                    <ActivatorContent>
+                        <div class="boss-trigger">
+                            <span class="boss-trigger-label">Boss</span>
+                            <span class="boss-trigger-value">
+                                @(_selectedBoss != null ? FormatBossOption(_selectedBoss) : "Select a boss...")
+                            </span>
+                            <MudIcon Icon="@Icons.Material.Filled.ArrowDropDown" />
+                        </div>
+                    </ActivatorContent>
+                    <ChildContent>
+                        <div class="pa-2" style="min-width: 360px;">
+                            <MudTextField @bind-Value="_bossSearch"
+                                          Placeholder="Filter bosses..."
+                                          Adornment="Adornment.Start"
+                                          AdornmentIcon="@Icons.Material.Filled.Search"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Immediate="true"
+                                          DebounceInterval="100"
+                                          Clearable="true" />
+                        </div>
+                        <MudDivider />
+                        <div style="max-height: 360px; overflow-y: auto;">
+                            @if (FilteredBossOptions.Count == 0)
+                            {
+                                <div class="pa-3 text-center">
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary">No matches</MudText>
+                                </div>
+                            }
+                            else
+                            {
+                                @foreach (var b in FilteredBossOptions)
+                                {
+                                    var captureB = b;
+                                    var isSelected = _selectedBoss != null
+                                        && _selectedBoss.TriggerId == b.TriggerId
+                                        && _selectedBoss.IsCM == b.IsCM;
+                                    <MudMenuItem OnClick="@(() => SelectBoss(captureB))">
+                                        @if (isSelected)
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.Check"
+                                                     Size="Size.Small"
+                                                     Color="Color.Primary"
+                                                     Class="mr-2" />
+                                        }
+                                        @FormatBossOption(b)
+                                    </MudMenuItem>
+                                }
+                            }
+                        </div>
+                    </ChildContent>
+                </MudMenu>
             </MudItem>
             <MudItem xs="12" md="3">
                 <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mr-2">Role:</MudText>
@@ -170,6 +213,35 @@ else
     }
 }
 
+<style>
+    .boss-trigger {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border: 1px solid var(--mud-palette-lines-inputs);
+        border-radius: 4px;
+        cursor: pointer;
+        background: var(--mud-palette-surface);
+        transition: border-color 0.15s ease;
+        min-height: 40px;
+        user-select: none;
+    }
+    .boss-trigger:hover {
+        border-color: var(--mud-palette-text-primary);
+    }
+    .boss-trigger-label {
+        font-size: 0.75rem;
+        color: var(--mud-palette-text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .boss-trigger-value {
+        flex: 1;
+        font-size: 0.95rem;
+    }
+</style>
+
 @code {
     [Parameter] public string AccountName { get; set; } = "";
 
@@ -180,6 +252,25 @@ else
     private string _role = "DPS";
     private string _range = "patch";
     private PlayerTrendsDto? _trends;
+    private string _bossSearch = "";
+
+    private List<BossEncounterCountDto> FilteredBossOptions
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_bossSearch)) return _bossOptions;
+            return _bossOptions
+                .Where(b => b.BossName.Contains(_bossSearch, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+    }
+
+    private async Task SelectBoss(BossEncounterCountDto b)
+    {
+        _selectedBoss = b;
+        _bossSearch = ""; // reset filter so the next open shows all options
+        await LoadTrendsAsync();
+    }
 
     private List<ChartSeries> _series = new();
     private string[] _xLabels = Array.Empty<string>();
@@ -242,35 +333,8 @@ else
         }
     }
 
-    private Task<IEnumerable<BossEncounterCountDto>> SearchBosses(string? value, CancellationToken ct)
-    {
-        // Empty input → show all bosses.
-        if (string.IsNullOrWhiteSpace(value))
-            return Task.FromResult<IEnumerable<BossEncounterCountDto>>(_bossOptions);
-
-        // When a boss is selected, the input displays the ToStringFunc output (e.g.
-        // "Cairn · 5 kill(s)"). MudAutocomplete then re-runs SearchFunc with that string
-        // as input on focus, which would normally yield zero matches and an empty list.
-        // Treat the case where the input equals the selected boss's display string as
-        // "show me all the options" so clicking back into the field reveals the list.
-        if (_selectedBoss != null && value == FormatBossOption(_selectedBoss))
-        {
-            return Task.FromResult<IEnumerable<BossEncounterCountDto>>(_bossOptions);
-        }
-
-        return Task.FromResult<IEnumerable<BossEncounterCountDto>>(
-            _bossOptions.Where(b => b.BossName.Contains(value, StringComparison.OrdinalIgnoreCase))
-        );
-    }
-
     private static string FormatBossOption(BossEncounterCountDto b)
         => $"{b.BossName}{(b.IsCM ? " (CM)" : "")} · {b.Count} kill(s)";
-
-    private async Task OnBossChanged(BossEncounterCountDto value)
-    {
-        _selectedBoss = value;
-        await LoadTrendsAsync();
-    }
 
     private async Task OnRoleChanged(string value)
     {
