@@ -124,7 +124,7 @@ Queue folders for log processing:
 
 ## Domain Knowledge
 
-- GW2 Elite Insights CLI (v3.17.0.0) is the external tool that parses arcdps logs
+- GW2 Elite Insights CLI (v3.22.0.0) is the external tool that parses arcdps logs (pinned in [Dockerfile.processor](gw2-raid-stats/Dockerfile.processor) via `ARG GW2EI_VERSION`)
 - `WingMapping.cs` contains boss/wing ID mappings for GW2 raid encounters
 - Leaderboards explicitly filter to guild members only (no pugs)
 - "Recap" features generate Spotify Wrapped-style yearly summaries

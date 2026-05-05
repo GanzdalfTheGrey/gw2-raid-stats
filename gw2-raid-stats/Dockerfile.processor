@@ -39,7 +39,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Download and install GW2 Elite Insights CLI
-ARG GW2EI_VERSION=v3.18.1.0
+ARG GW2EI_VERSION=v3.22.0.0
 RUN curl -L "https://github.com/baaron4/GW2-Elite-Insights-Parser/releases/download/${GW2EI_VERSION}/GW2EICLI.zip" -o /tmp/gw2ei.zip \
     && mkdir -p /opt/gw2ei \
     && unzip /tmp/gw2ei.zip -d /opt/gw2ei \
