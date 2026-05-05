@@ -66,9 +66,13 @@ public class SessionNotificationHandler : INotificationHandler
         if (highlights.Records.Count > 0)
         {
             var recordLines = highlights.Records
-                .Select(r => r.RecordType == "Kill Time"
-                    ? $"⏱️ **{r.BossName}**{(r.IsCM ? " (CM)" : "")} - {FormatDuration(TimeSpan.FromSeconds(r.NewValue))}"
-                    : $"⚔️ **{r.BossName}**{(r.IsCM ? " (CM)" : "")} - {r.PlayerName} ({r.Profession}) - {r.NewValue:N0} DPS")
+                .Select(r =>
+                {
+                    var patchTag = r.IsCurrentPatch ? " *(patch)*" : "";
+                    return r.RecordType == "Kill Time"
+                        ? $"⏱️ **{r.BossName}**{(r.IsCM ? " (CM)" : "")} - {FormatDuration(TimeSpan.FromSeconds(r.NewValue))}{patchTag}"
+                        : $"⚔️ **{r.BossName}**{(r.IsCM ? " (CM)" : "")} - {r.PlayerName} ({r.Profession}) - {r.NewValue:N0} DPS{patchTag}";
+                })
                 .ToList();
             AddRecordsFields(embed, recordLines);
         }

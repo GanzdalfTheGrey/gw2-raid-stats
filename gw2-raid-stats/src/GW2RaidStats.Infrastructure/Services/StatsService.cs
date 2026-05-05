@@ -269,6 +269,14 @@ public class StatsService
             }
         }
 
+        // Look up the current leaderboard patch start (if any) so we can also detect
+        // patch-only records that didn't beat the all-time best.
+        var currentPatchStart = await _db.LeaderboardPatches
+            .Where(p => p.StartDate <= sessionStart)
+            .OrderByDescending(p => p.StartDate)
+            .Select(p => (DateTimeOffset?)p.StartDate)
+            .FirstOrDefaultAsync(ct);
+
         // Check for DPS records from this session
         var sessionEncounterIds = sessionKills.Select(e => e.Id).ToList();
         if (sessionEncounterIds.Count > 0)
@@ -326,6 +334,41 @@ public class StatsService
                         Profession: topSessionDps.pe.Profession
                     ));
                 }
+                else if (currentPatchStart.HasValue)
+                {
+                    // Not an all-time record, but check if it's a patch record.
+                    var patchPreviousQuery = _db.PlayerEncounters
+                        .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+                        .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
+                        .Where(x => x.e.TriggerId == bossGroup.Key.TriggerId
+                                 && x.e.IsCM == bossGroup.Key.IsCM
+                                 && x.e.Success
+                                 && x.e.EncounterTime < sessionStart
+                                 && x.e.EncounterTime >= currentPatchStart.Value);
+
+                    if (includedList.Count > 0)
+                    {
+                        patchPreviousQuery = patchPreviousQuery.Where(x => includedList.Contains(x.p.AccountName));
+                    }
+
+                    var patchPreviousBestDps = await patchPreviousQuery
+                        .OrderByDescending(x => x.pe.Dps)
+                        .FirstOrDefaultAsync(ct);
+
+                    if (patchPreviousBestDps == null || topSessionDps.pe.Dps > patchPreviousBestDps.pe.Dps)
+                    {
+                        records.Add(new RecordBroken(
+                            RecordType: "DPS",
+                            BossName: bossGroup.Key.BossName,
+                            IsCM: bossGroup.Key.IsCM,
+                            PlayerName: topSessionDps.p.AccountName,
+                            NewValue: topSessionDps.pe.Dps,
+                            PreviousValue: patchPreviousBestDps?.pe.Dps,
+                            Profession: topSessionDps.pe.Profession,
+                            IsCurrentPatch: true
+                        ));
+                    }
+                }
 
                 // Check for Boon DPS records (quickness or alacrity providers >= 10% threshold)
                 var boonDpsPlayers = bossGroup
@@ -366,6 +409,43 @@ public class StatsService
                             PreviousValue: previousBestBoonDps?.pe.Dps,
                             Profession: boonDpsPlayers.pe.Profession
                         ));
+                    }
+                    else if (currentPatchStart.HasValue)
+                    {
+                        // Not an all-time record, but check if it's a patch record.
+                        var patchPreviousBoonQuery = _db.PlayerEncounters
+                            .InnerJoin(_db.Encounters, (pe, e) => pe.EncounterId == e.Id, (pe, e) => new { pe, e })
+                            .InnerJoin(_db.Players, (x, p) => x.pe.PlayerId == p.Id, (x, p) => new { x.pe, x.e, p })
+                            .Where(x => x.e.TriggerId == bossGroup.Key.TriggerId
+                                     && x.e.IsCM == bossGroup.Key.IsCM
+                                     && x.e.Success
+                                     && x.e.EncounterTime < sessionStart
+                                     && x.e.EncounterTime >= currentPatchStart.Value
+                                     && ((x.pe.QuicknessGeneration ?? 0) >= BoonSupportThreshold ||
+                                         (x.pe.AlacracityGeneration ?? 0) >= BoonSupportThreshold));
+
+                        if (includedList.Count > 0)
+                        {
+                            patchPreviousBoonQuery = patchPreviousBoonQuery.Where(x => includedList.Contains(x.p.AccountName));
+                        }
+
+                        var patchPreviousBestBoonDps = await patchPreviousBoonQuery
+                            .OrderByDescending(x => x.pe.Dps)
+                            .FirstOrDefaultAsync(ct);
+
+                        if (patchPreviousBestBoonDps == null || boonDpsPlayers.pe.Dps > patchPreviousBestBoonDps.pe.Dps)
+                        {
+                            records.Add(new RecordBroken(
+                                RecordType: "Boon DPS",
+                                BossName: bossGroup.Key.BossName,
+                                IsCM: bossGroup.Key.IsCM,
+                                PlayerName: boonDpsPlayers.p.AccountName,
+                                NewValue: boonDpsPlayers.pe.Dps,
+                                PreviousValue: patchPreviousBestBoonDps?.pe.Dps,
+                                Profession: boonDpsPlayers.pe.Profession,
+                                IsCurrentPatch: true
+                            ));
+                        }
                     }
                 }
             }
@@ -745,7 +825,8 @@ public record RecordBroken(
     string? PlayerName,
     double NewValue,
     double? PreviousValue,
-    string? Profession
+    string? Profession,
+    bool IsCurrentPatch = false
 );
 
 public record Milestone(
