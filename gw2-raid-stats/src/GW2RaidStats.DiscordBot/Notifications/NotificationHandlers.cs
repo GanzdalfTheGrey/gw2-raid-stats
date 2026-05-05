@@ -61,16 +61,16 @@ public class SessionNotificationHandler : INotificationHandler
 
         embed.AddField("Encounters", string.Join("\n", bossLines));
 
-        // Add records if any
+        // Add records if any — show every record broken this session, splitting across
+        // multiple fields if a single field would exceed Discord's 1024-char limit.
         if (highlights.Records.Count > 0)
         {
             var recordLines = highlights.Records
-                .Take(5)
                 .Select(r => r.RecordType == "Kill Time"
-                    ? $"⏱️ **{r.BossName}** - {FormatDuration(TimeSpan.FromSeconds(r.NewValue))}"
-                    : $"⚔️ **{r.BossName}** - {r.PlayerName} ({r.Profession}) - {r.NewValue:N0} DPS");
-
-            embed.AddField("New Records!", string.Join("\n", recordLines));
+                    ? $"⏱️ **{r.BossName}**{(r.IsCM ? " (CM)" : "")} - {FormatDuration(TimeSpan.FromSeconds(r.NewValue))}"
+                    : $"⚔️ **{r.BossName}**{(r.IsCM ? " (CM)" : "")} - {r.PlayerName} ({r.Profession}) - {r.NewValue:N0} DPS")
+                .ToList();
+            AddRecordsFields(embed, recordLines);
         }
 
         // Add milestones if any
@@ -155,6 +155,41 @@ public class SessionNotificationHandler : INotificationHandler
         if (duration.TotalMinutes >= 1)
             return $"{(int)duration.TotalMinutes}m {duration.Seconds}s";
         return $"{duration.Seconds}s";
+    }
+
+    /// <summary>
+    /// Adds record lines to the embed as one or more fields, splitting whenever the next line
+    /// would push a single field past Discord's 1024-char limit. First field is "New Records!",
+    /// subsequent fields are "More Records! (2)", etc.
+    /// </summary>
+    private static void AddRecordsFields(EmbedBuilder embed, List<string> lines)
+    {
+        const int FieldLimit = 1024;
+        const string BaseTitle = "New Records!";
+        var current = new System.Text.StringBuilder();
+        var fieldIndex = 0;
+
+        void Flush()
+        {
+            if (current.Length == 0) return;
+            var name = fieldIndex == 0 ? BaseTitle : $"More Records! ({fieldIndex + 1})";
+            embed.AddField(name, current.ToString());
+            current.Clear();
+            fieldIndex++;
+        }
+
+        foreach (var line in lines)
+        {
+            // +1 for the newline separator if we already have content
+            var addedLength = current.Length == 0 ? line.Length : line.Length + 1;
+            if (current.Length > 0 && current.Length + addedLength > FieldLimit)
+            {
+                Flush();
+            }
+            if (current.Length > 0) current.Append('\n');
+            current.Append(line);
+        }
+        Flush();
     }
 }
 

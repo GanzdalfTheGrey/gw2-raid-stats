@@ -30,45 +30,6 @@ public class RecordNotificationService
     private const int HtcmTriggerId = 43488;
 
     /// <summary>
-    /// Re-fire record toots for every successful kill in the most-recent session. Called by
-    /// the admin "post session summary" action so the records get re-announced alongside the
-    /// summary embed (useful after a backlog import or if the bot was offline at import time).
-    /// Each per-encounter check is identical to what runs at import (queries are time-filtered
-    /// by encounter.EncounterTime), so re-running produces the same record_broken events.
-    /// </summary>
-    public async Task RetootSessionRecordsAsync(CancellationToken ct = default)
-    {
-        var latestEncounter = await _db.Encounters
-            .OrderByDescending(e => e.EncounterTime)
-            .FirstOrDefaultAsync(ct);
-        if (latestEncounter == null) return;
-
-        // Same session-window math as StatsService.GetSessionHighlightsAsync:
-        // calendar day in the encounter's local timezone.
-        var offset = latestEncounter.EncounterTime.Offset;
-        var localDate = (latestEncounter.EncounterTime.UtcDateTime + offset).Date;
-        var sessionStart = new DateTimeOffset(DateTime.SpecifyKind(localDate, DateTimeKind.Unspecified), offset);
-        var sessionEnd = sessionStart.AddDays(1);
-
-        var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
-        var includedList = includedAccounts.ToList();
-
-        var sessionKills = await _db.Encounters
-            .Where(e => e.EncounterTime >= sessionStart
-                     && e.EncounterTime < sessionEnd
-                     && e.Success)
-            .OrderBy(e => e.EncounterTime)
-            .ToListAsync(ct);
-
-        foreach (var enc in sessionKills)
-        {
-            await CheckKillTimeRecordAsync(enc, ct);
-            await CheckDpsRecordsAsync(enc, includedList, ct);
-            await CheckBoonDpsRecordsAsync(enc, includedList, ct);
-        }
-    }
-
-    /// <summary>
     /// Check for broken records after an encounter is imported and queue notifications
     /// </summary>
     public async Task CheckAndQueueRecordNotificationsAsync(Guid encounterId, CancellationToken ct = default)

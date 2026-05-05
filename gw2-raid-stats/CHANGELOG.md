@@ -9,10 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Patch DPS records**: bot now toots when someone breaks the current patch's DPS or Boon DPS record on a boss (separate from all-time records). Teal "📯 *TOOT* New Patch Record!" embed.
-- **Session summary repost re-toots records**: clicking "Post Session Summary" now also re-fires individual record toots for every record broken in the session — handy if the bot was offline at import time or you imported logs in a backlog.
 
 ### Changed
-- Session summary embed shows the top 5 records (was 3).
+- Session summary embed now lists **every record broken** in the session (was capped at 3, and skipped first-time records). Splits across multiple fields if the list is long. Re-posting the session summary now re-broadcasts the full list.
 
 ## [1.13.0] - 2026-04-30
 

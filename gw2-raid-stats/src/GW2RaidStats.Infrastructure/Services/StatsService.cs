@@ -389,14 +389,20 @@ public class StatsService
             ));
         }
 
-        // Deduplicate records (keep only new records, not first-time records for clarity)
-        var newRecords = records
-            .Where(r => r.PreviousValue.HasValue)
-            .OrderByDescending(r => r.RecordType == "Kill Time" ? (r.PreviousValue!.Value - r.NewValue) / r.PreviousValue!.Value : (r.NewValue - r.PreviousValue!.Value) / r.PreviousValue!.Value)
-            .Take(5)
+        // Sort with first-time records first (most exciting), then by improvement % desc.
+        // No cap — show every record broken in the session in the embed.
+        var sortedRecords = records
+            .OrderBy(r => r.PreviousValue.HasValue ? 1 : 0)
+            .ThenByDescending(r =>
+            {
+                if (!r.PreviousValue.HasValue) return 0.0;
+                return r.RecordType == "Kill Time"
+                    ? (r.PreviousValue.Value - r.NewValue) / r.PreviousValue.Value
+                    : (r.NewValue - r.PreviousValue.Value) / r.PreviousValue.Value;
+            })
             .ToList();
 
-        return new SessionHighlights(newRecords, milestones);
+        return new SessionHighlights(sortedRecords, milestones);
     }
 
     /// <summary>
