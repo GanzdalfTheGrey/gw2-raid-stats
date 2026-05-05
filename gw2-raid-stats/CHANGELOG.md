@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Patch DPS records**: bot now toots when someone breaks the current patch's DPS or Boon DPS record on a boss (separate from all-time records). Teal "📯 *TOOT* New Patch Record!" embed.
 
 ### Changed
-- Session summary embed now lists **every record broken** in the session (was capped at 3, and skipped first-time records). Splits across multiple fields if the list is long. Re-posting the session summary now re-broadcasts the full list.
+- **Session summary** now lists **every record broken** in the session — kill time, DPS, and Boon DPS — grouped into their own sections: ⏱️ Kill Time Records, 📯 TOOT 📯 DPS Records, and 🛡️ Boon DPS Records. Patch records show alongside all-time records with a *(patch)* tag. Was previously capped at 3 mixed together.
 
 ## [1.13.0] - 2026-04-30
 
