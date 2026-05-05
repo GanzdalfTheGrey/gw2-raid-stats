@@ -8,7 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.13.1] - 2026-05-05
 
 ### Added
-- **Patch-scoped DPS records** — the bot already toots when someone breaks an all-time DPS or Boon DPS record on a boss. Now it also toots when someone breaks the **current patch** record (i.e., they didn't beat the all-time best, but they set a new top within the active leaderboard patch). Patch-record toots use a teal color and "📯 *TOOT* New Patch Record!" title to distinguish them from all-time records (gold). If a kill sets *both* a new all-time record and a new patch record, only the all-time toot fires (since the all-time record is by definition also a patch record).
+- **Patch DPS records**: bot now toots when someone breaks the current patch's DPS or Boon DPS record on a boss (separate from all-time records). Teal "📯 *TOOT* New Patch Record!" embed.
+- **Session summary repost re-toots records**: clicking "Post Session Summary" now also re-fires individual record toots for every record broken in the session — handy if the bot was offline at import time or you imported logs in a backlog.
+
+### Changed
+- Session summary embed shows the top 5 records (was 3).
 
 ## [1.13.0] - 2026-04-30
 

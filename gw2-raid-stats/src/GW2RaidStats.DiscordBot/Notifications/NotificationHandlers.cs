@@ -65,7 +65,7 @@ public class SessionNotificationHandler : INotificationHandler
         if (highlights.Records.Count > 0)
         {
             var recordLines = highlights.Records
-                .Take(3)
+                .Take(5)
                 .Select(r => r.RecordType == "Kill Time"
                     ? $"⏱️ **{r.BossName}** - {FormatDuration(TimeSpan.FromSeconds(r.NewValue))}"
                     : $"⚔️ **{r.BossName}** - {r.PlayerName} ({r.Profession}) - {r.NewValue:N0} DPS");
