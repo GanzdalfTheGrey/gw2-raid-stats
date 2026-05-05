@@ -33,6 +33,11 @@ else
                        Href="@($"/players/{_profile.AccountName}/roles")">
                 Roles
             </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Info"
+                       StartIcon="@Icons.Material.Filled.TrendingUp"
+                       Href="@($"/players/{_profile.AccountName}/trends")">
+                Trends
+            </MudButton>
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack" OnClick="GoBack">
                 Back to Players
             </MudButton>

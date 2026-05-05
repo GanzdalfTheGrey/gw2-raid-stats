@@ -1,0 +1,312 @@
+@page "/players/{AccountName}/trends"
+@using GW2RaidStats.Core
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>GW2 Raid Stats - @AccountName Trends</PageTitle>
+
+<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+    <MudStack Spacing="0">
+        <MudText Typo="Typo.h4">@AccountName — Trends</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            DPS, Boon DPS, and Heals progression over time per boss.
+        </MudText>
+    </MudStack>
+    <MudButton Variant="Variant.Outlined"
+               StartIcon="@Icons.Material.Filled.ArrowBack"
+               Href="@($"/players/{Uri.EscapeDataString(AccountName)}")">
+        Back to Profile
+    </MudButton>
+</MudStack>
+
+@if (_loadingBosses)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else if (_bossOptions.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">No kills recorded for this player yet.</MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-3 mb-4" Elevation="1">
+        <MudGrid AlignItems="AlignItems.Center">
+            <MudItem xs="12" md="5">
+                <MudSelect T="BossKey"
+                           Value="_selectedBoss"
+                           ValueChanged="OnBossChanged"
+                           Label="Boss"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense">
+                    @foreach (var b in _bossOptions)
+                    {
+                        <MudSelectItem T="BossKey" Value="@(new BossKey(b.TriggerId, b.IsCM))">
+                            @b.BossName@(b.IsCM ? " (CM)" : "") · @b.Count kill(s)
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mr-2">Role:</MudText>
+                <MudToggleGroup T="string" Value="_role" ValueChanged="OnRoleChanged"
+                                Color="Color.Primary" Size="Size.Small" CheckMark="false">
+                    <MudToggleItem Value="@("DPS")" Text="DPS" />
+                    <MudToggleItem Value="@("Boon DPS")" Text="Boon DPS" />
+                    <MudToggleItem Value="@("Heal Boon")" Text="Heals" />
+                </MudToggleGroup>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mr-2">Range:</MudText>
+                <MudToggleGroup T="string" Value="_range" ValueChanged="OnRangeChanged"
+                                Color="Color.Primary" Size="Size.Small" CheckMark="false">
+                    <MudToggleItem Value="@("patch")" Text="This Patch" />
+                    <MudToggleItem Value="@("90d")" Text="Last 90d" />
+                    <MudToggleItem Value="@("all")" Text="All Time" />
+                </MudToggleGroup>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @if (_loadingTrends)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+    }
+    else if (_trends == null || _trends.Points.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">
+            No @RoleLabel data for this boss in the selected range. Try a different role or wider range.
+        </MudAlert>
+    }
+    else
+    {
+        <MudGrid>
+            <MudItem xs="12" md="9">
+                <MudPaper Class="pa-4" Elevation="1">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">
+                        <strong>@RoleLabel over time</strong> — @_trends.TotalKills kill(s)
+                    </MudText>
+                    <MudChart ChartType="ChartType.Line"
+                              ChartSeries="@_series"
+                              XAxisLabels="@_xLabels"
+                              Width="100%" Height="350px"
+                              ChartOptions="@_chartOptions" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudPaper Class="pa-4" Elevation="1">
+                    <MudText Typo="Typo.subtitle1" Class="mb-3"><strong>Stats</strong></MudText>
+                    <MudStack Spacing="3">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Personal Best</MudText>
+                            @if (_trends.PersonalBest != null)
+                            {
+                                <MudText Typo="Typo.h6" Color="Color.Success">@_trends.PersonalBest.Value.ToString("N0")</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    @_trends.PersonalBest.EncounterTime.LocalDateTime.ToString("MMM d, yyyy")
+                                </MudText>
+                            }
+                            else
+                            {
+                                <MudText>—</MudText>
+                            }
+                        </MudStack>
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Last 5 vs Prev 5</MudText>
+                            @if (_trends.Points.Count >= 6)
+                            {
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                    <MudIcon Icon="@TrendIcon(_trends.TrendPct)"
+                                             Color="@TrendColor(_trends.TrendPct)" />
+                                    <MudText Typo="Typo.h6" Color="@TrendColor(_trends.TrendPct)">
+                                        @TrendPctString(_trends.TrendPct)
+                                    </MudText>
+                                </MudStack>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">need 6+ kills</MudText>
+                            }
+                        </MudStack>
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Guild Median</MudText>
+                            @if (_trends.GuildMedian > 0)
+                            {
+                                <MudText Typo="Typo.h6">@_trends.GuildMedian.ToString("N0")</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    across all included members in this role
+                                </MudText>
+                            }
+                            else
+                            {
+                                <MudText>—</MudText>
+                            }
+                        </MudStack>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+}
+
+@code {
+    [Parameter] public string AccountName { get; set; } = "";
+
+    private bool _loadingBosses = true;
+    private bool _loadingTrends = false;
+    private List<BossEncounterCountDto> _bossOptions = new();
+    private BossKey _selectedBoss;
+    private string _role = "DPS";
+    private string _range = "all";
+    private PlayerTrendsDto? _trends;
+
+    private List<ChartSeries> _series = new();
+    private string[] _xLabels = Array.Empty<string>();
+    private ChartOptions _chartOptions = new() { LineStrokeWidth = 2, YAxisFormat = "n0" };
+
+    private string RoleLabel => _role switch
+    {
+        "DPS" => "DPS",
+        "Boon DPS" => "Boon DPS",
+        "Heal Boon" => "Healing (HPS)",
+        _ => _role
+    };
+
+    public record BossKey(int TriggerId, bool IsCM);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadBossesAsync();
+    }
+
+    private async Task LoadBossesAsync()
+    {
+        _loadingBosses = true;
+        try
+        {
+            var list = await Http.GetFromJsonAsync<List<BossEncounterCountDto>>(
+                $"api/players/{Uri.EscapeDataString(AccountName)}/trends/bosses");
+            _bossOptions = list ?? new();
+            if (_bossOptions.Count > 0)
+            {
+                var first = _bossOptions[0];
+                _selectedBoss = new BossKey(first.TriggerId, first.IsCM);
+                await LoadTrendsAsync();
+            }
+        }
+        catch
+        {
+            _bossOptions = new();
+        }
+        finally
+        {
+            _loadingBosses = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnBossChanged(BossKey value)
+    {
+        _selectedBoss = value;
+        await LoadTrendsAsync();
+    }
+
+    private async Task OnRoleChanged(string value)
+    {
+        _role = value;
+        await LoadTrendsAsync();
+    }
+
+    private async Task OnRangeChanged(string value)
+    {
+        _range = value;
+        await LoadTrendsAsync();
+    }
+
+    private async Task LoadTrendsAsync()
+    {
+        if (_selectedBoss == null) return;
+        _loadingTrends = true;
+        try
+        {
+            var url = $"api/players/{Uri.EscapeDataString(AccountName)}/trends" +
+                $"?triggerId={_selectedBoss.TriggerId}" +
+                $"&isCm={_selectedBoss.IsCM.ToString().ToLowerInvariant()}" +
+                $"&role={Uri.EscapeDataString(_role)}" +
+                $"&range={_range}";
+            _trends = await Http.GetFromJsonAsync<PlayerTrendsDto>(url);
+            BuildChart();
+        }
+        catch
+        {
+            _trends = null;
+        }
+        finally
+        {
+            _loadingTrends = false;
+            StateHasChanged();
+        }
+    }
+
+    private void BuildChart()
+    {
+        if (_trends == null || _trends.Points.Count == 0)
+        {
+            _series = new();
+            _xLabels = Array.Empty<string>();
+            return;
+        }
+
+        _xLabels = _trends.Points
+            .Select(p => p.EncounterTime.LocalDateTime.ToString("MMM d"))
+            .ToArray();
+
+        var playerSeries = new ChartSeries
+        {
+            Name = RoleLabel,
+            Data = _trends.Points.Select(p => (double)p.Value).ToArray()
+        };
+
+        var seriesList = new List<ChartSeries> { playerSeries };
+
+        if (_trends.GuildMedian > 0)
+        {
+            // Constant line at guild median for easy visual comparison
+            var medianValue = (double)_trends.GuildMedian;
+            seriesList.Add(new ChartSeries
+            {
+                Name = "Guild Median",
+                Data = Enumerable.Repeat(medianValue, _trends.Points.Count).ToArray()
+            });
+        }
+
+        _series = seriesList;
+    }
+
+    private static string TrendIcon(decimal pct)
+        => pct > 0.5m ? Icons.Material.Filled.TrendingUp
+         : pct < -0.5m ? Icons.Material.Filled.TrendingDown
+         : Icons.Material.Filled.TrendingFlat;
+
+    private static Color TrendColor(decimal pct)
+        => pct > 0.5m ? Color.Success
+         : pct < -0.5m ? Color.Error
+         : Color.Default;
+
+    private static string TrendPctString(decimal pct)
+        => (pct >= 0 ? "+" : "") + pct.ToString("F1") + "%";
+
+    public record PlayerTrendsDto(
+        List<TrendPoint> Points,
+        TrendPoint? PersonalBest,
+        int GuildMedian,
+        decimal TrendPct,
+        int TotalKills);
+
+    public record TrendPoint(DateTimeOffset EncounterTime, int Value);
+
+    public record BossEncounterCountDto(
+        int TriggerId,
+        string BossName,
+        bool IsCM,
+        int Count);
+}

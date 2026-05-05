@@ -58,7 +58,41 @@
             </MudItem>
 
             <MudItem xs="12">
-                <MudText Typo="Typo.subtitle2" Class="mb-2">Bosses (in order)</MudText>
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+                    <MudText Typo="Typo.subtitle2">Bosses (in order)</MudText>
+                    <MudMenu Icon="@Icons.Material.Filled.Casino"
+                             Label="Random"
+                             Color="Color.Primary"
+                             Variant="Variant.Outlined"
+                             Size="Size.Small"
+                             Dense="true"
+                             EndIcon="@Icons.Material.Filled.ArrowDropDown"
+                             Disabled="@_loadingMechanics">
+                        <MudPaper Class="pa-3" Elevation="0" Style="min-width: 280px;">
+                            <MudStack Spacing="2">
+                                <MudNumericField T="int" @bind-Value="_randomCount"
+                                                 Label="Count" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                 Min="1" Max="@_allBosses.Count" />
+                                <MudSelect T="int" @bind-Value="_randomWing"
+                                           Label="Wing" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                    <MudSelectItem T="int" Value="0">All Wings</MudSelectItem>
+                                    @for (int w = 1; w <= 8; w++)
+                                    {
+                                        var captureW = w;
+                                        <MudSelectItem T="int" Value="captureW">W@(captureW) — @WingMapping.GetWingName(captureW)</MudSelectItem>
+                                    }
+                                </MudSelect>
+                                <MudSwitch T="bool" @bind-Value="_randomReplace" Color="Color.Primary"
+                                           Label="Replace current selection" />
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.Casino"
+                                           OnClick="RollRandomBosses" FullWidth="true">
+                                    Roll
+                                </MudButton>
+                            </MudStack>
+                        </MudPaper>
+                    </MudMenu>
+                </MudStack>
                 @if (_loadingMechanics)
                 {
                     <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
@@ -325,6 +359,11 @@
     private List<BossOption> _allBosses = new();
     private List<int> _selectedBossOrder = new();
 
+    // Random boss picker state
+    private int _randomCount = 5;
+    private int _randomWing = 0; // 0 = all wings
+    private bool _randomReplace = true;
+
     // Capability data — keyed by player id, used for the per-slot picker UI
     private Dictionary<Guid, Dictionary<int, RoleCapabilityStatus>> _genericCaps = new();
 
@@ -395,6 +434,52 @@
     {
         if (_selectedBossOrder.Contains(triggerId)) _selectedBossOrder.Remove(triggerId);
         else _selectedBossOrder.Add(triggerId);
+    }
+
+    private void RollRandomBosses()
+    {
+        // Pool of candidate bosses, optionally filtered by wing
+        var pool = _allBosses
+            .Where(b => _randomWing == 0 || b.Wing == _randomWing)
+            .ToList();
+
+        if (pool.Count == 0)
+        {
+            Snackbar.Add("No bosses match the wing filter", Severity.Warning);
+            return;
+        }
+
+        // If appending, exclude bosses already selected so we don't roll duplicates
+        if (!_randomReplace)
+        {
+            pool = pool.Where(b => !_selectedBossOrder.Contains(b.TriggerId)).ToList();
+            if (pool.Count == 0)
+            {
+                Snackbar.Add("All matching bosses are already selected", Severity.Info);
+                return;
+            }
+        }
+
+        var n = Math.Clamp(_randomCount, 1, pool.Count);
+        var rng = new Random();
+        var picked = pool
+            .OrderBy(_ => rng.Next())
+            .Take(n)
+            .OrderBy(b => b.Wing)
+            .ThenBy(b => b.EncounterOrder)
+            .Select(b => b.TriggerId)
+            .ToList();
+
+        if (_randomReplace)
+        {
+            _selectedBossOrder = picked;
+        }
+        else
+        {
+            _selectedBossOrder.AddRange(picked);
+        }
+
+        Snackbar.Add($"Rolled {picked.Count} boss(es)", Severity.Success);
     }
 
     // --- Build / re-randomize ---
