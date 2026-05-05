@@ -218,16 +218,33 @@
     <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
         Post a summary of the most recent raid session to your Discord notification channel.
     </MudText>
-    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-               Disabled="@_postingSession"
-               OnClick="PostSessionSummary"
-               StartIcon="@Icons.Material.Filled.Send">
-        @if (_postingSession)
-        {
-            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-        }
-        Post Session Summary to Discord
-    </MudButton>
+    <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="@_postingSession"
+                   OnClick="PostSessionSummary"
+                   StartIcon="@Icons.Material.Filled.Send">
+            @if (_postingSession)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Post Session Summary to Discord
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                   Disabled="@_recheckingSession"
+                   OnClick="RecheckLastSession"
+                   StartIcon="@Icons.Material.Filled.Refresh">
+            @if (_recheckingSession)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Re-check Last Session
+        </MudButton>
+    </MudStack>
+    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+        Re-check fires individual record toots (DPS, Boon DPS, kill time, plus patch records)
+        for every kill in the latest session. Useful if the bot was offline when the logs were
+        imported, or if new record-detection logic was deployed since the session ran.
+    </MudText>
 </MudPaper>
 
 <MudDivider Class="my-4" />
@@ -654,6 +671,36 @@
             _postingSession = false;
         }
     }
+
+    private bool _recheckingSession;
+
+    private async Task RecheckLastSession()
+    {
+        _recheckingSession = true;
+        try
+        {
+            var response = await Http.PostAsync("api/admin/discord/recheck-last-session", null);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<RecheckResponse>();
+                Snackbar.Add(result?.Message ?? "Last session re-checked", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Failed to re-check last session", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _recheckingSession = false;
+        }
+    }
+
+    private record RecheckResponse(bool Success, int Enqueued, string Message);
 
     private void OnRawFilesSelected(IReadOnlyList<IBrowserFile> files)
     {

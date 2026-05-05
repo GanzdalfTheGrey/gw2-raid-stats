@@ -30,6 +30,52 @@ public class RecordNotificationService
     private const int HtcmTriggerId = 43488;
 
     /// <summary>
+    /// Re-run the record checks (kill time, DPS, Boon DPS, including the patch-record path)
+    /// for every successful kill in the most-recent session. Each per-encounter check is the
+    /// same one that runs at import time and is time-filtered (e.EncounterTime &lt; this), so
+    /// re-running produces the exact set of record_broken notifications that *would have* fired
+    /// if the current code had been deployed when the session was imported.
+    ///
+    /// Used by the admin "Re-check Last Session" action — useful when records were missed
+    /// (bot offline at import, or new record-detection logic deployed after the session).
+    /// Returns the number of record_broken notifications enqueued.
+    /// </summary>
+    public async Task<int> RecheckLastSessionRecordsAsync(CancellationToken ct = default)
+    {
+        var latestEncounter = await _db.Encounters
+            .OrderByDescending(e => e.EncounterTime)
+            .FirstOrDefaultAsync(ct);
+        if (latestEncounter == null) return 0;
+
+        // Same session-window math as StatsService.GetSessionHighlightsAsync:
+        // calendar day in the encounter's local timezone.
+        var offset = latestEncounter.EncounterTime.Offset;
+        var localDate = (latestEncounter.EncounterTime.UtcDateTime + offset).Date;
+        var sessionStart = new DateTimeOffset(DateTime.SpecifyKind(localDate, DateTimeKind.Unspecified), offset);
+        var sessionEnd = sessionStart.AddDays(1);
+
+        var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
+        var includedList = includedAccounts.ToList();
+
+        var sessionKills = await _db.Encounters
+            .Where(e => e.EncounterTime >= sessionStart
+                     && e.EncounterTime < sessionEnd
+                     && e.Success)
+            .OrderBy(e => e.EncounterTime)
+            .ToListAsync(ct);
+
+        var beforeCount = await _db.NotificationQueue.CountAsync(ct);
+        foreach (var enc in sessionKills)
+        {
+            await CheckKillTimeRecordAsync(enc, ct);
+            await CheckDpsRecordsAsync(enc, includedList, ct);
+            await CheckBoonDpsRecordsAsync(enc, includedList, ct);
+        }
+        var afterCount = await _db.NotificationQueue.CountAsync(ct);
+        return afterCount - beforeCount;
+    }
+
+    /// <summary>
     /// Check for broken records after an encounter is imported and queue notifications
     /// </summary>
     public async Task CheckAndQueueRecordNotificationsAsync(Guid encounterId, CancellationToken ct = default)
