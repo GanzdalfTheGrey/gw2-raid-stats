@@ -26,7 +26,18 @@ else
             </MudItem>
             <MudItem xs="6" sm="6" lg="3">
                 <MudStack Spacing="0" AlignItems="AlignItems.Center">
-                    <MudText Typo="Typo.h3" Color="Color.Success">@(_progressionData.BestPhase ?? "N/A")</MudText>
+                    @if (string.IsNullOrEmpty(_progressionData.BestPhase))
+                    {
+                        <MudText Typo="Typo.h3" Color="Color.Success">N/A</MudText>
+                    }
+                    else
+                    {
+                        <MudTooltip Text="@_progressionData.BestPhase" Arrow="true">
+                            <MudText Typo="Typo.h3" Color="Color.Success" Style="white-space: nowrap;">
+                                @ShortenPhaseName(_progressionData.BestPhase)
+                            </MudText>
+                        </MudTooltip>
+                    }
                     <MudText Typo="Typo.body2" Color="Color.Secondary">Best Phase</MudText>
                 </MudStack>
             </MudItem>
@@ -86,7 +97,11 @@ else
                         </MudItem>
                         <MudItem xs="6" sm="4" lg="4" xl="2">
                             <MudStack Spacing="0">
-                                <MudText Typo="Typo.h5">@_sessionDetail.BestPhase</MudText>
+                                <MudTooltip Text="@_sessionDetail.BestPhase" Arrow="true">
+                                    <MudText Typo="Typo.h5" Style="white-space: nowrap;">
+                                        @ShortenPhaseName(_sessionDetail.BestPhase ?? "")
+                                    </MudText>
+                                </MudTooltip>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Best Phase</MudText>
                             </MudStack>
                         </MudItem>
@@ -275,12 +290,14 @@ else
                 <MudText Typo="Typo.h6" Class="mb-3">Phase DPS (Session Avg)</MudText>
                 @if (_sessionDetail != null && _phaseDpsChartSeries.Count > 0)
                 {
-                    <MudChart ChartType="ChartType.Bar"
-                              ChartSeries="@_phaseDpsChartSeries"
-                              XAxisLabels="@_phaseDpsLabels"
-                              Width="100%"
-                              Height="300px"
-                              ChartOptions="@_phaseDpsChartOptions" />
+                    <div style="overflow-x: auto;">
+                        <MudChart ChartType="@(_phaseDpsLabels.Length >= 2 ? ChartType.Line : ChartType.Bar)"
+                                  ChartSeries="@_phaseDpsChartSeries"
+                                  XAxisLabels="@_phaseDpsLabels"
+                                  Width="100%"
+                                  Height="300px"
+                                  ChartOptions="@_phaseDpsChartOptions" />
+                    </div>
                     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
                         Average squad DPS per phase across all pulls this session
                     </MudText>
@@ -617,7 +634,7 @@ else
 
     private static string ShortenPhaseName(string phaseName)
     {
-        // Shorten long phase names for chart labels
+        // Shorten long phase names for chart labels and compact UI cells.
         return phaseName switch
         {
             "Purification 1" => "Purify 1",
@@ -631,7 +648,17 @@ else
             "Zhaitan" => "Zhaitan",
             "Soo-Won 1" => "SooWon 1",
             "Soo-Won 2" => "SooWon 2",
-            _ when phaseName.Length > 10 => phaseName[..8] + "..",
+            // Heart / Breakbar patterns: "Heart 3 Breakbar 1" → "H3 BB1"
+            _ when phaseName.Contains("Heart") && phaseName.Contains("Breakbar")
+                => phaseName
+                    .Replace("Heart ", "H")
+                    .Replace(" Breakbar ", " BB")
+                    .Replace("Breakbar ", "BB"),
+            _ when phaseName.StartsWith("Heart ")
+                => "H" + phaseName.Substring("Heart ".Length),
+            _ when phaseName.StartsWith("Breakbar ")
+                => "BB" + phaseName.Substring("Breakbar ".Length),
+            _ when phaseName.Length > 12 => phaseName[..10] + "..",
             _ => phaseName
         };
     }
