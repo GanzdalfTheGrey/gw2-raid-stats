@@ -294,32 +294,34 @@ else
                         <thead>
                             <tr>
                                 <th>Phase</th>
-                                <th>This Session</th>
-                                <th>All-Time</th>
+                                <th style="text-align: right;">This Session</th>
+                                <th style="text-align: right;">All-Time</th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach (var row in _phaseTableRows)
                             {
+                                var deltaPct = row.AllTimeDps > 0
+                                    ? (row.SessionDps - row.AllTimeDps) / (double)row.AllTimeDps * 100
+                                    : 0;
+                                var sessionColor = row.AllTimeDps > 0
+                                    ? GetDeltaColor(deltaPct)
+                                    : Color.Default;
                                 <tr>
                                     <td style="white-space: nowrap;" title="@row.PhaseName">@ShortenPhaseName(row.PhaseName)</td>
-                                    <td>
-                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                                            <span style="min-width: 48px; font-variant-numeric: tabular-nums;">@row.SessionDpsK.ToString("F1")k</span>
-                                            <MudProgressLinear Color="@GetDpsColor(row.SessionDps)"
-                                                               Value="@GetDpsBarValue(row.SessionDps)"
-                                                               Style="flex: 1; min-width: 60px;" />
-                                        </MudStack>
-                                    </td>
-                                    <td>
+                                    <td style="text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;">
+                                        <MudText Inline="true" Color="@sessionColor"><strong>@row.SessionDpsK.ToString("F1")k</strong></MudText>
                                         @if (row.AllTimeDps > 0)
                                         {
-                                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                                                <span style="min-width: 48px; font-variant-numeric: tabular-nums;">@row.AllTimeDpsK.ToString("F1")k</span>
-                                                <MudProgressLinear Color="Color.Default"
-                                                                   Value="@GetDpsBarValue(row.AllTimeDps)"
-                                                                   Style="flex: 1; min-width: 60px;" />
-                                            </MudStack>
+                                            <MudText Inline="true" Color="@sessionColor" Typo="Typo.caption" Class="ml-2">
+                                                @(deltaPct >= 0 ? "+" : "")@deltaPct.ToString("F1")%
+                                            </MudText>
+                                        }
+                                    </td>
+                                    <td style="text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;">
+                                        @if (row.AllTimeDps > 0)
+                                        {
+                                            <span>@row.AllTimeDpsK.ToString("F1")k</span>
                                         }
                                         else
                                         {
@@ -331,7 +333,7 @@ else
                         </tbody>
                     </MudSimpleTable>
                     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
-                        Average squad DPS per phase across all pulls this session
+                        Session avg coloured against the all-time avg per phase.
                     </MudText>
                 }
                 else
@@ -755,6 +757,20 @@ else
     {
         // Scale DPS to 0-100 where 250k = 100%
         return Math.Min(100, dps / 2500.0);
+    }
+
+    /// <summary>
+    /// Per-phase session-vs-all-time delta colour.
+    /// Tiered so a small swing reads as neutral, ±5–10% as soft good/bad, and ±10%+ as
+    /// strong good/bad. Helps the eye scan for problem phases without every row screaming.
+    /// </summary>
+    private static Color GetDeltaColor(double deltaPct)
+    {
+        if (deltaPct >= 10) return Color.Success;
+        if (deltaPct >= 5) return Color.Tertiary;
+        if (deltaPct > -5) return Color.Default;
+        if (deltaPct > -10) return Color.Warning;
+        return Color.Error;
     }
 
     private int GetTrend(HtcmMechanicTrendDto mechanic)
