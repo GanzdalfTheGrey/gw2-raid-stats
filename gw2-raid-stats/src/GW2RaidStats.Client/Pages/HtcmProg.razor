@@ -288,16 +288,48 @@ else
         <MudItem xs="12" lg="4">
             <MudPaper Class="pa-4 mb-4" Elevation="2">
                 <MudText Typo="Typo.h6" Class="mb-3">Phase DPS (Session Avg)</MudText>
-                @if (_sessionDetail != null && _phaseDpsChartSeries.Count > 0)
+                @if (_sessionDetail != null && _phaseTableRows.Count > 0)
                 {
-                    <div style="overflow-x: auto;">
-                        <MudChart ChartType="@(_phaseDpsLabels.Length >= 2 ? ChartType.Line : ChartType.Bar)"
-                                  ChartSeries="@_phaseDpsChartSeries"
-                                  XAxisLabels="@_phaseDpsLabels"
-                                  Width="100%"
-                                  Height="300px"
-                                  ChartOptions="@_phaseDpsChartOptions" />
-                    </div>
+                    <MudSimpleTable Dense="true" Hover="true" Style="overflow-x: auto;">
+                        <thead>
+                            <tr>
+                                <th>Phase</th>
+                                <th>This Session</th>
+                                <th>All-Time</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _phaseTableRows)
+                            {
+                                <tr>
+                                    <td style="white-space: nowrap;" title="@row.PhaseName">@ShortenPhaseName(row.PhaseName)</td>
+                                    <td>
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                            <span style="min-width: 48px; font-variant-numeric: tabular-nums;">@row.SessionDpsK.ToString("F1")k</span>
+                                            <MudProgressLinear Color="@GetDpsColor(row.SessionDps)"
+                                                               Value="@GetDpsBarValue(row.SessionDps)"
+                                                               Style="flex: 1; min-width: 60px;" />
+                                        </MudStack>
+                                    </td>
+                                    <td>
+                                        @if (row.AllTimeDps > 0)
+                                        {
+                                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                                <span style="min-width: 48px; font-variant-numeric: tabular-nums;">@row.AllTimeDpsK.ToString("F1")k</span>
+                                                <MudProgressLinear Color="Color.Default"
+                                                                   Value="@GetDpsBarValue(row.AllTimeDps)"
+                                                                   Style="flex: 1; min-width: 60px;" />
+                                            </MudStack>
+                                        }
+                                        else
+                                        {
+                                            <span style="color: var(--mud-palette-text-secondary);">—</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
                     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
                         Average squad DPS per phase across all pulls this session
                     </MudText>
@@ -470,7 +502,15 @@ else
     private DateTime? _selectedSessionDate;
     private HashSet<int> _expandedPulls = new();
 
-    // Phase DPS chart data
+    // Phase DPS rows for the per-phase comparison table
+    private record PhaseDpsRow(string PhaseName, int SessionDps, int AllTimeDps)
+    {
+        public double SessionDpsK => SessionDps / 1000.0;
+        public double AllTimeDpsK => AllTimeDps / 1000.0;
+    }
+    private List<PhaseDpsRow> _phaseTableRows = new();
+
+    // Phase DPS chart data (kept for compatibility; superseded by _phaseTableRows)
     private List<ChartSeries> _phaseDpsChartSeries = new();
     private string[] _phaseDpsLabels = Array.Empty<string>();
     private ChartOptions _phaseDpsChartOptions = new()
@@ -586,6 +626,10 @@ else
 
     private void BuildPhaseDpsChart()
     {
+        _phaseTableRows = new();
+        _phaseDpsChartSeries = new();
+        _phaseDpsLabels = Array.Empty<string>();
+
         if (_sessionDetail == null || _sessionDetail.Pulls.Count == 0)
             return;
 
@@ -607,29 +651,13 @@ else
         if (sessionPhaseAverages.Count == 0)
             return;
 
-        // Build chart data - session average and overall average side by side
-        _phaseDpsLabels = sessionPhaseAverages.Select(p => ShortenPhaseName(p.PhaseName)).ToArray();
-
-        var sessionData = sessionPhaseAverages.Select(p => p.AvgDps / 1000.0).ToArray();
-        var overallData = sessionPhaseAverages.Select(p =>
-        {
-            var overall = _overallPhaseDps.FirstOrDefault(o => o.PhaseName == p.PhaseName);
-            return overall != null ? overall.AverageDps / 1000.0 : 0;
-        }).ToArray();
-
-        _phaseDpsChartSeries = new List<ChartSeries>
-        {
-            new ChartSeries
+        _phaseTableRows = sessionPhaseAverages
+            .Select(p =>
             {
-                Name = "This Session",
-                Data = sessionData
-            },
-            new ChartSeries
-            {
-                Name = "All-Time Avg",
-                Data = overallData
-            }
-        };
+                var allTime = _overallPhaseDps.FirstOrDefault(o => o.PhaseName == p.PhaseName);
+                return new PhaseDpsRow(p.PhaseName, (int)p.AvgDps, allTime?.AverageDps ?? 0);
+            })
+            .ToList();
     }
 
     private static string ShortenPhaseName(string phaseName)

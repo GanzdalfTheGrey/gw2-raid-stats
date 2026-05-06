@@ -71,28 +71,78 @@ public class HtcmProgService
     /// <summary>
     /// Gets the canonical progression index for a phase name.
     /// Higher values indicate further progression into the fight.
+    /// Tolerates EI naming variations (different punctuation, suffixes, abbreviations) by
+    /// normalising and falling back to keyword detection so an unknown variant still maps
+    /// to its progression bucket instead of being silently treated as "no progression".
     /// </summary>
     public static int GetCanonicalPhaseIndex(string? phaseName)
     {
         if (string.IsNullOrEmpty(phaseName))
             return 0;
 
+        var name = phaseName.Trim();
+
         // Try exact match first
-        if (CanonicalPhaseOrder.TryGetValue(phaseName, out var index))
+        if (CanonicalPhaseOrder.TryGetValue(name, out var index))
             return index;
 
-        // Handle partial matches for phase variants we might not have listed
-        // This allows for some flexibility if Elite Insights adds new breakbar phases
+        // Normalised match (strip spaces/hyphens/case) so "soo-won 1", "SooWon 1",
+        // "Soo Won 1" all match "Soo-Won 1".
+        var normalisedName = Normalise(name);
         foreach (var (pattern, value) in CanonicalPhaseOrder)
         {
-            if (phaseName.StartsWith(pattern, StringComparison.OrdinalIgnoreCase))
+            if (Normalise(pattern) == normalisedName)
                 return value;
         }
 
-        // If we can't match, log it for debugging and return a low value
-        // Unknown phases should not be considered "best"
-        return 1; // Better than "Full Fight" but worse than any known phase
+        // Partial match (longest pattern wins so "Heart 3 Breakbar 1" beats "Heart 3").
+        foreach (var (pattern, value) in CanonicalPhaseOrder.OrderByDescending(kv => kv.Key.Length))
+        {
+            if (name.StartsWith(pattern, StringComparison.OrdinalIgnoreCase) ||
+                Normalise(name).StartsWith(Normalise(pattern), StringComparison.Ordinal))
+                return value;
+        }
+
+        // Keyword fallback for variants we haven't explicitly listed. Order matters —
+        // later/deeper phases are checked first so a name containing both "Soo" and a
+        // number disambiguates correctly.
+        foreach (var (keyword, value) in PhaseKeywordFallbacks)
+        {
+            if (name.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                return value;
+        }
+
+        // Unknown phases are treated as "earlier than any known phase" so they don't
+        // steal the "best progression" spot from a Soo-Won pull just because their name
+        // wasn't in the map.
+        return 1;
     }
+
+    private static string Normalise(string s)
+        => s.ToLowerInvariant().Replace(" ", "").Replace("-", "").Replace("_", "");
+
+    // Ordered most-progressed → least-progressed. First Contains-match wins.
+    private static readonly (string Keyword, int Value)[] PhaseKeywordFallbacks =
+    {
+        ("soo-won 2", 900),
+        ("soo won 2", 900),
+        ("soowon 2",  900),
+        ("amalgamate", 850),
+        ("soo-won",   800),
+        ("soo won",   800),
+        ("soowon",    800),
+        ("heart 3",   760),
+        ("zhaitan",   700),
+        ("void giant", 650),
+        ("mordremoth", 600),
+        ("mordy",     600),
+        ("heart 2",   560),
+        ("time caster", 550),
+        ("kralk",     400),
+        ("primordus", 300),
+        ("jormag",    200),
+        ("heart 1",   110),
+    };
 
     // Key mechanics to track for HTCM
     // Note: These are the short names from Elite Insights mechanics data
