@@ -102,7 +102,8 @@
                             </MudButton>
                         </ActivatorContent>
                         <ChildContent>
-                        <MudPaper Class="pa-3" Elevation="0" Style="min-width: 280px;">
+                        <MudPaper Class="pa-3" Elevation="0" Style="min-width: 280px;"
+                                  @onclick:stopPropagation="true">
                             <MudStack Spacing="2">
                                 <MudNumericField T="int" @bind-Value="_randomCount"
                                                  Label="Count" Variant="Variant.Outlined" Margin="Margin.Dense"
@@ -535,11 +536,11 @@
 
         var n = Math.Clamp(_randomCount, 1, pool.Count);
         var rng = new Random();
-        var picked = pool
+        var pickedBosses = pool
             .OrderBy(_ => rng.Next())
             .Take(n)
-            .OrderBy(b => b.Wing)
-            .ThenBy(b => b.EncounterOrder)
+            .ToList();
+        var picked = ShuffleAvoidingSameWing(pickedBosses, rng)
             .Select(b => b.TriggerId)
             .ToList();
 
@@ -553,6 +554,37 @@
         }
 
         Snackbar.Add($"Rolled {picked.Count} boss(es)", Severity.Success);
+    }
+
+    // Shuffle picks so that adjacent entries are not the same wing when possible.
+    // Uses the "reorganize string" approach: at each step pick the largest remaining
+    // wing-bucket whose wing differs from the previous placement. Falls back to the
+    // largest bucket if every remaining boss shares the previous wing.
+    private static List<BossOption> ShuffleAvoidingSameWing(List<BossOption> bosses, Random rng)
+    {
+        var buckets = bosses
+            .GroupBy(b => b.Wing)
+            .ToDictionary(
+                g => g.Key,
+                g => (Queue<BossOption>)new Queue<BossOption>(g.OrderBy(_ => rng.Next())));
+
+        var result = new List<BossOption>(bosses.Count);
+        int? lastWing = null;
+        while (buckets.Values.Any(q => q.Count > 0))
+        {
+            var candidates = buckets
+                .Where(kv => kv.Value.Count > 0 && kv.Key != lastWing)
+                .ToList();
+            if (candidates.Count == 0)
+                candidates = buckets.Where(kv => kv.Value.Count > 0).ToList();
+
+            var maxCount = candidates.Max(kv => kv.Value.Count);
+            var topWings = candidates.Where(kv => kv.Value.Count == maxCount).ToList();
+            var chosen = topWings[rng.Next(topWings.Count)];
+            result.Add(chosen.Value.Dequeue());
+            lastWing = chosen.Key;
+        }
+        return result;
     }
 
     // --- Build / re-randomize ---
