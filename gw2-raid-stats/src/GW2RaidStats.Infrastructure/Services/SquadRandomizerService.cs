@@ -64,9 +64,11 @@ public class SquadRandomizerService
 
         // Run multiple attempts with different RNG seeds, score each, return the best.
         // Score = (unfilled mechanic slots, total Maybe fallbacks); lower is better; lex compare.
-        // Early-exit on a perfect result (zero conflicts, zero Maybe fallbacks).
+        // Collect all attempts tied at the best score and pick one at random — keeping only the
+        // first tied attempt produces noticeable bias (flexible players locked into the same role
+        // every build, since attempts 1-19 contribute nothing when attempt 0 already hits optimal).
         var baseSeed = req.Seed ?? Environment.TickCount;
-        SquadBuildResult? best = null;
+        var bestResults = new List<SquadBuildResult>();
         int bestUnfilled = int.MaxValue;
         int bestMaybes = int.MaxValue;
 
@@ -76,20 +78,25 @@ public class SquadRandomizerService
             var (result, totalMaybes) = SolveOnce(req, capability, allMechanics, mechanicsByBoss, nameById, rng);
             var unfilled = result.Conflicts.Sum(c => c.Required - c.Filled);
 
-            var isBetter = unfilled < bestUnfilled
+            var isStrictlyBetter = unfilled < bestUnfilled
                 || (unfilled == bestUnfilled && totalMaybes < bestMaybes);
+            var isTie = unfilled == bestUnfilled && totalMaybes == bestMaybes;
 
-            if (best == null || isBetter)
+            if (isStrictlyBetter)
             {
-                best = result;
+                bestResults.Clear();
+                bestResults.Add(result);
                 bestUnfilled = unfilled;
                 bestMaybes = totalMaybes;
             }
-
-            if (unfilled == 0 && totalMaybes == 0) break;
+            else if (isTie)
+            {
+                bestResults.Add(result);
+            }
         }
 
-        return best!;
+        var pickerRng = new Random(unchecked(baseSeed ^ 0x5A5A5A5A));
+        return bestResults[pickerRng.Next(bestResults.Count)];
     }
 
     private (SquadBuildResult Result, int TotalMaybeFallbacks) SolveOnce(
