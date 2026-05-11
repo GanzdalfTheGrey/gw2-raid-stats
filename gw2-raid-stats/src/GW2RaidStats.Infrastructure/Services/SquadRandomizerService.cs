@@ -280,20 +280,65 @@ public class SquadRandomizerService
         Dictionary<Guid, string> nameById,
         Random rng)
     {
+        // Each sub group needs both Alac and Quick uptime. There are two equivalent compositions
+        // per sub: AlacHeal + QuickBoonDps, OR QuickHeal + AlacBoonDps. Pick each sub's flavor
+        // independently per attempt — across the 20 attempts every (Alac/Quick) × (Alac/Quick)
+        // squad-wide pattern gets sampled, so the scorer compares all four configurations.
+        //
+        // Locks constrain the choice: an AlacHeal/QuickBoonDps lock requires the sub to be Alac-heal;
+        // a QuickHeal/AlacBoonDps lock requires Quick-heal. Conflicting locks (2 Alac, 2 Quick when
+        // there are only 2 subs) fall back to a balanced pattern and let the lock-application step
+        // drop the conflict.
+        int alacPressure = locks.Values.Count(r =>
+            r == GenericRole.AlacHeal
+            || r == GenericRole.QuickDpsPower
+            || r == GenericRole.QuickDpsCondi);
+        int quickPressure = locks.Values.Count(r =>
+            r == GenericRole.QuickHeal
+            || r == GenericRole.AlacDpsPower
+            || r == GenericRole.AlacDpsCondi);
+
+        int minAlacSubs = Math.Min(alacPressure, 2);
+        int minQuickSubs = Math.Min(quickPressure, 2);
+        if (minAlacSubs + minQuickSubs > 2)
+        {
+            // Over-constrained — fall back to balanced; conflicting locks will be silently dropped.
+            minAlacSubs = 1;
+            minQuickSubs = 1;
+        }
+        int maxAlacSubs = 2 - minQuickSubs;
+        int alacSubs = rng.Next(minAlacSubs, maxAlacSubs + 1);
+
+        bool sub1IsAlacHeal;
+        bool sub2IsAlacHeal;
+        if (alacSubs == 0) { sub1IsAlacHeal = false; sub2IsAlacHeal = false; }
+        else if (alacSubs == 2) { sub1IsAlacHeal = true; sub2IsAlacHeal = true; }
+        else { sub1IsAlacHeal = rng.Next(2) == 0; sub2IsAlacHeal = !sub1IsAlacHeal; }
+
+        GenericRole HealRole(bool alac) => alac ? GenericRole.AlacHeal : GenericRole.QuickHeal;
+        GenericRole[] BoonRoles(bool alacHeal) => alacHeal
+            ? new[] { GenericRole.QuickDpsPower, GenericRole.QuickDpsCondi }
+            : new[] { GenericRole.AlacDpsPower, GenericRole.AlacDpsCondi };
+
         // Slot definitions in priority order (hardest-to-fill first).
-        // Each slot belongs to a sub-group (1 or 2). Sub 1: AlacHeal + QuickBoonDps. Sub 2: QuickHeal + AlacBoonDps.
         var slotDefs = new List<SlotDef>
         {
-            new(1, "Heal",     new[] { GenericRole.AlacHeal }),
-            new(2, "Heal",     new[] { GenericRole.QuickHeal }),
-            new(1, "BoonDps",  new[] { GenericRole.QuickDpsPower, GenericRole.QuickDpsCondi }),
-            new(2, "BoonDps",  new[] { GenericRole.AlacDpsPower, GenericRole.AlacDpsCondi }),
+            new(1, "Heal",     new[] { HealRole(sub1IsAlacHeal) }),
+            new(2, "Heal",     new[] { HealRole(sub2IsAlacHeal) }),
+            new(1, "BoonDps",  BoonRoles(sub1IsAlacHeal)),
+            new(2, "BoonDps",  BoonRoles(sub2IsAlacHeal)),
             new(1, "Dps",      new[] { GenericRole.DpsPower, GenericRole.DpsCondi }),
             new(1, "Dps",      new[] { GenericRole.DpsPower, GenericRole.DpsCondi }),
             new(1, "Dps",      new[] { GenericRole.DpsPower, GenericRole.DpsCondi }),
             new(2, "Dps",      new[] { GenericRole.DpsPower, GenericRole.DpsCondi }),
             new(2, "Dps",      new[] { GenericRole.DpsPower, GenericRole.DpsCondi }),
             new(2, "Dps",      new[] { GenericRole.DpsPower, GenericRole.DpsCondi }),
+        };
+
+        var subHealFlavors = new[]
+        {
+            sub1IsAlacHeal ? "Alac" : "Quick",
+            sub2IsAlacHeal ? "Alac" : "Quick"
         };
 
         var assignments = new List<(SlotDef Def, Guid? PlayerId, GenericRole? Role)>();
@@ -385,7 +430,9 @@ public class SquadRandomizerService
                 playerId.HasValue ? nameById.GetValueOrDefault(playerId.Value) : null));
         }
 
-        var result = subGroups.Select(s => new SubGroupDto(s.Index, s.Slots)).ToList();
+        var result = subGroups
+            .Select(s => new SubGroupDto(s.Index, subHealFlavors[s.Index - 1], s.Slots))
+            .ToList();
         return (result, unassigned.ToList(), maybeFallbacks);
     }
 
@@ -549,7 +596,7 @@ public record SquadAssignmentDto(
     int PugDpsCount,
     List<BossAssignmentDto> PerBoss);
 
-public record SubGroupDto(int Index, List<SlotAssignmentDto> Slots);
+public record SubGroupDto(int Index, string HealFlavor, List<SlotAssignmentDto> Slots);
 
 public record SlotAssignmentDto(
     string Kind,

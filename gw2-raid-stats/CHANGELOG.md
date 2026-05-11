@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Squad Builder walkthrough**: page now surfaces a step-by-step hint banner (1: pick players, 2: pick bosses, 3: randomize) and pulses the relevant input on each step. The Random Bosses menu activator is a labeled button (not just a dice icon), and the Players / Pug DPS fields are aligned on the same row.
 - **Squad Builder randomizer**: now picks a random attempt among all those tied for the best score instead of keeping the first encountered. Removes a bias where flexible players (Can across many roles) were getting locked into the same slot every build because attempts 1-19 contributed nothing once attempt 0 hit optimal.
+- **Squad Builder heal flavors**: each sub's heal (Alac vs Quick) is now randomized per attempt instead of hardcoded to AlacHeal-on-Sub1 + QuickHeal-on-Sub2. The squad can now come back as 2× AlacHeal + 2× Quick boon-DPS, 2× QuickHeal + 2× Alac boon-DPS, or mixed — whichever scores best. Lock-aware: an AlacHeal/Quick-boon-DPS lock pins that sub to Alac-heal flavor; QuickHeal/Alac-boon-DPS pins to Quick-heal.
 - **Squad Builder random bosses**: roll now interleaves wings instead of sorting by wing order (largest-bucket-first scheduling, random tie-break) so adjacent picks aren't the same wing when possible. The Count field's +/- arrows no longer close the popup.
 
 ## [1.14.0] - 2026-05-05

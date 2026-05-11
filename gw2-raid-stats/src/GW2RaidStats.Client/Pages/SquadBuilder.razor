@@ -640,7 +640,7 @@
         var pugsRemaining = assignment.PugDpsCount;
         foreach (var sub in assignment.SubGroups)
         {
-            var gs = new GridSubGroup { Index = sub.Index, Slots = new() };
+            var gs = new GridSubGroup { Index = sub.Index, HealFlavor = sub.HealFlavor, Slots = new() };
             for (int i = 0; i < sub.Slots.Count; i++)
             {
                 var s = sub.Slots[i];
@@ -703,8 +703,8 @@
         // Allow re-picking the current slot's player (no-op effectively, but UX safe)
         if (slot.PlayerId.HasValue) assigned.Remove(slot.PlayerId.Value);
 
-        var subIndex = _grid.First(s => s.Slots.Contains(slot)).Index;
-        var roles = AcceptedRolesFor(slot.Kind, subIndex);
+        var sub = _grid.First(s => s.Slots.Contains(slot));
+        var roles = AcceptedRolesFor(slot.Kind, sub.HealFlavor);
 
         return _selectedPlayerIds
             .Where(pid => !assigned.Contains(pid))
@@ -736,12 +736,13 @@
             .ToList();
     }
 
-    private static GenericRole[] AcceptedRolesFor(string kind, int subIndex) => (kind, subIndex) switch
+    // A sub with HealFlavor "Alac" has an AlacHeal player + Quick boon-DPS. "Quick" is the inverse.
+    private static GenericRole[] AcceptedRolesFor(string kind, string healFlavor) => (kind, healFlavor) switch
     {
-        ("Heal", 1) => new[] { GenericRole.AlacHeal },
-        ("Heal", 2) => new[] { GenericRole.QuickHeal },
-        ("BoonDps", 1) => new[] { GenericRole.QuickDpsPower, GenericRole.QuickDpsCondi },
-        ("BoonDps", 2) => new[] { GenericRole.AlacDpsPower, GenericRole.AlacDpsCondi },
+        ("Heal", "Alac") => new[] { GenericRole.AlacHeal },
+        ("Heal", "Quick") => new[] { GenericRole.QuickHeal },
+        ("BoonDps", "Alac") => new[] { GenericRole.QuickDpsPower, GenericRole.QuickDpsCondi },
+        ("BoonDps", "Quick") => new[] { GenericRole.AlacDpsPower, GenericRole.AlacDpsCondi },
         ("Dps", _) => new[] { GenericRole.DpsPower, GenericRole.DpsCondi },
         _ => Array.Empty<GenericRole>()
     };
@@ -763,8 +764,8 @@
             }
         }
 
-        var subIndex = _grid.First(s => s.Slots.Contains(slot)).Index;
-        var roles = AcceptedRolesFor(slot.Kind, subIndex);
+        var owningSub = _grid.First(s => s.Slots.Contains(slot));
+        var roles = AcceptedRolesFor(slot.Kind, owningSub.HealFlavor);
         var caps = _genericCaps.GetValueOrDefault(playerId) ?? new();
         // Pick the role variant with the best capability for this player
         GenericRole? chosen = null;
@@ -1064,6 +1065,7 @@
     private class GridSubGroup
     {
         public int Index { get; set; }
+        public string HealFlavor { get; set; } = "Alac";
         public List<GridSlot> Slots { get; set; } = new();
     }
 
@@ -1113,7 +1115,7 @@
         int PugDpsCount,
         List<BossAssignmentDto> PerBoss);
 
-    public record SubGroupDto(int Index, List<SlotAssignmentDto> Slots);
+    public record SubGroupDto(int Index, string HealFlavor, List<SlotAssignmentDto> Slots);
     public record SlotAssignmentDto(string Kind, GenericRole? Role, Guid? PlayerId, string? AccountName);
     public record BossAssignmentDto(int TriggerId, string BossName, int Wing, int EncounterOrder, List<MechanicAssignmentDto> Mechanics);
     public record MechanicAssignmentDto(Guid MechanicRoleId, string Name, MechanicConstraint Constraint,
