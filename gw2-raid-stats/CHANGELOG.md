@@ -5,6 +5,11 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Squad Builder walkthrough**: page now surfaces a step-by-step hint banner (1: pick players, 2: pick bosses, 3: randomize) and pulses the relevant input on each step. The Random Bosses menu activator is a labeled button (not just a dice icon), and the Players / Pug DPS fields are aligned on the same row.
+
 ## [1.14.0] - 2026-05-05
 
 ### Added

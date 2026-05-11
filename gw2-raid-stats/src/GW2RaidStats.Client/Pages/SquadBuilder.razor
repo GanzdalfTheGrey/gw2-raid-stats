@@ -6,6 +6,25 @@
 
 <PageTitle>GW2 Raid Stats - Squad Builder</PageTitle>
 
+<style>
+    .squad-builder-step-active {
+        position: relative;
+        border-radius: 6px;
+        animation: squad-builder-pulse 2.2s ease-in-out infinite;
+    }
+    @@keyframes squad-builder-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(var(--mud-palette-primary-rgb, 33, 150, 243), 0.55); }
+        50%      { box-shadow: 0 0 0 8px rgba(var(--mud-palette-primary-rgb, 33, 150, 243), 0); }
+    }
+    .squad-builder-pulse-strong {
+        animation: squad-builder-pulse-strong 1.6s ease-in-out infinite;
+    }
+    @@keyframes squad-builder-pulse-strong {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(var(--mud-palette-primary-rgb, 33, 150, 243), 0.7); }
+        50%      { box-shadow: 0 0 0 6px rgba(var(--mud-palette-primary-rgb, 33, 150, 243), 0); }
+    }
+</style>
+
 <AdminAuth>
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
         <MudStack Spacing="0">
@@ -18,9 +37,14 @@
 
     @* Inputs *@
     <MudPaper Class="pa-4 mb-4" Elevation="2">
+        @if (CurrentStepHint() is { } hint)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                <strong>Step @hint.Step:</strong> @hint.Text
+            </MudAlert>
+        }
         <MudGrid>
-            <MudItem xs="12" md="6">
-                <MudText Typo="Typo.subtitle2" Class="mb-2">Players (max 10)</MudText>
+            <MudItem xs="12" md="6" Class="@StepClass(1)">
                 @if (_loadingPlayers)
                 {
                     <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
@@ -31,7 +55,7 @@
                                SelectedValues="@_selectedPlayerIds"
                                SelectedValuesChanged="@(v => _selectedPlayerIds = v.ToHashSet())"
                                MultiSelection="true"
-                               Label="Select players"
+                               Label="Players (max 10)"
                                Variant="Variant.Outlined"
                                Margin="Margin.Dense"
                                MultiSelectionTextFunc="@SelectedPlayerNames"
@@ -43,7 +67,7 @@
                     </MudSelect>
                 }
             </MudItem>
-            <MudItem xs="6" md="2">
+            <MudItem xs="6" md="2" Class="@StepClass(1)">
                 <MudNumericField @bind-Value="_pugCount"
                                  Label="Pug DPS"
                                  Variant="Variant.Outlined"
@@ -57,17 +81,25 @@
                 </MudText>
             </MudItem>
 
-            <MudItem xs="12">
+            <MudItem xs="12" Class="@StepClass(2)">
                 <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
                     <MudText Typo="Typo.subtitle2">Bosses (in order)</MudText>
-                    <MudMenu Icon="@Icons.Material.Filled.Casino"
-                             Label="Random"
-                             Color="Color.Primary"
-                             Variant="Variant.Outlined"
-                             Size="Size.Small"
+                    <MudMenu AnchorOrigin="Origin.BottomLeft"
+                             TransformOrigin="Origin.TopLeft"
                              Dense="true"
-                             EndIcon="@Icons.Material.Filled.ArrowDropDown"
                              Disabled="@_loadingMechanics">
+                        <ActivatorContent>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.Casino"
+                                       EndIcon="@Icons.Material.Filled.ArrowDropDown"
+                                       Class="@(CurrentStep == 2 ? "squad-builder-pulse-strong" : "")"
+                                       Disabled="@_loadingMechanics">
+                                Random Bosses
+                            </MudButton>
+                        </ActivatorContent>
+                        <ChildContent>
                         <MudPaper Class="pa-3" Elevation="0" Style="min-width: 280px;">
                             <MudStack Spacing="2">
                                 <MudNumericField T="int" @bind-Value="_randomCount"
@@ -96,6 +128,7 @@
                                 </MudButton>
                             </MudStack>
                         </MudPaper>
+                        </ChildContent>
                     </MudMenu>
                 </MudStack>
                 @if (_loadingMechanics)
@@ -128,6 +161,7 @@
                     <MudButton Variant="Variant.Filled"
                                Color="Color.Primary"
                                StartIcon="@Icons.Material.Filled.Shuffle"
+                               Class="@(CurrentStep == 3 ? "squad-builder-pulse-strong" : "")"
                                Disabled="@(_building || (_selectedPlayerIds.Count == 0 && _pugCount == 0) || _selectedBossOrder.Count == 0)"
                                OnClick="@(() => RandomizeAsync(respectLocks: false))">
                         @if (_building)
@@ -393,6 +427,31 @@
     {
         await Task.WhenAll(LoadPlayersAsync(), LoadMechanicsAsync());
     }
+
+    // --- Walkthrough hint ---
+
+    private record StepHint(int Step, string Text);
+
+    private int CurrentStep
+    {
+        get
+        {
+            if (_grid.Count > 0) return 0;
+            if (_selectedPlayerIds.Count == 0 && _pugCount == 0) return 1;
+            if (_selectedBossOrder.Count == 0) return 2;
+            return 3;
+        }
+    }
+
+    private StepHint? CurrentStepHint() => CurrentStep switch
+    {
+        1 => new StepHint(1, "Start by picking players from the dropdown (and/or set Pug DPS count)."),
+        2 => new StepHint(2, "Now pick bosses — click chips below, or hit Random Bosses to roll a list."),
+        3 => new StepHint(3, "All set — click Randomize to build the squad."),
+        _ => null
+    };
+
+    private string StepClass(int step) => CurrentStep == step ? "squad-builder-step-active" : "";
 
     private async Task LoadPlayersAsync()
     {
