@@ -44,7 +44,7 @@
             </MudAlert>
         }
         <MudGrid>
-            <MudItem xs="12" md="6" Class="@StepClass(1)">
+            <MudItem xs="12" md="6">
                 @if (_loadingPlayers)
                 {
                     <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
@@ -58,6 +58,7 @@
                                Label="Players (max 10)"
                                Variant="Variant.Outlined"
                                Margin="Margin.Dense"
+                               Class="@StepClass(1)"
                                MultiSelectionTextFunc="@SelectedPlayerNames"
                                AnchorOrigin="Origin.BottomCenter">
                         @foreach (var p in _allPlayers)
@@ -67,11 +68,12 @@
                     </MudSelect>
                 }
             </MudItem>
-            <MudItem xs="6" md="2" Class="@StepClass(1)">
+            <MudItem xs="6" md="2">
                 <MudNumericField @bind-Value="_pugCount"
                                  Label="Pug DPS"
                                  Variant="Variant.Outlined"
                                  Margin="Margin.Dense"
+                                 Class="@StepClass(1)"
                                  Min="0"
                                  Max="@(10 - _selectedPlayerIds.Count)" />
             </MudItem>
