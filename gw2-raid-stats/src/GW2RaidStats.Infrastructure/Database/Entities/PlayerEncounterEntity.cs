@@ -75,6 +75,16 @@ public class PlayerEncounterEntity
     [Column("alacrity_generation")]
     public decimal? AlacracityGeneration { get; set; }
 
+    // Boon self-uptime (% of fight time the player had the boon on themselves, from EI's
+    // "Phase active duration" view — buffUptimesActive in JSON). Used to compute sub-group
+    // average uptime for the Generation metric, and to flag positioning issues via the Self
+    // metric when the player wasn't the boon generator.
+    [Column("quickness_self_uptime")]
+    public decimal? QuicknessSelfUptime { get; set; }
+
+    [Column("alacrity_self_uptime")]
+    public decimal? AlacritySelfUptime { get; set; }
+
     // Healing stats (from extension - requires arcdps healing extension)
     [Column("healing")]
     public int Healing { get; set; }

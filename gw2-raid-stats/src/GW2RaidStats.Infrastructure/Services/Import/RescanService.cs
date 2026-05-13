@@ -154,7 +154,17 @@ public class RescanService
             // Find matching player_encounter by character name
             var playerEncounter = await _db.PlayerEncounters
                 .Where(pe => pe.EncounterId == encounterId && pe.CharacterName == eiPlayer.Name)
-                .Select(pe => new { pe.Id, pe.HealingPowerStat, pe.QuicknessGeneration, pe.AlacracityGeneration, pe.Role, pe.ResurrectTime })
+                .Select(pe => new
+                {
+                    pe.Id,
+                    pe.HealingPowerStat,
+                    pe.QuicknessGeneration,
+                    pe.AlacracityGeneration,
+                    pe.Role,
+                    pe.ResurrectTime,
+                    pe.QuicknessSelfUptime,
+                    pe.AlacritySelfUptime
+                })
                 .FirstOrDefaultAsync(ct);
 
             if (playerEncounter == null)
@@ -198,6 +208,22 @@ public class RescanService
                     .UpdateAsync(ct);
 
                 anyUpdated = true;
+            }
+
+            // Backfill boon self-uptime when null (added in migration 022)
+            if (playerEncounter.QuicknessSelfUptime == null || playerEncounter.AlacritySelfUptime == null)
+            {
+                var (qSelf, aSelf) = LogImportService.GetBoonSelfUptimeFromPlayer(eiPlayer);
+                if (qSelf.HasValue || aSelf.HasValue)
+                {
+                    await _db.PlayerEncounters
+                        .Where(pe => pe.Id == playerEncounter.Id)
+                        .Set(pe => pe.QuicknessSelfUptime, qSelf ?? playerEncounter.QuicknessSelfUptime)
+                        .Set(pe => pe.AlacritySelfUptime, aSelf ?? playerEncounter.AlacritySelfUptime)
+                        .UpdateAsync(ct);
+
+                    anyUpdated = true;
+                }
             }
         }
 

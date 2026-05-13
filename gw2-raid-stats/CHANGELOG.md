@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Boon self-uptime capture** (Quickness + Alacrity): the importer now extracts each player's "Phase active duration" uptime from EI's `buffUptimesActive` and stores it in two new columns on `player_encounters` (`quickness_self_uptime`, `alacrity_self_uptime`). Migration 022. Distinct from boon *generation* (what you gave the squad) — this is what you had on yourself. Used by the upcoming Boon Coverage report to (a) compute sub-group average uptime as the Generation metric for booners, and (b) flag positioning issues via the Self metric for non-booners. Historical encounters backfill via **Admin → Manage Logs → Rescan**.
+
 ### Changed
 - **Squad Builder walkthrough**: page now surfaces a step-by-step hint banner (1: pick players, 2: pick bosses, 3: randomize) and pulses the relevant input on each step. The Random Bosses menu activator is a labeled button (not just a dice icon), and the Players / Pug DPS fields are aligned on the same row.
 - **Squad Builder randomizer**: now picks a random attempt among all those tied for the best score instead of keeping the first encountered. Removes a bias where flexible players (Can across many roles) were getting locked into the same slot every build because attempts 1-19 contributed nothing once attempt 0 hit optimal.

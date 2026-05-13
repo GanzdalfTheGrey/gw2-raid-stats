@@ -120,6 +120,13 @@ public class EIPlayer
     [JsonPropertyName("groupBuffs")]
     public List<EISquadBuff>? GroupBuffs { get; set; }
 
+    // Boons the player had on themselves, on "Phase active duration" basis (excludes
+    // dead/down time). This is the field behind the HTML report's Buffs → Boons → Uptime
+    // tab. Inner buffData shape differs from SquadBuffs/GroupBuffs (dict-valued source
+    // breakdowns instead of scalar generation), so a separate slim DTO is used.
+    [JsonPropertyName("buffUptimesActive")]
+    public List<EIBuffUptime>? BuffUptimesActive { get; set; }
+
     [JsonPropertyName("extHealingStats")]
     public JsonElement? ExtHealingStats { get; set; }
 }
@@ -276,6 +283,21 @@ public class EIBuffData
     [JsonPropertyName("extended")]
     public decimal Extended { get; set; }
 
+    [JsonPropertyName("uptime")]
+    public decimal Uptime { get; set; }
+}
+
+public class EIBuffUptime
+{
+    [JsonPropertyName("id")]
+    public long Id { get; set; }
+
+    [JsonPropertyName("buffData")]
+    public List<EIBuffUptimeData>? BuffData { get; set; }
+}
+
+public class EIBuffUptimeData
+{
     [JsonPropertyName("uptime")]
     public decimal Uptime { get; set; }
 }

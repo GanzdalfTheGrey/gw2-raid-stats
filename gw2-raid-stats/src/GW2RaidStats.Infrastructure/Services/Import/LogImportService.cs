@@ -170,6 +170,9 @@ public class LogImportService
             // Get boon generation stats
             var (quicknessGen, alacrityGen) = GetBoonGeneration(eiPlayer);
 
+            // Get boon self-uptime (player had this on themselves, active-time basis)
+            var (quicknessSelf, alacritySelf) = GetBoonSelfUptimeFromPlayer(eiPlayer);
+
             // Get healing stats (parse from dynamic JSON structure)
             var (healingTotal, healingPower, hps) = GetHealingStats(eiPlayer);
 
@@ -205,6 +208,10 @@ public class LogImportService
                 // Boon generation
                 QuicknessGeneration = quicknessGen,
                 AlacracityGeneration = alacrityGen,
+
+                // Boon self-uptime (active-time basis)
+                QuicknessSelfUptime = quicknessSelf,
+                AlacritySelfUptime = alacritySelf,
 
                 // Healing stats (from extension)
                 Healing = healingTotal,
@@ -372,6 +379,25 @@ public class LogImportService
         }
 
         return (quicknessGen, alacrityGen);
+    }
+
+    // From buffUptimesActive (excludes dead/down time — matches EI HTML's
+    // "Phase active duration" view). buffData[0] is the full-encounter phase.
+    // Internal so RescanService can backfill historical encounters.
+    internal static (decimal? quickness, decimal? alacrity) GetBoonSelfUptimeFromPlayer(EIPlayer player)
+    {
+        if (player.BuffUptimesActive == null) return (null, null);
+
+        decimal? quickness = null;
+        decimal? alacrity = null;
+        foreach (var buff in player.BuffUptimesActive)
+        {
+            var uptime = buff.BuffData?.FirstOrDefault()?.Uptime;
+            if (uptime == null) continue;
+            if (buff.Id == GW2BuffIds.Quickness) quickness = uptime;
+            else if (buff.Id == GW2BuffIds.Alacrity) alacrity = uptime;
+        }
+        return (quickness, alacrity);
     }
 
     private static (int healing, int healingPower, int hps) GetHealingStats(EIPlayer player)
