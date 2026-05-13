@@ -160,7 +160,7 @@
                         {
                             <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
                                 Per-sub average Quickness / Alacrity self-uptime (excludes dead/down time).
-                                Green ≥ 95%, yellow ≥ 80%, red &lt; 80%.
+                                Green &gt; 90%, yellow &gt; 80%, red ≤ 80%.
                             </MudText>
                             <MudSimpleTable Dense="true" Striped="true" Hover="true">
                                 <thead>
@@ -375,8 +375,8 @@
     private static Color UptimeColor(decimal? pct) => pct switch
     {
         null => Color.Default,
-        >= 95 => Color.Success,
-        >= 80 => Color.Warning,
+        > 90 => Color.Success,
+        > 80 => Color.Warning,
         _ => Color.Error
     };
 
