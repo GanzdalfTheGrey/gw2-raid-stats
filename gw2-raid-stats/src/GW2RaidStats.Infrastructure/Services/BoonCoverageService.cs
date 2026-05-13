@@ -33,9 +33,13 @@ public class BoonCoverageService
         IReadOnlyList<Guid> encounterIds, CancellationToken ct = default)
     {
         if (encounterIds.Count == 0) return new();
+        // LinqToDB reliably translates List<T>.Contains to a SQL IN clause but
+        // can choke on IReadOnlyList<T>.Contains (which resolves to the LINQ
+        // extension method) — same hazard as the HashSet case in guild averages.
+        var encounterIdList = encounterIds.ToList();
 
         var encounters = await _db.Encounters
-            .Where(e => encounterIds.Contains(e.Id))
+            .Where(e => encounterIdList.Contains(e.Id))
             .Select(e => new
             {
                 e.Id,
@@ -52,7 +56,7 @@ public class BoonCoverageService
         var rows = await (
             from pe in _db.PlayerEncounters
             join p in _db.Players on pe.PlayerId equals p.Id
-            where encounterIds.Contains(pe.EncounterId)
+            where encounterIdList.Contains(pe.EncounterId)
             select new
             {
                 pe.EncounterId,

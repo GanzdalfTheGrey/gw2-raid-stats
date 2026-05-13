@@ -499,28 +499,36 @@ else
     private async Task LoadBoonCoverageAsync()
     {
         _boonCoverageError = null;
+        var rangeStart = BoonRangeStart();
+        var rangeQuery = rangeStart.HasValue ? $"?from={Uri.EscapeDataString(rangeStart.Value.ToString("o"))}" : "";
+
+        // Run independently so a failure in one doesn't mask the other, and so we know which is failing
         try
         {
-            var rangeStart = BoonRangeStart();
-            var rangeQuery = rangeStart.HasValue ? $"?from={Uri.EscapeDataString(rangeStart.Value.ToString("o"))}" : "";
-            var coverageTask = Http.GetFromJsonAsync<PlayerBoonCoverage>(
+            _boonCoverage = await Http.GetFromJsonAsync<PlayerBoonCoverage>(
                 $"api/boon-coverage/player/{_profile!.Id}{rangeQuery}");
-            var trendsTask = Http.GetFromJsonAsync<List<BoonTrendBucket>>(
-                $"api/boon-coverage/player/{_profile!.Id}/trends{rangeQuery}");
-            await Task.WhenAll(coverageTask, trendsTask);
-            _boonCoverage = await coverageTask;
-            _boonTrends = await trendsTask;
         }
         catch (Exception ex)
         {
-            _boonCoverageError = ex.Message;
+            _boonCoverageError = $"coverage endpoint: {ex.Message}";
             _boonCoverage = null;
+        }
+
+        try
+        {
+            _boonTrends = await Http.GetFromJsonAsync<List<BoonTrendBucket>>(
+                $"api/boon-coverage/player/{_profile!.Id}/trends{rangeQuery}");
+        }
+        catch (Exception ex)
+        {
+            // Trends failure shouldn't block the rest of the card — record the error but
+            // let _boonCoverage render (if it loaded). UI only shows the alert when both fail.
+            if (_boonCoverage == null)
+                _boonCoverageError = $"trends endpoint: {ex.Message}";
             _boonTrends = null;
         }
-        finally
-        {
-            StateHasChanged();
-        }
+
+        StateHasChanged();
     }
 
     private async Task LoadAchievementsAsync()
