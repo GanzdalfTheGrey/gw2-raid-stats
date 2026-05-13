@@ -398,7 +398,15 @@ else
     private PlayerProfileDto? _profile;
     private PlayerAchievementsResponse? _achievements;
     private PlayerBoonCoverage? _boonCoverage;
+    private List<BoonTrendBucket>? _boonTrends;
     private string _personalBestSort = "wing";
+
+    private static readonly ChartOptions BoonChartOptions = new()
+    {
+        LineStrokeWidth = 2,
+        YAxisFormat = "0'%'",
+        ChartPalette = new[] { "#1E88E5", "#FB8C00" }  // Quickness blue, Alacrity orange
+    };
 
     private IEnumerable<PersonalBest> SortedPersonalBests => _personalBestSort == "dps"
         ? _profile?.PersonalBests.OrderByDescending(pb => pb.Dps) ?? Enumerable.Empty<PersonalBest>()
@@ -442,12 +450,18 @@ else
     {
         try
         {
-            _boonCoverage = await Http.GetFromJsonAsync<PlayerBoonCoverage>(
+            var coverageTask = Http.GetFromJsonAsync<PlayerBoonCoverage>(
                 $"api/boon-coverage/player/{_profile!.Id}");
+            var trendsTask = Http.GetFromJsonAsync<List<BoonTrendBucket>>(
+                $"api/boon-coverage/player/{_profile!.Id}/trends");
+            await Task.WhenAll(coverageTask, trendsTask);
+            _boonCoverage = await coverageTask;
+            _boonTrends = await trendsTask;
         }
         catch (Exception)
         {
             _boonCoverage = null;
+            _boonTrends = null;
         }
         finally
         {
@@ -576,6 +590,35 @@ else
             return;
         }
 
+        @* Trend chart (skips weeks with no data in this slice) *@
+        if (_boonTrends != null)
+        {
+            var trendBuckets = _boonTrends
+                .Where(b => slice == BoonSlice.Generation
+                    ? (b.QuicknessGenEncounters > 0 || b.AlacrityGenEncounters > 0)
+                    : (b.QuicknessSelfEncounters > 0 || b.AlacritySelfEncounters > 0))
+                .ToList();
+            if (trendBuckets.Count >= 2)
+            {
+                var xLabels = trendBuckets.Select(b => b.WeekStart.LocalDateTime.ToString("MMM d")).ToArray();
+                var qSeries = trendBuckets.Select(b => (double)((slice == BoonSlice.Generation ? b.QuicknessGenAvg : b.QuicknessSelfAvg) ?? 0m)).ToArray();
+                var aSeries = trendBuckets.Select(b => (double)((slice == BoonSlice.Generation ? b.AlacrityGenAvg : b.AlacritySelfAvg) ?? 0m)).ToArray();
+                var seriesList = new List<ChartSeries>
+                {
+                    new ChartSeries { Name = "Quickness", Data = qSeries },
+                    new ChartSeries { Name = "Alacrity", Data = aSeries }
+                };
+                <MudPaper Class="pa-3 mb-3" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Weekly Trend — @(slice == BoonSlice.Generation ? "Generation" : "Self")</MudText>
+                    <MudChart ChartType="ChartType.Line"
+                              ChartSeries="@seriesList"
+                              XAxisLabels="@xLabels"
+                              Width="100%" Height="240px"
+                              ChartOptions="@BoonChartOptions" />
+                </MudPaper>
+            }
+        }
+
         if (bosses.Count > 0)
         {
             <MudText Typo="Typo.subtitle2" Class="mb-2">Per Boss</MudText>
@@ -680,6 +723,13 @@ else
         int Encounters,
         BoonSummary Quickness,
         BoonSummary Alacrity);
+
+    public record BoonTrendBucket(
+        DateTimeOffset WeekStart,
+        decimal? QuicknessGenAvg, int QuicknessGenEncounters,
+        decimal? QuicknessSelfAvg, int QuicknessSelfEncounters,
+        decimal? AlacrityGenAvg, int AlacrityGenEncounters,
+        decimal? AlacritySelfAvg, int AlacritySelfEncounters);
 
     // DTOs
     public record PlayerProfileDto(

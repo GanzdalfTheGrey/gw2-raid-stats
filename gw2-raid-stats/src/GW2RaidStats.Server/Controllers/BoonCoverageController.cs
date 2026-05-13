@@ -37,6 +37,17 @@ public class BoonCoverageController : ControllerBase
         var result = await _service.GetPlayerCoverageAsync(playerId, from, to, ct);
         return Ok(result);
     }
+
+    [HttpGet("player/{playerId:guid}/trends")]
+    public async Task<ActionResult<List<BoonTrendBucket>>> GetPlayerTrends(
+        Guid playerId,
+        [FromQuery] DateTimeOffset? from = null,
+        [FromQuery] DateTimeOffset? to = null,
+        CancellationToken ct = default)
+    {
+        var result = await _service.GetPlayerTrendsAsync(playerId, from, to, ct);
+        return Ok(result);
+    }
 }
 
 public record EncounterCoverageRequest(List<Guid> EncounterIds);

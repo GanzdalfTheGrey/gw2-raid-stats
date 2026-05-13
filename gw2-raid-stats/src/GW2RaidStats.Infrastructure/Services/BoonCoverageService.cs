@@ -244,6 +244,101 @@ public class BoonCoverageService
             PerProfession: perProfession);
     }
 
+    // --- Trends view ---
+
+    public async Task<List<BoonTrendBucket>> GetPlayerTrendsAsync(
+        Guid playerId,
+        DateTimeOffset? rangeStart,
+        DateTimeOffset? rangeEnd,
+        CancellationToken ct = default)
+    {
+        // Same data load as the player coverage query — we just bucket the per-row results
+        // by week instead of aggregating overall.
+        var playerRows = await (
+            from pe in _db.PlayerEncounters
+            join e in _db.Encounters on pe.EncounterId equals e.Id
+            where pe.PlayerId == playerId
+                  && (rangeStart == null || e.EncounterTime >= rangeStart)
+                  && (rangeEnd == null || e.EncounterTime <= rangeEnd)
+            select new
+            {
+                pe.EncounterId,
+                pe.SquadGroup,
+                pe.Role,
+                pe.QuicknessSelfUptime,
+                pe.AlacritySelfUptime,
+                e.EncounterTime
+            })
+            .ToListAsync(ct);
+
+        if (playerRows.Count == 0) return new();
+
+        var encounterIds = playerRows.Select(r => r.EncounterId).Distinct().ToList();
+        var subMateRows = await _db.PlayerEncounters
+            .Where(pe => encounterIds.Contains(pe.EncounterId))
+            .Select(pe => new
+            {
+                pe.EncounterId,
+                pe.SquadGroup,
+                pe.QuicknessSelfUptime,
+                pe.AlacritySelfUptime
+            })
+            .ToListAsync(ct);
+
+        var subIndex = subMateRows
+            .Where(r => r.SquadGroup.HasValue)
+            .GroupBy(r => (r.EncounterId, r.SquadGroup!.Value))
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(r => (Q: r.QuicknessSelfUptime, A: r.AlacritySelfUptime)).ToList());
+
+        // Per-row Q/A contributions, tagged with the week bucket
+        var perRow = new List<(DateTimeOffset WeekStart, decimal? QGen, decimal? QSelf, decimal? AGen, decimal? ASelf)>();
+        foreach (var row in playerRows)
+        {
+            var subKey = (row.EncounterId, row.SquadGroup ?? -1);
+            var subMembers = row.SquadGroup.HasValue && subIndex.TryGetValue(subKey, out var s) ? s : null;
+
+            decimal? qGen = null, qSelf = null, aGen = null, aSelf = null;
+            if (row.Role != null && IsQuicknessRole(row.Role))
+                qGen = subMembers != null ? NullableMean(subMembers.Select(x => x.Q)) : null;
+            else
+                qSelf = row.QuicknessSelfUptime;
+
+            if (row.Role != null && IsAlacrityRole(row.Role))
+                aGen = subMembers != null ? NullableMean(subMembers.Select(x => x.A)) : null;
+            else
+                aSelf = row.AlacritySelfUptime;
+
+            perRow.Add((WeekStartOf(row.EncounterTime), qGen, qSelf, aGen, aSelf));
+        }
+
+        // Group into weekly buckets and average each metric within the bucket
+        return perRow
+            .GroupBy(r => r.WeekStart)
+            .OrderBy(g => g.Key)
+            .Select(g => new BoonTrendBucket(
+                WeekStart: g.Key,
+                QuicknessGenAvg: NullableMean(g.Select(r => r.QGen)),
+                QuicknessGenEncounters: g.Count(r => r.QGen.HasValue),
+                QuicknessSelfAvg: NullableMean(g.Select(r => r.QSelf)),
+                QuicknessSelfEncounters: g.Count(r => r.QSelf.HasValue),
+                AlacrityGenAvg: NullableMean(g.Select(r => r.AGen)),
+                AlacrityGenEncounters: g.Count(r => r.AGen.HasValue),
+                AlacritySelfAvg: NullableMean(g.Select(r => r.ASelf)),
+                AlacritySelfEncounters: g.Count(r => r.ASelf.HasValue)))
+            .ToList();
+    }
+
+    private static DateTimeOffset WeekStartOf(DateTimeOffset dt)
+    {
+        // ISO-style week start = Monday in local time of the timestamp
+        var local = dt.LocalDateTime.Date;
+        var daysSinceMonday = ((int)local.DayOfWeek + 6) % 7;
+        var monday = local.AddDays(-daysSinceMonday);
+        return new DateTimeOffset(monday, dt.Offset);
+    }
+
     // --- helpers ---
 
     private static BoonSummary AggregateBoon(IEnumerable<decimal?> genValues, IEnumerable<decimal?> selfValues)
@@ -330,3 +425,10 @@ public record BoonPerProfession(
     int Encounters,
     BoonSummary Quickness,
     BoonSummary Alacrity);
+
+public record BoonTrendBucket(
+    DateTimeOffset WeekStart,
+    decimal? QuicknessGenAvg, int QuicknessGenEncounters,
+    decimal? QuicknessSelfAvg, int QuicknessSelfEncounters,
+    decimal? AlacrityGenAvg, int AlacrityGenEncounters,
+    decimal? AlacritySelfAvg, int AlacritySelfEncounters);
