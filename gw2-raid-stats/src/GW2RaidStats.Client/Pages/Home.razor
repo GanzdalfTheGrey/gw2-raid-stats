@@ -97,50 +97,117 @@
             }
             else
             {
-                <MudSimpleTable Dense="true" Striped="true" Hover="true">
-                    <thead>
-                        <tr>
-                            <th>Boss</th>
-                            <th>Result</th>
-                            <th>Duration</th>
-                            <th>Time</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var encounter in _previousSession.Encounters)
+                <MudTabs Outlined="false" Rounded="true" Border="false" Position="Position.Top" PanelClass="mt-3">
+                    <MudTabPanel Text="Logs" Icon="@Icons.Material.Filled.List">
+                        <MudSimpleTable Dense="true" Striped="true" Hover="true">
+                            <thead>
+                                <tr>
+                                    <th>Boss</th>
+                                    <th>Result</th>
+                                    <th>Duration</th>
+                                    <th>Time</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var encounter in _previousSession.Encounters)
+                                {
+                                    <tr>
+                                        <td>
+                                            @encounter.BossName
+                                            @if (encounter.IsCM)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1">CM</MudChip>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (encounter.Success)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Success">Kill</MudChip>
+                                            }
+                                            else
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Error">Wipe</MudChip>
+                                            }
+                                        </td>
+                                        <td>@FormatDuration(encounter.DurationMs)</td>
+                                        <td>@encounter.EncounterTime.LocalDateTime.ToString("h:mm tt")</td>
+                                        <td>
+                                            <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                           Size="Size.Small"
+                                                           Href="@($"/api/reports/{encounter.Id}/view")"
+                                                           Target="_blank"
+                                                           Title="View Report" />
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudTabPanel>
+                    <MudTabPanel Text="Session Stats" Icon="@Icons.Material.Filled.BarChart">
+                        @if (_boonCoverage == null)
                         {
-                            <tr>
-                                <td>
-                                    @encounter.BossName
-                                    @if (encounter.IsCM)
-                                    {
-                                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1">CM</MudChip>
-                                    }
-                                </td>
-                                <td>
-                                    @if (encounter.Success)
-                                    {
-                                        <MudChip T="string" Size="Size.Small" Color="Color.Success">Kill</MudChip>
-                                    }
-                                    else
-                                    {
-                                        <MudChip T="string" Size="Size.Small" Color="Color.Error">Wipe</MudChip>
-                                    }
-                                </td>
-                                <td>@FormatDuration(encounter.DurationMs)</td>
-                                <td>@encounter.EncounterTime.LocalDateTime.ToString("h:mm tt")</td>
-                                <td>
-                                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
-                                                   Size="Size.Small"
-                                                   Href="@($"/api/reports/{encounter.Id}/view")"
-                                                   Target="_blank"
-                                                   Title="View Report" />
-                                </td>
-                            </tr>
+                            <MudStack AlignItems="AlignItems.Center" Class="pa-4">
+                                <MudProgressCircular Indeterminate="true" />
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Computing boon coverage...</MudText>
+                            </MudStack>
                         }
-                    </tbody>
-                </MudSimpleTable>
+                        else if (_boonCoverage.Count == 0)
+                        {
+                            <MudAlert Severity="Severity.Info">No coverage data for this session.</MudAlert>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                Per-sub average Quickness / Alacrity self-uptime (excludes dead/down time).
+                                Green ≥ 95%, yellow ≥ 80%, red &lt; 80%. Generator names show their boon's generation %; a ⚠ flag means generation &lt; 60% — the booner was likely the bottleneck.
+                            </MudText>
+                            <MudSimpleTable Dense="true" Striped="true" Hover="true">
+                                <thead>
+                                    <tr>
+                                        <th rowspan="2">Boss</th>
+                                        <th colspan="2" style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Sub 1</th>
+                                        <th colspan="2" style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Sub 2</th>
+                                        <th rowspan="2" style="border-left: 1px solid var(--mud-palette-divider);">Booners</th>
+                                    </tr>
+                                    <tr>
+                                        <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Q</th>
+                                        <th style="text-align: center;">A</th>
+                                        <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Q</th>
+                                        <th style="text-align: center;">A</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var enc in _boonCoverage)
+                                    {
+                                        var sub1 = enc.Subs.FirstOrDefault(s => s.SubGroup == 1);
+                                        var sub2 = enc.Subs.FirstOrDefault(s => s.SubGroup == 2);
+                                        <tr>
+                                            <td>
+                                                @enc.BossName
+                                                @if (enc.IsCM)
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1">CM</MudChip>
+                                                }
+                                                @if (!enc.Success)
+                                                {
+                                                    <MudText Typo="Typo.caption" Color="Color.Error" Class="ml-1">wipe</MudText>
+                                                }
+                                            </td>
+                                            <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptime(sub1?.AvgQuicknessUptime)</td>
+                                            <td style="text-align: center;">@RenderUptime(sub1?.AvgAlacrityUptime)</td>
+                                            <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptime(sub2?.AvgQuicknessUptime)</td>
+                                            <td style="text-align: center;">@RenderUptime(sub2?.AvgAlacrityUptime)</td>
+                                            <td style="border-left: 1px solid var(--mud-palette-divider);">
+                                                @RenderGenerators(enc.Generators)
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        }
+                    </MudTabPanel>
+                </MudTabs>
             }
         </MudPaper>
     </MudItem>
@@ -244,6 +311,7 @@
     private DashboardStats? _stats;
     private PreviousSession? _previousSession;
     private SessionHighlights? _sessionHighlights;
+    private List<EncounterBoonCoverage>? _boonCoverage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -273,7 +341,93 @@
         {
             _loading = false;
         }
+
+        // Boon coverage runs after the visible content has loaded — it's the
+        // Session Stats tab and not on the critical path. Fire-and-forget.
+        if (_previousSession is { Encounters.Count: > 0 })
+        {
+            _ = LoadBoonCoverageAsync();
+        }
     }
+
+    private async Task LoadBoonCoverageAsync()
+    {
+        try
+        {
+            var ids = _previousSession!.Encounters.Select(e => e.Id).ToList();
+            var resp = await Http.PostAsJsonAsync(
+                "api/boon-coverage/encounters",
+                new { EncounterIds = ids });
+            if (resp.IsSuccessStatusCode)
+            {
+                _boonCoverage = await resp.Content.ReadFromJsonAsync<List<EncounterBoonCoverage>>();
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading boon coverage: {ex.Message}");
+        }
+    }
+
+    // --- Boon coverage rendering helpers ---
+
+    private static Color UptimeColor(decimal? pct) => pct switch
+    {
+        null => Color.Default,
+        >= 95 => Color.Success,
+        >= 80 => Color.Warning,
+        _ => Color.Error
+    };
+
+    private RenderFragment RenderUptime(decimal? pct) => __builder =>
+    {
+        if (pct == null)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+        }
+        else
+        {
+            <MudChip T="string" Size="Size.Small" Color="@UptimeColor(pct)" Variant="Variant.Filled">
+                @($"{pct:0}%")
+            </MudChip>
+        }
+    };
+
+    private RenderFragment RenderGenerators(List<BoonGeneratorInfo> generators) => __builder =>
+    {
+        if (generators.Count == 0)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
+            return;
+        }
+        var bySub = generators.GroupBy(g => g.SubGroup).OrderBy(g => g.Key);
+        <MudStack Spacing="0">
+            @foreach (var subGroup in bySub)
+            {
+                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
+                    <MudText Typo="Typo.caption" Style="min-width: 28px;"><strong>S@(subGroup.Key):</strong></MudText>
+                    @foreach (var gen in subGroup.OrderBy(g => g.Boon))
+                    {
+                        var letter = gen.Boon == "Quickness" ? "Q" : "A";
+                        var lowGen = gen.GenerationPct.HasValue && gen.GenerationPct.Value < 60;
+                        <MudText Typo="Typo.caption">
+                            @letter @gen.AccountName
+                            @if (gen.GenerationPct.HasValue)
+                            {
+                                <span style="opacity: 0.7;"> (@($"{gen.GenerationPct.Value:0}%")</span>
+                                @if (lowGen)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Color="Color.Warning" Title="Generation below 60% — the booner was likely the bottleneck" />
+                                }
+                                <span style="opacity: 0.7;">)</span>
+                            }
+                        </MudText>
+                    }
+                </MudStack>
+            }
+        </MudStack>
+    };
 
     private static string FormatDuration(int durationMs)
     {
@@ -298,6 +452,31 @@
             return $"{(int)ts.TotalHours}h {ts.Minutes}m";
         return $"{ts.Minutes}m";
     }
+
+    // Boon coverage DTOs (mirror BoonCoverageService records)
+    public record EncounterBoonCoverage(
+        Guid EncounterId,
+        string BossName,
+        bool IsCM,
+        bool Success,
+        int DurationMs,
+        DateTimeOffset EncounterTime,
+        List<SubBoonCoverage> Subs,
+        List<BoonGeneratorInfo> Generators);
+
+    public record SubBoonCoverage(
+        int SubGroup,
+        int PlayerCount,
+        decimal? AvgQuicknessUptime,
+        decimal? AvgAlacrityUptime);
+
+    public record BoonGeneratorInfo(
+        string AccountName,
+        string Profession,
+        string Role,
+        int SubGroup,
+        string Boon,
+        decimal? GenerationPct);
 
     // DTOs matching the server models
     public record DashboardStats(

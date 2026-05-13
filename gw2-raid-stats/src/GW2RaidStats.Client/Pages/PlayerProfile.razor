@@ -223,6 +223,117 @@ else
             </MudPaper>
         </MudItem>
 
+        @* Boon Coverage Card *@
+        <MudItem xs="12">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudText Typo="Typo.h6">
+                        <MudIcon Icon="@Icons.Material.Filled.Bolt" Class="mr-2" />
+                        Boon Coverage
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Generation = your sub's avg uptime when you were the booner. Self = your own uptime when someone else booned.
+                    </MudText>
+                </MudStack>
+                @if (_boonCoverage == null)
+                {
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                }
+                else
+                {
+                    <MudGrid>
+                        <MudItem xs="12" md="6">
+                            @RenderBoonHeadline("Quickness", _boonCoverage.Quickness)
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            @RenderBoonHeadline("Alacrity", _boonCoverage.Alacrity)
+                        </MudItem>
+                    </MudGrid>
+
+                    @if (_boonCoverage.PerBoss.Count > 0)
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Per Boss</MudText>
+                        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+                            <thead>
+                                <tr>
+                                    <th>Boss</th>
+                                    <th colspan="2" style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Quickness</th>
+                                    <th colspan="2" style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Alacrity</th>
+                                    <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Encs</th>
+                                </tr>
+                                <tr>
+                                    <th></th>
+                                    <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Gen</th>
+                                    <th style="text-align: center;">Self</th>
+                                    <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Gen</th>
+                                    <th style="text-align: center;">Self</th>
+                                    <th style="border-left: 1px solid var(--mud-palette-divider);"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var boss in _boonCoverage.PerBoss)
+                                {
+                                    <tr>
+                                        <td>
+                                            @boss.BossName
+                                            @if (boss.IsCM)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1">CM</MudChip>
+                                            }
+                                        </td>
+                                        <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeCell(boss.Quickness.GenerationAvg, boss.Quickness.GenerationEncounters)</td>
+                                        <td style="text-align: center;">@RenderUptimeCell(boss.Quickness.SelfAvg, boss.Quickness.SelfEncounters)</td>
+                                        <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeCell(boss.Alacrity.GenerationAvg, boss.Alacrity.GenerationEncounters)</td>
+                                        <td style="text-align: center;">@RenderUptimeCell(boss.Alacrity.SelfAvg, boss.Alacrity.SelfEncounters)</td>
+                                        <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@boss.Encounters</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+
+                    @if (_boonCoverage.PerProfession.Count > 0)
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Per Profession × Role</MudText>
+                        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+                            <thead>
+                                <tr>
+                                    <th>Profession</th>
+                                    <th>Role</th>
+                                    <th colspan="2" style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Quickness</th>
+                                    <th colspan="2" style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Alacrity</th>
+                                    <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Encs</th>
+                                </tr>
+                                <tr>
+                                    <th></th>
+                                    <th></th>
+                                    <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Gen</th>
+                                    <th style="text-align: center;">Self</th>
+                                    <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Gen</th>
+                                    <th style="text-align: center;">Self</th>
+                                    <th style="border-left: 1px solid var(--mud-palette-divider);"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var prof in _boonCoverage.PerProfession)
+                                {
+                                    <tr>
+                                        <td>@prof.Profession</td>
+                                        <td><MudText Typo="Typo.caption" Color="Color.Secondary">@prof.Role</MudText></td>
+                                        <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeCell(prof.Quickness.GenerationAvg, prof.Quickness.GenerationEncounters)</td>
+                                        <td style="text-align: center;">@RenderUptimeCell(prof.Quickness.SelfAvg, prof.Quickness.SelfEncounters)</td>
+                                        <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeCell(prof.Alacrity.GenerationAvg, prof.Alacrity.GenerationEncounters)</td>
+                                        <td style="text-align: center;">@RenderUptimeCell(prof.Alacrity.SelfAvg, prof.Alacrity.SelfEncounters)</td>
+                                        <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@prof.Encounters</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                }
+            </MudPaper>
+        </MudItem>
+
         @* Personal Bests *@
         <MudItem xs="12">
             <MudPaper Class="pa-4" Elevation="2">
@@ -356,6 +467,7 @@ else
     private bool _loadingAchievements = true;
     private PlayerProfileDto? _profile;
     private PlayerAchievementsResponse? _achievements;
+    private PlayerBoonCoverage? _boonCoverage;
     private string _personalBestSort = "wing";
 
     private IEnumerable<PersonalBest> SortedPersonalBests => _personalBestSort == "dps"
@@ -385,6 +497,30 @@ else
         finally
         {
             _loading = false;
+            StateHasChanged();
+        }
+
+        // Boon coverage needs the player Id from the profile, so it has to run after.
+        // Fire-and-forget — the card renders a spinner until it lands.
+        if (_profile != null)
+        {
+            _ = LoadBoonCoverageAsync();
+        }
+    }
+
+    private async Task LoadBoonCoverageAsync()
+    {
+        try
+        {
+            _boonCoverage = await Http.GetFromJsonAsync<PlayerBoonCoverage>(
+                $"api/boon-coverage/player/{_profile!.Id}");
+        }
+        catch (Exception)
+        {
+            _boonCoverage = null;
+        }
+        finally
+        {
             StateHasChanged();
         }
     }
@@ -433,6 +569,98 @@ else
             _ => Color.Default
         };
     }
+
+    // --- Boon coverage rendering helpers ---
+
+    private static Color UptimeColor(decimal? pct) => pct switch
+    {
+        null => Color.Default,
+        >= 95 => Color.Success,
+        >= 80 => Color.Warning,
+        _ => Color.Error
+    };
+
+    private RenderFragment RenderBoonHeadline(string boonName, BoonSummary summary) => __builder =>
+    {
+        <MudPaper Class="pa-3" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
+            <MudText Typo="Typo.subtitle1" Class="mb-2"><strong>@boonName</strong></MudText>
+            <MudStack Spacing="1">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                    <MudStack Spacing="0">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">As generator (party uptime)</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Tertiary">@summary.GenerationEncounters encounters</MudText>
+                    </MudStack>
+                    @if (summary.GenerationAvg.HasValue)
+                    {
+                        <MudChip T="string" Color="@UptimeColor(summary.GenerationAvg)" Size="Size.Large" Variant="Variant.Filled">
+                            @($"{summary.GenerationAvg.Value:0.0}%")
+                        </MudChip>
+                    }
+                    else
+                    {
+                        <MudText Color="Color.Secondary">—</MudText>
+                    }
+                </MudStack>
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                    <MudStack Spacing="0">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">As receiver (own uptime)</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Tertiary">@summary.SelfEncounters encounters</MudText>
+                    </MudStack>
+                    @if (summary.SelfAvg.HasValue)
+                    {
+                        <MudChip T="string" Color="@UptimeColor(summary.SelfAvg)" Size="Size.Large" Variant="Variant.Filled">
+                            @($"{summary.SelfAvg.Value:0.0}%")
+                        </MudChip>
+                    }
+                    else
+                    {
+                        <MudText Color="Color.Secondary">—</MudText>
+                    }
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+    };
+
+    private RenderFragment RenderUptimeCell(decimal? pct, int encounters) => __builder =>
+    {
+        if (pct == null || encounters == 0)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+        }
+        else
+        {
+            <MudChip T="string" Size="Size.Small" Color="@UptimeColor(pct)" Variant="Variant.Filled" Title="@($"{encounters} encounter(s)")">
+                @($"{pct:0}%")
+            </MudChip>
+        }
+    };
+
+    // Boon coverage DTOs (mirror BoonCoverageService records)
+    public record PlayerBoonCoverage(
+        BoonSummary Quickness,
+        BoonSummary Alacrity,
+        List<BoonPerBoss> PerBoss,
+        List<BoonPerProfession> PerProfession);
+
+    public record BoonSummary(
+        int GenerationEncounters,
+        decimal? GenerationAvg,
+        int SelfEncounters,
+        decimal? SelfAvg);
+
+    public record BoonPerBoss(
+        string BossName,
+        bool IsCM,
+        int Encounters,
+        BoonSummary Quickness,
+        BoonSummary Alacrity);
+
+    public record BoonPerProfession(
+        string Profession,
+        string Role,
+        int Encounters,
+        BoonSummary Quickness,
+        BoonSummary Alacrity);
 
     // DTOs
     public record PlayerProfileDto(

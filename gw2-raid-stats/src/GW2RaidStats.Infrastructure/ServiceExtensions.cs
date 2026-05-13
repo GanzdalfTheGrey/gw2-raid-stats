@@ -61,6 +61,7 @@ public static class ServiceExtensions
         services.AddScoped<PlayerRolesService>();
         services.AddScoped<SquadRandomizerService>();
         services.AddScoped<PlayerTrendsService>();
+        services.AddScoped<BoonCoverageService>();
 
         // Achievement services - new architecture
         services.AddScoped<AchievementBackfillService>();

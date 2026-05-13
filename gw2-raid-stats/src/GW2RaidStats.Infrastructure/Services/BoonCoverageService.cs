@@ -1,0 +1,332 @@
+using GW2RaidStats.Infrastructure.Database;
+using LinqToDB;
+using LinqToDB.Async;
+
+namespace GW2RaidStats.Infrastructure.Services;
+
+/// <summary>
+/// Reports Quickness and Alacrity coverage. Two views over the same data:
+/// - Session view: per-encounter, per-sub average self-uptime + the booners who provided each boon.
+/// - Player view: that player's two slices — "Generation" (sub avg uptime on encounters where they
+///   were tagged as that boon's booner) and "Self" (their own uptime on encounters where they weren't).
+///
+/// Generator tagging comes from the existing PlayerEncounter.Role column populated by LogImportService:
+///   heal_quick / dps_quick → Quickness generator
+///   heal_alac  / dps_alac  → Alacrity generator
+///   heal_*  / pure_dps     → neither for that boon
+/// </summary>
+public class BoonCoverageService
+{
+    private readonly RaidStatsDb _db;
+
+    public BoonCoverageService(RaidStatsDb db)
+    {
+        _db = db;
+    }
+
+    // --- Session view ---
+
+    public async Task<List<EncounterBoonCoverage>> GetCoverageForEncountersAsync(
+        IReadOnlyList<Guid> encounterIds, CancellationToken ct = default)
+    {
+        if (encounterIds.Count == 0) return new();
+
+        var encounters = await _db.Encounters
+            .Where(e => encounterIds.Contains(e.Id))
+            .Select(e => new
+            {
+                e.Id,
+                e.BossName,
+                e.IsCM,
+                e.Success,
+                e.DurationMs,
+                e.EncounterTime
+            })
+            .ToListAsync(ct);
+
+        // Pull each player_encounter row in one shot; join account name in
+        var rows = await (
+            from pe in _db.PlayerEncounters
+            join p in _db.Players on pe.PlayerId equals p.Id
+            where encounterIds.Contains(pe.EncounterId)
+            select new
+            {
+                pe.EncounterId,
+                pe.SquadGroup,
+                pe.Profession,
+                pe.Role,
+                pe.QuicknessSelfUptime,
+                pe.AlacritySelfUptime,
+                pe.QuicknessGeneration,
+                pe.AlacracityGeneration,
+                AccountName = p.AccountName
+            })
+            .ToListAsync(ct);
+
+        var result = new List<EncounterBoonCoverage>(encounters.Count);
+        foreach (var enc in encounters.OrderBy(e => e.EncounterTime))
+        {
+            var encRows = rows.Where(r => r.EncounterId == enc.Id).ToList();
+
+            var subs = encRows
+                .Where(r => r.SquadGroup.HasValue)
+                .GroupBy(r => r.SquadGroup!.Value)
+                .OrderBy(g => g.Key)
+                .Select(g => new SubBoonCoverage(
+                    SubGroup: g.Key,
+                    PlayerCount: g.Count(),
+                    AvgQuicknessUptime: NullableMean(g.Select(r => r.QuicknessSelfUptime)),
+                    AvgAlacrityUptime: NullableMean(g.Select(r => r.AlacritySelfUptime))))
+                .ToList();
+
+            var generators = encRows
+                .Where(r => r.SquadGroup.HasValue && r.Role != null && IsBoonRole(r.Role))
+                .Select(r => new BoonGeneratorInfo(
+                    AccountName: r.AccountName,
+                    Profession: r.Profession,
+                    Role: r.Role!,
+                    SubGroup: r.SquadGroup!.Value,
+                    Boon: BoonFromRole(r.Role!),
+                    GenerationPct: BoonFromRole(r.Role!) == "Quickness"
+                        ? r.QuicknessGeneration
+                        : r.AlacracityGeneration))
+                .OrderBy(g => g.SubGroup)
+                .ThenBy(g => g.Boon)
+                .ToList();
+
+            result.Add(new EncounterBoonCoverage(
+                EncounterId: enc.Id,
+                BossName: enc.BossName,
+                IsCM: enc.IsCM,
+                Success: enc.Success,
+                DurationMs: enc.DurationMs,
+                EncounterTime: enc.EncounterTime,
+                Subs: subs,
+                Generators: generators));
+        }
+        return result;
+    }
+
+    // --- Player view ---
+
+    public async Task<PlayerBoonCoverage> GetPlayerCoverageAsync(
+        Guid playerId,
+        DateTimeOffset? rangeStart,
+        DateTimeOffset? rangeEnd,
+        CancellationToken ct = default)
+    {
+        // 1. Player's own PEs in range, joined to encounter for boss/time
+        var playerRows = await (
+            from pe in _db.PlayerEncounters
+            join e in _db.Encounters on pe.EncounterId equals e.Id
+            where pe.PlayerId == playerId
+                  && (rangeStart == null || e.EncounterTime >= rangeStart)
+                  && (rangeEnd == null || e.EncounterTime <= rangeEnd)
+            select new
+            {
+                pe.EncounterId,
+                pe.SquadGroup,
+                pe.Profession,
+                pe.Role,
+                pe.QuicknessSelfUptime,
+                pe.AlacritySelfUptime,
+                e.BossName,
+                e.IsCM,
+                e.EncounterTime
+            })
+            .ToListAsync(ct);
+
+        if (playerRows.Count == 0)
+        {
+            return new PlayerBoonCoverage(
+                Quickness: BoonSummary.Empty,
+                Alacrity: BoonSummary.Empty,
+                PerBoss: new(),
+                PerProfession: new());
+        }
+
+        var encounterIds = playerRows.Select(r => r.EncounterId).Distinct().ToList();
+
+        // 2. Sub-mates' self-uptime for the Generation slice
+        var subMateRows = await _db.PlayerEncounters
+            .Where(pe => encounterIds.Contains(pe.EncounterId))
+            .Select(pe => new
+            {
+                pe.EncounterId,
+                pe.SquadGroup,
+                pe.QuicknessSelfUptime,
+                pe.AlacritySelfUptime
+            })
+            .ToListAsync(ct);
+
+        // Index: (encounterId, subGroup) → [(Q, A)] for sub-mate aggregation
+        var subIndex = subMateRows
+            .Where(r => r.SquadGroup.HasValue)
+            .GroupBy(r => (r.EncounterId, r.SquadGroup!.Value))
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(r => (Q: r.QuicknessSelfUptime, A: r.AlacritySelfUptime)).ToList());
+
+        // 3. Per-row contribution: which slice each row goes into for Q and for A
+        var perRow = new List<(string BossName, bool IsCM, string Profession, string Role,
+                              decimal? QGen, decimal? QSelf, decimal? AGen, decimal? ASelf)>();
+
+        foreach (var row in playerRows)
+        {
+            decimal? qGen = null, qSelf = null, aGen = null, aSelf = null;
+
+            var subKey = (row.EncounterId, row.SquadGroup ?? -1);
+            var subMembers = row.SquadGroup.HasValue && subIndex.TryGetValue(subKey, out var s) ? s : null;
+
+            // Quickness slice
+            if (row.Role != null && IsQuicknessRole(row.Role))
+            {
+                qGen = subMembers != null ? NullableMean(subMembers.Select(x => x.Q)) : null;
+            }
+            else
+            {
+                qSelf = row.QuicknessSelfUptime;
+            }
+
+            // Alacrity slice
+            if (row.Role != null && IsAlacrityRole(row.Role))
+            {
+                aGen = subMembers != null ? NullableMean(subMembers.Select(x => x.A)) : null;
+            }
+            else
+            {
+                aSelf = row.AlacritySelfUptime;
+            }
+
+            perRow.Add((row.BossName, row.IsCM, row.Profession, row.Role ?? "",
+                       qGen, qSelf, aGen, aSelf));
+        }
+
+        // 4. Aggregations
+        var quickness = AggregateBoon(
+            perRow.Select(r => r.QGen),
+            perRow.Select(r => r.QSelf));
+        var alacrity = AggregateBoon(
+            perRow.Select(r => r.AGen),
+            perRow.Select(r => r.ASelf));
+
+        var perBoss = perRow
+            .GroupBy(r => (r.BossName, r.IsCM))
+            .Select(g => new BoonPerBoss(
+                BossName: g.Key.BossName,
+                IsCM: g.Key.IsCM,
+                Encounters: g.Count(),
+                Quickness: AggregateBoon(g.Select(r => r.QGen), g.Select(r => r.QSelf)),
+                Alacrity: AggregateBoon(g.Select(r => r.AGen), g.Select(r => r.ASelf))))
+            .OrderBy(b => b.BossName)
+            .ToList();
+
+        // Profession bucket includes the role (e.g., "Mechanist as dps_quick") so the same character
+        // played in different roles doesn't get blurred together — directly answers the
+        // "Mirage looks low" / "Mech is fine" comparison the user asked for.
+        var perProfession = perRow
+            .Where(r => !string.IsNullOrEmpty(r.Profession))
+            .GroupBy(r => (r.Profession, r.Role))
+            .Select(g => new BoonPerProfession(
+                Profession: g.Key.Profession,
+                Role: g.Key.Role,
+                Encounters: g.Count(),
+                Quickness: AggregateBoon(g.Select(r => r.QGen), g.Select(r => r.QSelf)),
+                Alacrity: AggregateBoon(g.Select(r => r.AGen), g.Select(r => r.ASelf))))
+            .OrderBy(p => p.Profession)
+            .ThenBy(p => p.Role)
+            .ToList();
+
+        return new PlayerBoonCoverage(
+            Quickness: quickness,
+            Alacrity: alacrity,
+            PerBoss: perBoss,
+            PerProfession: perProfession);
+    }
+
+    // --- helpers ---
+
+    private static BoonSummary AggregateBoon(IEnumerable<decimal?> genValues, IEnumerable<decimal?> selfValues)
+    {
+        var gen = genValues.Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        var self = selfValues.Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        return new BoonSummary(
+            GenerationEncounters: gen.Count,
+            GenerationAvg: gen.Count > 0 ? gen.Average() : null,
+            SelfEncounters: self.Count,
+            SelfAvg: self.Count > 0 ? self.Average() : null);
+    }
+
+    private static decimal? NullableMean(IEnumerable<decimal?> values)
+    {
+        var nonNull = values.Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        return nonNull.Count == 0 ? null : nonNull.Average();
+    }
+
+    private static bool IsBoonRole(string role) =>
+        IsQuicknessRole(role) || IsAlacrityRole(role);
+
+    private static bool IsQuicknessRole(string role) =>
+        role == "heal_quick" || role == "dps_quick";
+
+    private static bool IsAlacrityRole(string role) =>
+        role == "heal_alac" || role == "dps_alac";
+
+    private static string BoonFromRole(string role) =>
+        IsQuicknessRole(role) ? "Quickness" : "Alacrity";
+}
+
+// --- DTOs ---
+
+public record EncounterBoonCoverage(
+    Guid EncounterId,
+    string BossName,
+    bool IsCM,
+    bool Success,
+    int DurationMs,
+    DateTimeOffset EncounterTime,
+    List<SubBoonCoverage> Subs,
+    List<BoonGeneratorInfo> Generators);
+
+public record SubBoonCoverage(
+    int SubGroup,
+    int PlayerCount,
+    decimal? AvgQuicknessUptime,
+    decimal? AvgAlacrityUptime);
+
+public record BoonGeneratorInfo(
+    string AccountName,
+    string Profession,
+    string Role,
+    int SubGroup,
+    string Boon,
+    decimal? GenerationPct);
+
+public record PlayerBoonCoverage(
+    BoonSummary Quickness,
+    BoonSummary Alacrity,
+    List<BoonPerBoss> PerBoss,
+    List<BoonPerProfession> PerProfession);
+
+public record BoonSummary(
+    int GenerationEncounters,
+    decimal? GenerationAvg,
+    int SelfEncounters,
+    decimal? SelfAvg)
+{
+    public static BoonSummary Empty => new(0, null, 0, null);
+}
+
+public record BoonPerBoss(
+    string BossName,
+    bool IsCM,
+    int Encounters,
+    BoonSummary Quickness,
+    BoonSummary Alacrity);
+
+public record BoonPerProfession(
+    string Profession,
+    string Role,
+    int Encounters,
+    BoonSummary Quickness,
+    BoonSummary Alacrity);
