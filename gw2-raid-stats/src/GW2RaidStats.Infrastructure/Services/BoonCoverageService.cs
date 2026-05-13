@@ -18,10 +18,12 @@ namespace GW2RaidStats.Infrastructure.Services;
 public class BoonCoverageService
 {
     private readonly RaidStatsDb _db;
+    private readonly IncludedPlayerService _includedPlayers;
 
-    public BoonCoverageService(RaidStatsDb db)
+    public BoonCoverageService(RaidStatsDb db, IncludedPlayerService includedPlayers)
     {
         _db = db;
+        _includedPlayers = includedPlayers;
     }
 
     // --- Session view ---
@@ -142,6 +144,7 @@ public class BoonCoverageService
             return new PlayerBoonCoverage(
                 Quickness: BoonSummary.Empty,
                 Alacrity: BoonSummary.Empty,
+                GuildAverages: GuildBoonAverages.Empty,
                 PerBoss: new(),
                 PerProfession: new());
         }
@@ -238,11 +241,95 @@ public class BoonCoverageService
             .ThenBy(p => p.Role)
             .ToList();
 
+        var guildAverages = await GetGuildAveragesAsync(rangeStart, rangeEnd, ct);
+
         return new PlayerBoonCoverage(
             Quickness: quickness,
             Alacrity: alacrity,
+            GuildAverages: guildAverages,
             PerBoss: perBoss,
             PerProfession: perProfession);
+    }
+
+    /// <summary>
+    /// Mean Q-Gen / Q-Self / A-Gen / A-Self uptime across all included guild members in range.
+    /// Sub-mate index for the Generation slices uses ALL squad members on the encounter
+    /// (including pugs) — that's what "the sub's uptime you delivered" means. The contributing
+    /// rows are filtered to guildies so pug performance doesn't muddy the comparison.
+    /// </summary>
+    private async Task<GuildBoonAverages> GetGuildAveragesAsync(
+        DateTimeOffset? rangeStart, DateTimeOffset? rangeEnd, CancellationToken ct)
+    {
+        var includedAccounts = await _includedPlayers.GetIncludedAccountNamesAsync(ct);
+        if (includedAccounts.Count == 0) return GuildBoonAverages.Empty;
+
+        var guildRows = await (
+            from pe in _db.PlayerEncounters
+            join e in _db.Encounters on pe.EncounterId equals e.Id
+            join p in _db.Players on pe.PlayerId equals p.Id
+            where includedAccounts.Contains(p.AccountName)
+                  && e.DurationMs >= 30_000
+                  && (rangeStart == null || e.EncounterTime >= rangeStart)
+                  && (rangeEnd == null || e.EncounterTime <= rangeEnd)
+            select new
+            {
+                pe.EncounterId,
+                pe.SquadGroup,
+                pe.Role,
+                pe.QuicknessSelfUptime,
+                pe.AlacritySelfUptime
+            })
+            .ToListAsync(ct);
+
+        if (guildRows.Count == 0) return GuildBoonAverages.Empty;
+
+        var encIds = guildRows.Select(r => r.EncounterId).Distinct().ToList();
+        var subMateRows = await _db.PlayerEncounters
+            .Where(pe => encIds.Contains(pe.EncounterId))
+            .Select(pe => new { pe.EncounterId, pe.SquadGroup, pe.QuicknessSelfUptime, pe.AlacritySelfUptime })
+            .ToListAsync(ct);
+
+        var subIndex = subMateRows
+            .Where(r => r.SquadGroup.HasValue)
+            .GroupBy(r => (r.EncounterId, r.SquadGroup!.Value))
+            .ToDictionary(g => g.Key, g => g.Select(r => (Q: r.QuicknessSelfUptime, A: r.AlacritySelfUptime)).ToList());
+
+        var qGen = new List<decimal>();
+        var qSelf = new List<decimal>();
+        var aGen = new List<decimal>();
+        var aSelf = new List<decimal>();
+
+        foreach (var row in guildRows)
+        {
+            var subKey = (row.EncounterId, row.SquadGroup ?? -1);
+            var subMembers = row.SquadGroup.HasValue && subIndex.TryGetValue(subKey, out var s) ? s : null;
+
+            if (row.Role != null && IsQuicknessRole(row.Role))
+            {
+                var avg = subMembers != null ? NullableMean(subMembers.Select(x => x.Q)) : null;
+                if (avg.HasValue) qGen.Add(avg.Value);
+            }
+            else if (row.QuicknessSelfUptime.HasValue)
+            {
+                qSelf.Add(row.QuicknessSelfUptime.Value);
+            }
+
+            if (row.Role != null && IsAlacrityRole(row.Role))
+            {
+                var avg = subMembers != null ? NullableMean(subMembers.Select(x => x.A)) : null;
+                if (avg.HasValue) aGen.Add(avg.Value);
+            }
+            else if (row.AlacritySelfUptime.HasValue)
+            {
+                aSelf.Add(row.AlacritySelfUptime.Value);
+            }
+        }
+
+        return new GuildBoonAverages(
+            QuicknessGenAvg: qGen.Count > 0 ? qGen.Average() : null,
+            QuicknessSelfAvg: qSelf.Count > 0 ? qSelf.Average() : null,
+            AlacrityGenAvg: aGen.Count > 0 ? aGen.Average() : null,
+            AlacritySelfAvg: aSelf.Count > 0 ? aSelf.Average() : null);
     }
 
     // --- Trends view ---
@@ -402,8 +489,18 @@ public record BoonGeneratorInfo(
 public record PlayerBoonCoverage(
     BoonSummary Quickness,
     BoonSummary Alacrity,
+    GuildBoonAverages GuildAverages,
     List<BoonPerBoss> PerBoss,
     List<BoonPerProfession> PerProfession);
+
+public record GuildBoonAverages(
+    decimal? QuicknessGenAvg,
+    decimal? QuicknessSelfAvg,
+    decimal? AlacrityGenAvg,
+    decimal? AlacritySelfAvg)
+{
+    public static GuildBoonAverages Empty => new(null, null, null, null);
+}
 
 public record BoonSummary(
     int GenerationEncounters,
