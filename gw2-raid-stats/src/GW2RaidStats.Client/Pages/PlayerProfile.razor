@@ -226,11 +226,18 @@ else
         @* Boon Coverage Card *@
         <MudItem xs="12">
             <MudPaper Class="pa-4" Elevation="2">
-                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
-                    <MudText Typo="Typo.h6">
-                        <MudIcon Icon="@Icons.Material.Filled.Bolt" Class="mr-2" />
-                        Boon Coverage
-                    </MudText>
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3" Wrap="Wrap.Wrap" Spacing="2">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudText Typo="Typo.h6">
+                            <MudIcon Icon="@Icons.Material.Filled.Bolt" Class="mr-2" />
+                            Boon Coverage
+                        </MudText>
+                        <MudToggleGroup T="string" @bind-Value="_boonRange" SelectionChanged="OnBoonRangeChanged" Color="Color.Primary" Size="Size.Small">
+                            <MudToggleItem Value="@("30d")" Text="30d" />
+                            <MudToggleItem Value="@("90d")" Text="90d" />
+                            <MudToggleItem Value="@("all")" Text="All time" />
+                        </MudToggleGroup>
+                    </MudStack>
                     <MudText Typo="Typo.caption" Color="Color.Secondary">
                         Generation = your sub's avg uptime when you were the booner. Self = your own uptime when someone else booned.
                     </MudText>
@@ -405,13 +412,39 @@ else
     private PlayerBoonCoverage? _boonCoverage;
     private List<BoonTrendBucket>? _boonTrends;
     private string _personalBestSort = "wing";
+    private string _boonRange = "90d";  // default: noisy long-range charts are useless
 
-    private static readonly ChartOptions BoonChartOptions = new()
+    // Per-boon palettes (one line per chart)
+    private static readonly ChartOptions QuicknessChartOptions = new()
     {
         LineStrokeWidth = 2,
         YAxisFormat = "0'%'",
-        ChartPalette = new[] { "#1E88E5", "#FB8C00" }  // Quickness blue, Alacrity orange
+        ChartPalette = new[] { "#1E88E5" }
     };
+    private static readonly ChartOptions AlacrityChartOptions = new()
+    {
+        LineStrokeWidth = 2,
+        YAxisFormat = "0'%'",
+        ChartPalette = new[] { "#FB8C00" }
+    };
+
+    private DateTimeOffset? BoonRangeStart() => _boonRange switch
+    {
+        "30d" => DateTimeOffset.Now.AddDays(-30),
+        "90d" => DateTimeOffset.Now.AddDays(-90),
+        _ => null
+    };
+
+    private async Task OnBoonRangeChanged(string newRange)
+    {
+        if (newRange == _boonRange) return;
+        _boonRange = newRange;
+        // Show the loading state while we refetch
+        _boonCoverage = null;
+        _boonTrends = null;
+        StateHasChanged();
+        await LoadBoonCoverageAsync();
+    }
 
     private IEnumerable<PersonalBest> SortedPersonalBests => _personalBestSort == "dps"
         ? _profile?.PersonalBests.OrderByDescending(pb => pb.Dps) ?? Enumerable.Empty<PersonalBest>()
@@ -455,10 +488,12 @@ else
     {
         try
         {
+            var rangeStart = BoonRangeStart();
+            var rangeQuery = rangeStart.HasValue ? $"?from={Uri.EscapeDataString(rangeStart.Value.ToString("o"))}" : "";
             var coverageTask = Http.GetFromJsonAsync<PlayerBoonCoverage>(
-                $"api/boon-coverage/player/{_profile!.Id}");
+                $"api/boon-coverage/player/{_profile!.Id}{rangeQuery}");
             var trendsTask = Http.GetFromJsonAsync<List<BoonTrendBucket>>(
-                $"api/boon-coverage/player/{_profile!.Id}/trends");
+                $"api/boon-coverage/player/{_profile!.Id}/trends{rangeQuery}");
             await Task.WhenAll(coverageTask, trendsTask);
             _boonCoverage = await coverageTask;
             _boonTrends = await trendsTask;
@@ -607,32 +642,38 @@ else
             return;
         }
 
-        @* Trend chart (skips weeks with no data in this slice) *@
-        if (_boonTrends != null)
+        @* Per-boon trend charts — separated so a player who's exclusively a Q-booner doesn't
+           get a meaningless flat A line, and so each chart's X-axis only includes weeks where
+           the corresponding boon's slice actually has data. *@
+        if (_boonTrends != null && _boonTrends.Count > 0)
         {
-            var trendBuckets = _boonTrends
-                .Where(b => slice == BoonSlice.Generation
-                    ? (b.QuicknessGenEncounters > 0 || b.AlacrityGenEncounters > 0)
-                    : (b.QuicknessSelfEncounters > 0 || b.AlacritySelfEncounters > 0))
+            var qData = _boonTrends
+                .Where(b => (slice == BoonSlice.Generation ? b.QuicknessGenEncounters : b.QuicknessSelfEncounters) > 0)
+                .Select(b => (b.WeekStart, value: slice == BoonSlice.Generation ? b.QuicknessGenAvg : b.QuicknessSelfAvg))
+                .Where(x => x.value.HasValue)
                 .ToList();
-            if (trendBuckets.Count >= 2)
+            var aData = _boonTrends
+                .Where(b => (slice == BoonSlice.Generation ? b.AlacrityGenEncounters : b.AlacritySelfEncounters) > 0)
+                .Select(b => (b.WeekStart, value: slice == BoonSlice.Generation ? b.AlacrityGenAvg : b.AlacritySelfAvg))
+                .Where(x => x.value.HasValue)
+                .ToList();
+
+            if (qData.Count >= 2 || aData.Count >= 2)
             {
-                var xLabels = trendBuckets.Select(b => b.WeekStart.LocalDateTime.ToString("MMM d")).ToArray();
-                var qSeries = trendBuckets.Select(b => (double)((slice == BoonSlice.Generation ? b.QuicknessGenAvg : b.QuicknessSelfAvg) ?? 0m)).ToArray();
-                var aSeries = trendBuckets.Select(b => (double)((slice == BoonSlice.Generation ? b.AlacrityGenAvg : b.AlacritySelfAvg) ?? 0m)).ToArray();
-                var seriesList = new List<ChartSeries>
-                {
-                    new ChartSeries { Name = "Quickness", Data = qSeries },
-                    new ChartSeries { Name = "Alacrity", Data = aSeries }
-                };
-                <MudPaper Class="pa-3 mb-3" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
-                    <MudText Typo="Typo.subtitle2" Class="mb-2">Weekly Trend — @(slice == BoonSlice.Generation ? "Generation" : "Self")</MudText>
-                    <MudChart ChartType="ChartType.Line"
-                              ChartSeries="@seriesList"
-                              XAxisLabels="@xLabels"
-                              Width="100%" Height="240px"
-                              ChartOptions="@BoonChartOptions" />
-                </MudPaper>
+                <MudGrid Class="mb-3">
+                    @if (qData.Count >= 2)
+                    {
+                        <MudItem xs="12" md="6">
+                            @RenderTrendChart("Quickness", qData, QuicknessChartOptions)
+                        </MudItem>
+                    }
+                    @if (aData.Count >= 2)
+                    {
+                        <MudItem xs="12" md="6">
+                            @RenderTrendChart("Alacrity", aData, AlacrityChartOptions)
+                        </MudItem>
+                    }
+                </MudGrid>
             }
         }
 
@@ -695,6 +736,54 @@ else
                 </tbody>
             </MudSimpleTable>
         }
+    };
+
+    private RenderFragment RenderTrendChart(string boonName,
+        List<(DateTimeOffset WeekStart, decimal? value)> points,
+        ChartOptions options) => __builder =>
+    {
+        var data = points.Select(p => (double)p.value!.Value).ToArray();
+        var dates = points.Select(p => p.WeekStart).ToArray();
+        // Thin X-axis labels: too many become unreadable. Aim for ~6 visible labels.
+        var labelEvery = Math.Max(1, (int)Math.Ceiling(dates.Length / 6.0));
+        var xLabels = dates.Select((d, i) => i % labelEvery == 0 ? d.LocalDateTime.ToString("MMM d") : "").ToArray();
+
+        var avg = data.Average();
+        var first = data.First();
+        var last = data.Last();
+        var delta = last - first;
+        var trendIcon = delta switch
+        {
+            >= 1 => Icons.Material.Filled.TrendingUp,
+            <= -1 => Icons.Material.Filled.TrendingDown,
+            _ => Icons.Material.Filled.TrendingFlat
+        };
+        var trendColor = delta switch
+        {
+            >= 1 => Color.Success,
+            <= -1 => Color.Error,
+            _ => Color.Default
+        };
+
+        var series = new List<ChartSeries> { new() { Name = boonName, Data = data } };
+
+        <MudPaper Class="pa-3" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
+                <MudText Typo="Typo.subtitle2"><strong>@boonName</strong> — weekly</MudText>
+                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">avg @($"{avg:0.0}%")</MudText>
+                    <MudIcon Icon="@trendIcon" Color="@trendColor" Size="Size.Small" />
+                    <MudText Typo="Typo.caption" Color="@trendColor">
+                        @(delta >= 0 ? "+" : "")@($"{delta:0.0}")
+                    </MudText>
+                </MudStack>
+            </MudStack>
+            <MudChart ChartType="ChartType.Line"
+                      ChartSeries="@series"
+                      XAxisLabels="@xLabels"
+                      Width="100%" Height="200px"
+                      ChartOptions="@options" />
+        </MudPaper>
     };
 
     private RenderFragment RenderUptimeWithCount(decimal? pct, int encounters) => __builder =>
