@@ -583,8 +583,8 @@ else
     private static Color UptimeColor(decimal? pct) => pct switch
     {
         null => Color.Default,
-        >= 95 => Color.Success,
-        >= 80 => Color.Warning,
+        > 90 => Color.Success,
+        > 80 => Color.Warning,
         _ => Color.Error
     };
 
