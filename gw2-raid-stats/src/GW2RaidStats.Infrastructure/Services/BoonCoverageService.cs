@@ -265,8 +265,11 @@ public class BoonCoverageService
     private async Task<GuildBoonAverages> GetGuildAveragesAsync(
         DateTimeOffset? rangeStart, DateTimeOffset? rangeEnd, CancellationToken ct)
     {
-        var includedAccounts = await _includedPlayers.GetIncludedAccountNamesAsync(ct);
-        if (includedAccounts.Count == 0) return GuildBoonAverages.Empty;
+        var includedAccountsSet = await _includedPlayers.GetIncludedAccountNamesAsync(ct);
+        if (includedAccountsSet.Count == 0) return GuildBoonAverages.Empty;
+        // LinqToDB translates List<T>.Contains to a SQL IN clause but doesn't reliably
+        // handle HashSet<T>. Stay consistent with LeaderboardService and use a List here.
+        var includedAccounts = includedAccountsSet.ToList();
 
         var guildRows = await (
             from pe in _db.PlayerEncounters
