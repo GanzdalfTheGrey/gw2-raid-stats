@@ -221,16 +221,24 @@ public class BoonCoverageService
             perRow.Select(r => r.AGen),
             perRow.Select(r => r.ASelf));
 
+        var (guildAverages, guildPerBoss) = await GetGuildAveragesAsync(rangeStart, rangeEnd, ct);
+
         // Group by trigger ID, not raw boss name — EI sometimes writes "Cardinal Adina 1" etc.
         // for split-log artifacts. Trigger ID is the canonical boss identity.
         var perBoss = perRow
             .GroupBy(r => (r.TriggerId, r.IsCM))
-            .Select(g => new BoonPerBoss(
-                BossName: WingMapping.CanonicalBossName(g.Key.TriggerId, g.First().BossName),
-                IsCM: g.Key.IsCM,
-                Encounters: g.Count(),
-                Quickness: AggregateBoon(g.Select(r => r.QGen), g.Select(r => r.QSelf)),
-                Alacrity: AggregateBoon(g.Select(r => r.AGen), g.Select(r => r.ASelf))))
+            .Select(g =>
+            {
+                var key = (g.Key.TriggerId, g.Key.IsCM);
+                var guild = guildPerBoss.TryGetValue(key, out var gp) ? gp : GuildBoonAverages.Empty;
+                return new BoonPerBoss(
+                    BossName: WingMapping.CanonicalBossName(g.Key.TriggerId, g.First().BossName),
+                    IsCM: g.Key.IsCM,
+                    Encounters: g.Count(),
+                    Quickness: AggregateBoon(g.Select(r => r.QGen), g.Select(r => r.QSelf)),
+                    Alacrity: AggregateBoon(g.Select(r => r.AGen), g.Select(r => r.ASelf)),
+                    GuildAverages: guild);
+            })
             .OrderBy(b => b.BossName)
             .ToList();
 
@@ -250,8 +258,6 @@ public class BoonCoverageService
             .ThenBy(p => p.Role)
             .ToList();
 
-        var guildAverages = await GetGuildAveragesAsync(rangeStart, rangeEnd, ct);
-
         return new PlayerBoonCoverage(
             Quickness: quickness,
             Alacrity: alacrity,
@@ -266,11 +272,13 @@ public class BoonCoverageService
     /// (including pugs) — that's what "the sub's uptime you delivered" means. The contributing
     /// rows are filtered to guildies so pug performance doesn't muddy the comparison.
     /// </summary>
-    private async Task<GuildBoonAverages> GetGuildAveragesAsync(
+    private async Task<(GuildBoonAverages Overall, Dictionary<(int TriggerId, bool IsCM), GuildBoonAverages> PerBoss)> GetGuildAveragesAsync(
         DateTimeOffset? rangeStart, DateTimeOffset? rangeEnd, CancellationToken ct)
     {
+        var empty = (GuildBoonAverages.Empty, new Dictionary<(int, bool), GuildBoonAverages>());
+
         var includedAccountsSet = await _includedPlayers.GetIncludedAccountNamesAsync(ct);
-        if (includedAccountsSet.Count == 0) return GuildBoonAverages.Empty;
+        if (includedAccountsSet.Count == 0) return empty;
         // LinqToDB translates List<T>.Contains to a SQL IN clause but doesn't reliably
         // handle HashSet<T>. Stay consistent with LeaderboardService and use a List here.
         var includedAccounts = includedAccountsSet.ToList();
@@ -289,11 +297,13 @@ public class BoonCoverageService
                 pe.SquadGroup,
                 pe.Role,
                 pe.QuicknessSelfUptime,
-                pe.AlacritySelfUptime
+                pe.AlacritySelfUptime,
+                e.TriggerId,
+                e.IsCM
             })
             .ToListAsync(ct);
 
-        if (guildRows.Count == 0) return GuildBoonAverages.Empty;
+        if (guildRows.Count == 0) return empty;
 
         var encIds = guildRows.Select(r => r.EncounterId).Distinct().ToList();
         var subMateRows = await _db.PlayerEncounters
@@ -306,42 +316,65 @@ public class BoonCoverageService
             .GroupBy(r => (r.EncounterId, r.SquadGroup!.Value))
             .ToDictionary(g => g.Key, g => g.Select(r => (Q: r.QuicknessSelfUptime, A: r.AlacritySelfUptime)).ToList());
 
+        // Overall accumulators + per-boss accumulators in one pass
         var qGen = new List<decimal>();
         var qSelf = new List<decimal>();
         var aGen = new List<decimal>();
         var aSelf = new List<decimal>();
+        var perBossBuckets = new Dictionary<(int TriggerId, bool IsCM), (List<decimal> QGen, List<decimal> QSelf, List<decimal> AGen, List<decimal> ASelf)>();
 
         foreach (var row in guildRows)
         {
+            var bossKey = (row.TriggerId, row.IsCM);
+            if (!perBossBuckets.TryGetValue(bossKey, out var bucket))
+            {
+                bucket = (new(), new(), new(), new());
+                perBossBuckets[bossKey] = bucket;
+            }
+
             var subKey = (row.EncounterId, row.SquadGroup ?? -1);
             var subMembers = row.SquadGroup.HasValue && subIndex.TryGetValue(subKey, out var s) ? s : null;
 
             if (row.Role != null && IsQuicknessRole(row.Role))
             {
                 var avg = subMembers != null ? NullableMean(subMembers.Select(x => x.Q)) : null;
-                if (avg.HasValue) qGen.Add(avg.Value);
+                if (avg.HasValue) { qGen.Add(avg.Value); bucket.QGen.Add(avg.Value); }
             }
             else if (row.QuicknessSelfUptime.HasValue)
             {
                 qSelf.Add(row.QuicknessSelfUptime.Value);
+                bucket.QSelf.Add(row.QuicknessSelfUptime.Value);
             }
 
             if (row.Role != null && IsAlacrityRole(row.Role))
             {
                 var avg = subMembers != null ? NullableMean(subMembers.Select(x => x.A)) : null;
-                if (avg.HasValue) aGen.Add(avg.Value);
+                if (avg.HasValue) { aGen.Add(avg.Value); bucket.AGen.Add(avg.Value); }
             }
             else if (row.AlacritySelfUptime.HasValue)
             {
                 aSelf.Add(row.AlacritySelfUptime.Value);
+                bucket.ASelf.Add(row.AlacritySelfUptime.Value);
             }
         }
 
-        return new GuildBoonAverages(
-            QuicknessGenAvg: qGen.Count > 0 ? qGen.Average() : null,
-            QuicknessSelfAvg: qSelf.Count > 0 ? qSelf.Average() : null,
-            AlacrityGenAvg: aGen.Count > 0 ? aGen.Average() : null,
-            AlacritySelfAvg: aSelf.Count > 0 ? aSelf.Average() : null);
+        static decimal? Mean(List<decimal> xs) => xs.Count > 0 ? xs.Average() : null;
+
+        var overall = new GuildBoonAverages(
+            QuicknessGenAvg: Mean(qGen),
+            QuicknessSelfAvg: Mean(qSelf),
+            AlacrityGenAvg: Mean(aGen),
+            AlacritySelfAvg: Mean(aSelf));
+
+        var perBoss = perBossBuckets.ToDictionary(
+            kvp => kvp.Key,
+            kvp => new GuildBoonAverages(
+                QuicknessGenAvg: Mean(kvp.Value.QGen),
+                QuicknessSelfAvg: Mean(kvp.Value.QSelf),
+                AlacrityGenAvg: Mean(kvp.Value.AGen),
+                AlacritySelfAvg: Mean(kvp.Value.ASelf)));
+
+        return (overall, perBoss);
     }
 
     // --- Trends view ---
@@ -528,7 +561,8 @@ public record BoonPerBoss(
     bool IsCM,
     int Encounters,
     BoonSummary Quickness,
-    BoonSummary Alacrity);
+    BoonSummary Alacrity,
+    GuildBoonAverages GuildAverages);
 
 public record BoonPerProfession(
     string Profession,

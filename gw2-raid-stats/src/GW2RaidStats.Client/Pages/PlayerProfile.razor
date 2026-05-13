@@ -715,6 +715,8 @@ else
                     {
                         var q = Pick(boss.Quickness, slice);
                         var a = Pick(boss.Alacrity, slice);
+                        var gQ = slice == BoonSlice.Generation ? boss.GuildAverages.QuicknessGenAvg : boss.GuildAverages.QuicknessSelfAvg;
+                        var gA = slice == BoonSlice.Generation ? boss.GuildAverages.AlacrityGenAvg : boss.GuildAverages.AlacritySelfAvg;
                         <tr>
                             <td>
                                 @boss.BossName
@@ -723,8 +725,8 @@ else
                                     <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1">CM</MudChip>
                                 }
                             </td>
-                            <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeWithCount(q.avg, q.encounters)</td>
-                            <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeWithCount(a.avg, a.encounters)</td>
+                            <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeWithGuild(q.avg, q.encounters, gQ)</td>
+                            <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeWithGuild(a.avg, a.encounters, gA)</td>
                         </tr>
                     }
                 </tbody>
@@ -825,6 +827,47 @@ else
         }
     };
 
+    // Same as RenderUptimeWithCount but also shows the guild average for this row + a
+    // colored delta. Used on the per-boss table where comparison is most useful.
+    private RenderFragment RenderUptimeWithGuild(decimal? pct, int encounters, decimal? guildAvg) => __builder =>
+    {
+        if (pct == null || encounters == 0)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+            return;
+        }
+
+        <MudStack Spacing="0" AlignItems="AlignItems.Center">
+            <MudStack Row="true" Spacing="1" Justify="Justify.Center" AlignItems="AlignItems.Center">
+                <MudChip T="string" Size="Size.Small" Color="@UptimeColor(pct)" Variant="Variant.Filled">
+                    @($"{pct:0}%")
+                </MudChip>
+                @if (guildAvg.HasValue)
+                {
+                    var delta = pct.Value - guildAvg.Value;
+                    var (icon, color) = delta switch
+                    {
+                        >= 1m => (Icons.Material.Filled.TrendingUp, Color.Success),
+                        <= -1m => (Icons.Material.Filled.TrendingDown, Color.Error),
+                        _ => (Icons.Material.Filled.TrendingFlat, Color.Default)
+                    };
+                    <MudIcon Icon="@icon" Size="Size.Small" Color="@color" />
+                    <MudText Typo="Typo.caption" Color="@color">@(delta >= 0 ? "+" : "")@($"{delta:0}")</MudText>
+                }
+            </MudStack>
+            @if (guildAvg.HasValue)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    guild @($"{guildAvg.Value:0}%") · @encounters encs
+                </MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@encounters encs</MudText>
+            }
+        </MudStack>
+    };
+
     // Boon coverage DTOs (mirror BoonCoverageService records)
     public record PlayerBoonCoverage(
         BoonSummary Quickness,
@@ -850,7 +893,8 @@ else
         bool IsCM,
         int Encounters,
         BoonSummary Quickness,
-        BoonSummary Alacrity);
+        BoonSummary Alacrity,
+        GuildBoonAverages GuildAverages);
 
     public record BoonPerProfession(
         string Profession,
