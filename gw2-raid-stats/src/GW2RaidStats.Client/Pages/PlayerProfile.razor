@@ -232,7 +232,11 @@ else
                             <MudIcon Icon="@Icons.Material.Filled.Bolt" Class="mr-2" />
                             Boon Coverage
                         </MudText>
-                        <MudToggleGroup T="string" @bind-Value="_boonRange" SelectionChanged="OnBoonRangeChanged" Color="Color.Primary" Size="Size.Small">
+                        <MudToggleGroup T="string"
+                                        Value="_boonRange"
+                                        ValueChanged="OnBoonRangeChanged"
+                                        Color="Color.Primary"
+                                        Size="Size.Small">
                             <MudToggleItem Value="@("30d")" Text="30d" />
                             <MudToggleItem Value="@("90d")" Text="90d" />
                             <MudToggleItem Value="@("all")" Text="All time" />
@@ -242,7 +246,13 @@ else
                         Generation = your sub's avg uptime when you were the booner. Self = your own uptime when someone else booned.
                     </MudText>
                 </MudStack>
-                @if (_boonCoverage == null)
+                @if (_boonCoverageError != null)
+                {
+                    <MudAlert Severity="Severity.Error">
+                        <strong>Failed to load boon coverage:</strong> @_boonCoverageError
+                    </MudAlert>
+                }
+                else if (_boonCoverage == null)
                 {
                     <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
                 }
@@ -411,6 +421,7 @@ else
     private PlayerAchievementsResponse? _achievements;
     private PlayerBoonCoverage? _boonCoverage;
     private List<BoonTrendBucket>? _boonTrends;
+    private string? _boonCoverageError;
     private string _personalBestSort = "wing";
     private string _boonRange = "90d";  // default: noisy long-range charts are useless
 
@@ -435,13 +446,14 @@ else
         _ => null
     };
 
-    private async Task OnBoonRangeChanged(string newRange)
+    private async Task OnBoonRangeChanged(string? newRange)
     {
-        if (newRange == _boonRange) return;
+        if (newRange == null || newRange == _boonRange) return;
         _boonRange = newRange;
         // Show the loading state while we refetch
         _boonCoverage = null;
         _boonTrends = null;
+        _boonCoverageError = null;
         StateHasChanged();
         await LoadBoonCoverageAsync();
     }
@@ -486,6 +498,7 @@ else
 
     private async Task LoadBoonCoverageAsync()
     {
+        _boonCoverageError = null;
         try
         {
             var rangeStart = BoonRangeStart();
@@ -498,8 +511,9 @@ else
             _boonCoverage = await coverageTask;
             _boonTrends = await trendsTask;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _boonCoverageError = ex.Message;
             _boonCoverage = null;
             _boonTrends = null;
         }
