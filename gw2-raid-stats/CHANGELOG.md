@@ -5,12 +5,12 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.15.0] - 2026-05-13
 
 ### Added
 - **Past Sessions browser** (`/sessions`): new top-level page lists the last 30 raid sessions in a left-pane picker; selecting one shows that session's Logs + Session Stats tabs (same content as the Home page's Previous Session panel, just any session). Linked from the main nav as "Past Sessions".
 - **Boon Coverage report**:
-  - **Home → Previous Session** now has two tabs: **Logs** (existing encounter table) and **Session Stats** (new). Session Stats shows per-encounter Quickness and Alacrity uptime broken out by sub-group, plus the names of the boon generators. Cells are colored green ≥ 95%, yellow ≥ 80%, red < 80%.
+  - **Home → Previous Session** now has two tabs: **Logs** (existing encounter table) and **Session Stats** (new). Session Stats shows per-encounter Quickness and Alacrity uptime broken out by sub-group, plus the names of the boon generators. Cells are colored green > 90%, yellow > 80%, red ≤ 80%. A bold **Session avg** footer row at the bottom of the table summarises each sub × boon column across the whole session.
   - **Player Profile** boon coverage now excludes encounters under 30 seconds (usually aborted pulls or res-back attempts that skew averages).
   - **Player Profile** boon coverage headline now shows **guild-average comparison** next to each player number (Q-Gen, Q-Self, A-Gen, A-Self). A green ▲ / red ▼ / gray ↔ indicator + delta tells you at a glance whether you're above or below the guild's mean. Guild average uses included members only (no pugs). **Per-boss table now shows the same per-boss guild average + delta in each cell** — surfaces "I'm fine overall but specifically bad on Deimos" patterns.
   - **Player Profile** boon coverage now has a **30d / 90d / All time** range toggle (defaults to 90d). The whole card — headlines, breakdowns, guild comparison, and trend charts — respects the same range so nothing's inconsistent across sections.

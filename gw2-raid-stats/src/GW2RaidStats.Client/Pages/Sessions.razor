@@ -190,6 +190,16 @@ else
                                             </tr>
                                         }
                                     </tbody>
+                                    <tfoot>
+                                        <tr style="font-weight: bold; border-top: 2px solid var(--mud-palette-divider);">
+                                            <td>Session avg</td>
+                                            <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptime(SessionAvg(_boonCoverage, 1, true))</td>
+                                            <td style="text-align: center;">@RenderUptime(SessionAvg(_boonCoverage, 1, false))</td>
+                                            <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptime(SessionAvg(_boonCoverage, 2, true))</td>
+                                            <td style="text-align: center;">@RenderUptime(SessionAvg(_boonCoverage, 2, false))</td>
+                                            <td style="border-left: 1px solid var(--mud-palette-divider);"></td>
+                                        </tr>
+                                    </tfoot>
                                 </MudSimpleTable>
                             }
                         </MudTabPanel>
@@ -288,6 +298,20 @@ else
         > 80 => Color.Warning,
         _ => Color.Error
     };
+
+    // Session-wide mean for one sub × one boon. Unweighted across encounters: each row
+    // contributes one number per cell. Nulls (missing sub on that encounter) are skipped.
+    private static decimal? SessionAvg(List<EncounterBoonCoverage> encs, int subGroup, bool quickness)
+    {
+        var values = encs
+            .Select(e => e.Subs.FirstOrDefault(s => s.SubGroup == subGroup))
+            .Where(s => s != null)
+            .Select(s => quickness ? s!.AvgQuicknessUptime : s!.AvgAlacrityUptime)
+            .Where(v => v.HasValue)
+            .Select(v => v!.Value)
+            .ToList();
+        return values.Count > 0 ? values.Average() : null;
+    }
 
     private RenderFragment RenderUptime(decimal? pct) => __builder =>
     {
