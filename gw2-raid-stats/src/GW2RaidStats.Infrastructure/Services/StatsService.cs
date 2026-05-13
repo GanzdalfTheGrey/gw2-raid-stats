@@ -154,6 +154,84 @@ public class StatsService
         );
     }
 
+    /// <summary>
+    /// Lists recent raid sessions (one per distinct calendar date in encounter local time).
+    /// Most-recent first. Used by the Sessions browser page.
+    /// </summary>
+    public async Task<List<SessionSummary>> GetRecentSessionsAsync(int limit, CancellationToken ct = default)
+    {
+        if (limit <= 0) return new();
+
+        // Load enough encounters that we comfortably cover `limit` distinct calendar dates.
+        // Active guilds run ~5-10 sessions/month with 10-30 encounters each, so this is generous.
+        var fetchCount = Math.Max(500, limit * 50);
+        var encounters = await _db.Encounters
+            .OrderByDescending(e => e.EncounterTime)
+            .Take(fetchCount)
+            .Select(e => new { e.EncounterTime, e.Success, e.DurationMs })
+            .ToListAsync(ct);
+
+        return encounters
+            .GroupBy(e => SessionDateKey(e.EncounterTime))
+            .OrderByDescending(g => g.Key)
+            .Take(limit)
+            .Select(g =>
+            {
+                var ordered = g.OrderBy(e => e.EncounterTime).ToList();
+                var first = ordered.First();
+                var last = ordered.Last();
+                var totalTimeMs = ordered.Sum(e => e.DurationMs);
+                var totalElapsedMs = (last.EncounterTime - first.EncounterTime).TotalMilliseconds + last.DurationMs;
+                return new SessionSummary(
+                    SessionDate: first.EncounterTime,
+                    TotalAttempts: ordered.Count,
+                    TotalKills: ordered.Count(e => e.Success),
+                    TotalTimeSeconds: totalTimeMs / 1000.0,
+                    DowntimeSeconds: (totalElapsedMs - totalTimeMs) / 1000.0);
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Fetch a specific session by its session date (any DateTimeOffset on that local date works).
+    /// Same DTO shape as GetPreviousSessionAsync so the UI can render either through one component.
+    /// </summary>
+    public async Task<PreviousSession?> GetSessionByDateAsync(DateTimeOffset sessionDate, CancellationToken ct = default)
+    {
+        // Floor to the local date in the supplied offset
+        var localDate = (sessionDate.UtcDateTime + sessionDate.Offset).Date;
+        var sessionStart = new DateTimeOffset(DateTime.SpecifyKind(localDate, DateTimeKind.Unspecified), sessionDate.Offset);
+        var sessionEnd = sessionStart.AddDays(1);
+
+        var sessionEncounters = await _db.Encounters
+            .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd)
+            .OrderBy(e => e.EncounterTime)
+            .ToListAsync(ct);
+
+        if (sessionEncounters.Count == 0) return null;
+
+        var encounters = sessionEncounters.Select(e => new SessionEncounter(
+            e.Id, e.BossName, e.Success, e.IsCM, e.EncounterTime, e.DurationMs, e.LogUrl
+        )).ToList();
+
+        var totalTimeMs = sessionEncounters.Sum(e => e.DurationMs);
+        var first = sessionEncounters.First();
+        var last = sessionEncounters.Last();
+        var totalElapsedMs = (last.EncounterTime - first.EncounterTime).TotalMilliseconds + last.DurationMs;
+
+        return new PreviousSession(
+            SessionTime: first.EncounterTime,
+            Encounters: encounters,
+            TotalAttempts: sessionEncounters.Count,
+            TotalKills: sessionEncounters.Count(e => e.Success),
+            TotalTimeSeconds: totalTimeMs / 1000.0,
+            DowntimeSeconds: (totalElapsedMs - totalTimeMs) / 1000.0
+        );
+    }
+
+    private static DateTime SessionDateKey(DateTimeOffset dt)
+        => DateTime.SpecifyKind((dt.UtcDateTime + dt.Offset).Date, DateTimeKind.Unspecified);
+
     public async Task<PreviousSession?> GetPreviousSessionAsync(CancellationToken ct = default)
     {
         // Find the most recent encounter by encounter time (actual raid date, not upload date)
@@ -811,6 +889,14 @@ public record SessionEncounter(
     DateTimeOffset EncounterTime,
     int DurationMs,
     string? LogUrl
+);
+
+public record SessionSummary(
+    DateTimeOffset SessionDate,
+    int TotalAttempts,
+    int TotalKills,
+    double TotalTimeSeconds,
+    double DowntimeSeconds
 );
 
 public record SessionHighlights(

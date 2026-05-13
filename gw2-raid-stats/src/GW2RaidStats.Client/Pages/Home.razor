@@ -160,7 +160,7 @@
                         {
                             <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
                                 Per-sub average Quickness / Alacrity self-uptime (excludes dead/down time).
-                                Green ≥ 95%, yellow ≥ 80%, red &lt; 80%. Generator names show their boon's generation %; a ⚠ flag means generation &lt; 60% — the booner was likely the bottleneck.
+                                Green ≥ 95%, yellow ≥ 80%, red &lt; 80%.
                             </MudText>
                             <MudSimpleTable Dense="true" Striped="true" Hover="true">
                                 <thead>
@@ -410,19 +410,7 @@
                     @foreach (var gen in subGroup.OrderBy(g => g.Boon))
                     {
                         var letter = gen.Boon == "Quickness" ? "Q" : "A";
-                        var lowGen = gen.GenerationPct.HasValue && gen.GenerationPct.Value < 60;
-                        <MudText Typo="Typo.caption">
-                            @letter @gen.AccountName
-                            @if (gen.GenerationPct.HasValue)
-                            {
-                                <span style="opacity: 0.7;"> (@($"{gen.GenerationPct.Value:0}%")</span>
-                                @if (lowGen)
-                                {
-                                    <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Color="Color.Warning" Title="Generation below 60% — the booner was likely the bottleneck" />
-                                }
-                                <span style="opacity: 0.7;">)</span>
-                            }
-                        </MudText>
+                        <MudText Typo="Typo.caption">@letter @gen.AccountName</MudText>
                     }
                 </MudStack>
             }

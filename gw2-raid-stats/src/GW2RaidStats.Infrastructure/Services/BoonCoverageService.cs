@@ -120,6 +120,7 @@ public class BoonCoverageService
             from pe in _db.PlayerEncounters
             join e in _db.Encounters on pe.EncounterId equals e.Id
             where pe.PlayerId == playerId
+                  && e.DurationMs >= 30_000 // ignore fights under 30s — usually res-pulls or aborted attempts that skew averages
                   && (rangeStart == null || e.EncounterTime >= rangeStart)
                   && (rangeEnd == null || e.EncounterTime <= rangeEnd)
             select new
@@ -258,6 +259,7 @@ public class BoonCoverageService
             from pe in _db.PlayerEncounters
             join e in _db.Encounters on pe.EncounterId equals e.Id
             where pe.PlayerId == playerId
+                  && e.DurationMs >= 30_000 // ignore fights under 30s — usually res-pulls or aborted attempts that skew averages
                   && (rangeStart == null || e.EncounterTime >= rangeStart)
                   && (rangeEnd == null || e.EncounterTime <= rangeEnd)
             select new

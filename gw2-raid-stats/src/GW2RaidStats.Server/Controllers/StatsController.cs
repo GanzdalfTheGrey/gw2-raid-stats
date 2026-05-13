@@ -50,4 +50,23 @@ public class StatsController : ControllerBase
         var highlights = await _statsService.GetSessionHighlightsAsync(ct);
         return Ok(highlights);
     }
+
+    [HttpGet("sessions")]
+    public async Task<ActionResult<List<SessionSummary>>> GetRecentSessions(
+        [FromQuery] int limit = 30,
+        CancellationToken ct = default)
+    {
+        var sessions = await _statsService.GetRecentSessionsAsync(limit, ct);
+        return Ok(sessions);
+    }
+
+    [HttpGet("sessions/{date}")]
+    public async Task<ActionResult<PreviousSession?>> GetSessionByDate(
+        DateTimeOffset date,
+        CancellationToken ct = default)
+    {
+        var session = await _statsService.GetSessionByDateAsync(date, ct);
+        if (session == null) return NotFound();
+        return Ok(session);
+    }
 }
