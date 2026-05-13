@@ -241,6 +241,7 @@ else
                 }
                 else
                 {
+                    @* Headline summary above the tabs — both Gen and Self for both boons *@
                     <MudGrid>
                         <MudItem xs="12" md="6">
                             @RenderBoonHeadline("Quickness", _boonCoverage.Quickness)
@@ -250,86 +251,15 @@ else
                         </MudItem>
                     </MudGrid>
 
-                    @if (_boonCoverage.PerBoss.Count > 0)
-                    {
-                        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Per Boss</MudText>
-                        <MudSimpleTable Dense="true" Hover="true" Striped="true">
-                            <thead>
-                                <tr>
-                                    <th>Boss</th>
-                                    <th colspan="2" style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Quickness</th>
-                                    <th colspan="2" style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Alacrity</th>
-                                    <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Encs</th>
-                                </tr>
-                                <tr>
-                                    <th></th>
-                                    <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Gen</th>
-                                    <th style="text-align: center;">Self</th>
-                                    <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Gen</th>
-                                    <th style="text-align: center;">Self</th>
-                                    <th style="border-left: 1px solid var(--mud-palette-divider);"></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var boss in _boonCoverage.PerBoss)
-                                {
-                                    <tr>
-                                        <td>
-                                            @boss.BossName
-                                            @if (boss.IsCM)
-                                            {
-                                                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1">CM</MudChip>
-                                            }
-                                        </td>
-                                        <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeCell(boss.Quickness.GenerationAvg, boss.Quickness.GenerationEncounters)</td>
-                                        <td style="text-align: center;">@RenderUptimeCell(boss.Quickness.SelfAvg, boss.Quickness.SelfEncounters)</td>
-                                        <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeCell(boss.Alacrity.GenerationAvg, boss.Alacrity.GenerationEncounters)</td>
-                                        <td style="text-align: center;">@RenderUptimeCell(boss.Alacrity.SelfAvg, boss.Alacrity.SelfEncounters)</td>
-                                        <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@boss.Encounters</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </MudSimpleTable>
-                    }
-
-                    @if (_boonCoverage.PerProfession.Count > 0)
-                    {
-                        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Per Profession × Role</MudText>
-                        <MudSimpleTable Dense="true" Hover="true" Striped="true">
-                            <thead>
-                                <tr>
-                                    <th>Profession</th>
-                                    <th>Role</th>
-                                    <th colspan="2" style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Quickness</th>
-                                    <th colspan="2" style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Alacrity</th>
-                                    <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Encs</th>
-                                </tr>
-                                <tr>
-                                    <th></th>
-                                    <th></th>
-                                    <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Gen</th>
-                                    <th style="text-align: center;">Self</th>
-                                    <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Gen</th>
-                                    <th style="text-align: center;">Self</th>
-                                    <th style="border-left: 1px solid var(--mud-palette-divider);"></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var prof in _boonCoverage.PerProfession)
-                                {
-                                    <tr>
-                                        <td>@prof.Profession</td>
-                                        <td><MudText Typo="Typo.caption" Color="Color.Secondary">@prof.Role</MudText></td>
-                                        <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeCell(prof.Quickness.GenerationAvg, prof.Quickness.GenerationEncounters)</td>
-                                        <td style="text-align: center;">@RenderUptimeCell(prof.Quickness.SelfAvg, prof.Quickness.SelfEncounters)</td>
-                                        <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeCell(prof.Alacrity.GenerationAvg, prof.Alacrity.GenerationEncounters)</td>
-                                        <td style="text-align: center;">@RenderUptimeCell(prof.Alacrity.SelfAvg, prof.Alacrity.SelfEncounters)</td>
-                                        <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@prof.Encounters</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </MudSimpleTable>
-                    }
+                    @* Generation / Self breakdown lives in tabs so each side gets full width *@
+                    <MudTabs Outlined="false" Rounded="true" Border="false" Position="Position.Top" Class="mt-3" PanelClass="pa-0 pt-3">
+                        <MudTabPanel Text="As Generator" Icon="@Icons.Material.Filled.Bolt">
+                            @RenderBoonBreakdown(_boonCoverage, BoonSlice.Generation)
+                        </MudTabPanel>
+                        <MudTabPanel Text="On Myself" Icon="@Icons.Material.Filled.Shield">
+                            @RenderBoonBreakdown(_boonCoverage, BoonSlice.Self)
+                        </MudTabPanel>
+                    </MudTabs>
                 }
             </MudPaper>
         </MudItem>
@@ -572,6 +502,8 @@ else
 
     // --- Boon coverage rendering helpers ---
 
+    private enum BoonSlice { Generation, Self }
+
     private static Color UptimeColor(decimal? pct) => pct switch
     {
         null => Color.Default,
@@ -579,6 +511,11 @@ else
         >= 80 => Color.Warning,
         _ => Color.Error
     };
+
+    private static (decimal? avg, int encounters) Pick(BoonSummary s, BoonSlice slice)
+        => slice == BoonSlice.Generation
+            ? (s.GenerationAvg, s.GenerationEncounters)
+            : (s.SelfAvg, s.SelfEncounters);
 
     private RenderFragment RenderBoonHeadline(string boonName, BoonSummary summary) => __builder =>
     {
@@ -603,7 +540,7 @@ else
                 </MudStack>
                 <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
                     <MudStack Spacing="0">
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">As receiver (own uptime)</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">On myself (receiver)</MudText>
                         <MudText Typo="Typo.caption" Color="Color.Tertiary">@summary.SelfEncounters encounters</MudText>
                     </MudStack>
                     @if (summary.SelfAvg.HasValue)
@@ -621,7 +558,86 @@ else
         </MudPaper>
     };
 
-    private RenderFragment RenderUptimeCell(decimal? pct, int encounters) => __builder =>
+    private RenderFragment RenderBoonBreakdown(PlayerBoonCoverage cov, BoonSlice slice) => __builder =>
+    {
+        // Filter to rows that have at least one encounter for this slice — otherwise the table
+        // is mostly em-dashes for bosses/professions you never played in that role.
+        var bosses = cov.PerBoss
+            .Where(b => Pick(b.Quickness, slice).encounters > 0 || Pick(b.Alacrity, slice).encounters > 0)
+            .ToList();
+        var profs = cov.PerProfession
+            .Where(p => Pick(p.Quickness, slice).encounters > 0 || Pick(p.Alacrity, slice).encounters > 0)
+            .ToList();
+
+        var label = slice == BoonSlice.Generation ? "as generator" : "on myself";
+        if (bosses.Count == 0 && profs.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true">No encounters @label in the active range.</MudAlert>
+            return;
+        }
+
+        if (bosses.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Per Boss</MudText>
+            <MudSimpleTable Dense="true" Hover="true" Striped="true">
+                <thead>
+                    <tr>
+                        <th>Boss</th>
+                        <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Quickness</th>
+                        <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Alacrity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var boss in bosses)
+                    {
+                        var q = Pick(boss.Quickness, slice);
+                        var a = Pick(boss.Alacrity, slice);
+                        <tr>
+                            <td>
+                                @boss.BossName
+                                @if (boss.IsCM)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1">CM</MudChip>
+                                }
+                            </td>
+                            <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeWithCount(q.avg, q.encounters)</td>
+                            <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeWithCount(a.avg, a.encounters)</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+
+        if (profs.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Per Profession × Role</MudText>
+            <MudSimpleTable Dense="true" Hover="true" Striped="true">
+                <thead>
+                    <tr>
+                        <th>Profession</th>
+                        <th>Role</th>
+                        <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Quickness</th>
+                        <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Alacrity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var prof in profs)
+                    {
+                        var q = Pick(prof.Quickness, slice);
+                        var a = Pick(prof.Alacrity, slice);
+                        <tr>
+                            <td>@prof.Profession</td>
+                            <td><MudText Typo="Typo.caption" Color="Color.Secondary">@prof.Role</MudText></td>
+                            <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeWithCount(q.avg, q.encounters)</td>
+                            <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptimeWithCount(a.avg, a.encounters)</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    };
+
+    private RenderFragment RenderUptimeWithCount(decimal? pct, int encounters) => __builder =>
     {
         if (pct == null || encounters == 0)
         {
@@ -629,9 +645,12 @@ else
         }
         else
         {
-            <MudChip T="string" Size="Size.Small" Color="@UptimeColor(pct)" Variant="Variant.Filled" Title="@($"{encounters} encounter(s)")">
-                @($"{pct:0}%")
-            </MudChip>
+            <MudStack Row="true" Spacing="1" Justify="Justify.Center" AlignItems="AlignItems.Center">
+                <MudChip T="string" Size="Size.Small" Color="@UptimeColor(pct)" Variant="Variant.Filled">
+                    @($"{pct:0}%")
+                </MudChip>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@encounters encs</MudText>
+            </MudStack>
         }
     };
 
