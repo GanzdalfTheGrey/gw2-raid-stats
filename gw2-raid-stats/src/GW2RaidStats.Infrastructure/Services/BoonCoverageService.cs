@@ -1,3 +1,4 @@
+using GW2RaidStats.Core;
 using GW2RaidStats.Infrastructure.Database;
 using LinqToDB;
 using LinqToDB.Async;
@@ -38,6 +39,7 @@ public class BoonCoverageService
             .Select(e => new
             {
                 e.Id,
+                e.TriggerId,
                 e.BossName,
                 e.IsCM,
                 e.Success,
@@ -98,7 +100,7 @@ public class BoonCoverageService
 
             result.Add(new EncounterBoonCoverage(
                 EncounterId: enc.Id,
-                BossName: enc.BossName,
+                BossName: WingMapping.CanonicalBossName(enc.TriggerId, enc.BossName),
                 IsCM: enc.IsCM,
                 Success: enc.Success,
                 DurationMs: enc.DurationMs,
@@ -133,6 +135,7 @@ public class BoonCoverageService
                 pe.Role,
                 pe.QuicknessSelfUptime,
                 pe.AlacritySelfUptime,
+                e.TriggerId,
                 e.BossName,
                 e.IsCM,
                 e.EncounterTime
@@ -172,7 +175,7 @@ public class BoonCoverageService
                 g => g.Select(r => (Q: r.QuicknessSelfUptime, A: r.AlacritySelfUptime)).ToList());
 
         // 3. Per-row contribution: which slice each row goes into for Q and for A
-        var perRow = new List<(string BossName, bool IsCM, string Profession, string Role,
+        var perRow = new List<(int TriggerId, string BossName, bool IsCM, string Profession, string Role,
                               decimal? QGen, decimal? QSelf, decimal? AGen, decimal? ASelf)>();
 
         foreach (var row in playerRows)
@@ -202,7 +205,7 @@ public class BoonCoverageService
                 aSelf = row.AlacritySelfUptime;
             }
 
-            perRow.Add((row.BossName, row.IsCM, row.Profession, row.Role ?? "",
+            perRow.Add((row.TriggerId, row.BossName, row.IsCM, row.Profession, row.Role ?? "",
                        qGen, qSelf, aGen, aSelf));
         }
 
@@ -214,10 +217,12 @@ public class BoonCoverageService
             perRow.Select(r => r.AGen),
             perRow.Select(r => r.ASelf));
 
+        // Group by trigger ID, not raw boss name — EI sometimes writes "Cardinal Adina 1" etc.
+        // for split-log artifacts. Trigger ID is the canonical boss identity.
         var perBoss = perRow
-            .GroupBy(r => (r.BossName, r.IsCM))
+            .GroupBy(r => (r.TriggerId, r.IsCM))
             .Select(g => new BoonPerBoss(
-                BossName: g.Key.BossName,
+                BossName: WingMapping.CanonicalBossName(g.Key.TriggerId, g.First().BossName),
                 IsCM: g.Key.IsCM,
                 Encounters: g.Count(),
                 Quickness: AggregateBoon(g.Select(r => r.QGen), g.Select(r => r.QSelf)),

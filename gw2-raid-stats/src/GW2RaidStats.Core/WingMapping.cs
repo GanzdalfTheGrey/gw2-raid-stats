@@ -115,6 +115,18 @@ public static class WingMapping
         _ => null    // Strikes, fractals, etc.
     };
 
+    private static readonly Dictionary<int, string> _canonicalBossNames =
+        AllBosses.ToDictionary(b => b.TriggerId, b => b.Name);
+
+    /// <summary>
+    /// Returns the canonical boss name for a trigger ID if known, otherwise the supplied fallback.
+    /// Use this whenever you display or group by boss name: EI occasionally stores fightName with
+    /// a numeric suffix like "Cardinal Adina 1" (split logs, partial reruns), and grouping by the
+    /// raw BossName produces duplicate rows.
+    /// </summary>
+    public static string CanonicalBossName(int triggerId, string fallback) =>
+        _canonicalBossNames.TryGetValue(triggerId, out var n) ? n : fallback;
+
     /// <summary>
     /// Get wing by boss name (fallback when trigger ID is unknown)
     /// </summary>
