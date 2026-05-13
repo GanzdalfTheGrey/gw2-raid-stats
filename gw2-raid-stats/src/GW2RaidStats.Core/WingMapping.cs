@@ -115,8 +115,11 @@ public static class WingMapping
         _ => null    // Strikes, fractals, etc.
     };
 
-    private static readonly Dictionary<int, string> _canonicalBossNames =
-        AllBosses.ToDictionary(b => b.TriggerId, b => b.Name);
+    // Lazy because AllBosses is declared further down in the file; static field initializers
+    // run in declaration order, so building the dict eagerly here would observe AllBosses=null
+    // and crash with NullReferenceException at type init time.
+    private static readonly Lazy<Dictionary<int, string>> _canonicalBossNames =
+        new(() => AllBosses.ToDictionary(b => b.TriggerId, b => b.Name));
 
     /// <summary>
     /// Returns the canonical boss name for a trigger ID if known, otherwise the supplied fallback.
@@ -125,7 +128,7 @@ public static class WingMapping
     /// raw BossName produces duplicate rows.
     /// </summary>
     public static string CanonicalBossName(int triggerId, string fallback) =>
-        _canonicalBossNames.TryGetValue(triggerId, out var n) ? n : fallback;
+        _canonicalBossNames.Value.TryGetValue(triggerId, out var n) ? n : fallback;
 
     /// <summary>
     /// Get wing by boss name (fallback when trigger ID is unknown)
