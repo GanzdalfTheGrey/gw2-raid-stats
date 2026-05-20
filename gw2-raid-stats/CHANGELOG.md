@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Boss detail page** Top DPS list now has an **All Time / This Patch** toggle, so you can see the current-patch top 5 separately from the all-time top 5. Overall boss stats and recent encounters stay all-time.
+- **Boss detail page** Top DPS list now has an **All Time / This Patch** toggle, so you can see the current-patch top 5 separately from the all-time top 5. Defaults to This Patch. Overall boss stats and recent encounters stay all-time.
 - **Leaderboards** boss names are now links — clicking one opens that boss's detail page.
 
 ## [1.15.1] - 2026-05-13

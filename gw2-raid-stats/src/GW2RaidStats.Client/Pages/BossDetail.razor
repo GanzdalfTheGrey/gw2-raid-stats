@@ -209,7 +209,7 @@ else
 
     private bool _loading = true;
     private BossDetailDto? _boss;
-    private string _dpsRange = "all";  // "all" | "patch" — scopes the Top DPS list only
+    private string _dpsRange = "patch";  // "all" | "patch" — scopes the Top DPS list only; defaults to current patch
 
     protected override async Task OnParametersSetAsync()
     {
