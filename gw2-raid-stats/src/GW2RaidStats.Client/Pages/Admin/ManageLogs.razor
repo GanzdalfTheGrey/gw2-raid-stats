@@ -35,6 +35,29 @@
             }
         </MudButton>
     </MudStack>
+    @if (_rescanning)
+    {
+        <div class="mt-3">
+            @if (_rescanProgress is { Total: > 0 })
+            {
+                <MudProgressLinear Color="Color.Primary" Value="@_rescanProgress.PercentComplete" Class="my-1" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    @_rescanProgress.Processed / @_rescanProgress.Total encounters
+                    (@_rescanProgress.PercentComplete.ToString("0")%) ·
+                    @_rescanProgress.Updated updated · @_rescanProgress.Skipped unchanged
+                    @if (_rescanProgress.Errors > 0)
+                    {
+                        <span> · @_rescanProgress.Errors errors</span>
+                    }
+                </MudText>
+            }
+            else
+            {
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-1" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Starting rescan...</MudText>
+            }
+        </div>
+    }
     @if (_rescanResult != null)
     {
         <MudAlert Severity="@(_rescanResult.Updated > 0 ? Severity.Success : (_rescanResult.Errors.Count > 0 ? Severity.Warning : Severity.Info))" Class="mt-3">
@@ -391,6 +414,7 @@
     private bool _rescanning = false;
     private bool _reparsing = false;
     private RescanResultDto? _rescanResult;
+    private RescanProgressDto? _rescanProgress;
     private ReparseResultDto? _reparseResult;
     private List<LogEntryDto>? _reparsePreview;
     private string? _reparseBossName;
@@ -675,8 +699,18 @@
         string? EncountersPath = null
     );
 
+    public record RescanProgressDto(
+        int Processed,
+        int Total,
+        int Updated,
+        int Skipped,
+        int Errors,
+        double PercentComplete
+    );
+
     public record RescanStatusDto(
         bool IsRunning,
+        RescanProgressDto? Progress,
         RescanResultDto? Result
     );
 
@@ -684,6 +718,7 @@
     {
         _rescanning = true;
         _rescanResult = null;
+        _rescanProgress = null;
         StateHasChanged();
 
         try
@@ -709,10 +744,13 @@
             // Poll for completion
             while (true)
             {
-                await Task.Delay(2000); // Check every 2 seconds
+                await Task.Delay(1500);
 
                 var statusResponse = await Http.GetFromJsonAsync<RescanStatusDto>("api/admin/logs/rescan/status");
                 if (statusResponse == null) break;
+
+                _rescanProgress = statusResponse.Progress;
+                StateHasChanged();
 
                 if (!statusResponse.IsRunning)
                 {
@@ -732,6 +770,7 @@
         finally
         {
             _rescanning = false;
+            _rescanProgress = null;
         }
     }
 

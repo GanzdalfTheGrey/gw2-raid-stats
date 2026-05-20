@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Admin → Manage Logs → Rescan** now shows a real progress bar (X / Y encounters, percent, running updated/unchanged/error counts) instead of just an indeterminate spinner. The status endpoint reports per-encounter progress as the rescan runs.
+
 ### Fixed
 - **Kodan Brothers** and **Old Lion's Court** now record combined DPS across all bosses. Both were only counting the first target — one Kodan brother, and just the red Prototype at OLC — so DPS read low. They're now flagged as multi-target encounters (like Twin Largos). The Rescan button recomputes DPS for multi-target encounters, so historical logs get corrected without re-import (run **Admin → Manage Logs → Rescan**).
 

@@ -17,6 +17,7 @@ public class AdminLogsController : ControllerBase
     // Track rescan status
     private static bool _isRescanning = false;
     private static RescanResult? _lastRescanResult = null;
+    private static RescanProgress? _rescanProgress = null;
 
     public AdminLogsController(
         LogSearchService logSearchService,
@@ -90,6 +91,7 @@ public class AdminLogsController : ControllerBase
 
         _isRescanning = true;
         _lastRescanResult = null;
+        _rescanProgress = null;
 
         // Run in background with its own scope (so DB context doesn't get disposed)
         _ = Task.Run(async () =>
@@ -102,7 +104,9 @@ public class AdminLogsController : ControllerBase
                 using var scope = _scopeFactory.CreateScope();
                 var rescanService = scope.ServiceProvider.GetRequiredService<RescanService>();
 
-                var result = await rescanService.RescanAllAsync(progress: null, ct: default);
+                // Capture per-encounter progress into a static field the status endpoint reads.
+                var progress = new Progress<RescanProgress>(p => _rescanProgress = p);
+                var result = await rescanService.RescanAllAsync(progress, ct: default);
                 _lastRescanResult = result;
                 _logger.LogInformation("Rescan complete: {Updated} updated, {Skipped} skipped", result.Updated, result.Skipped);
             }
@@ -129,6 +133,7 @@ public class AdminLogsController : ControllerBase
         return Ok(new
         {
             isRunning = _isRescanning,
+            progress = _rescanProgress,
             result = _lastRescanResult
         });
     }
