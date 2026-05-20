@@ -1,0 +1,153 @@
+@page "/admin/availability"
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+
+<PageTitle>GW2 Raid Stats - Player Availability</PageTitle>
+
+<AdminAuth>
+    <MudStack Spacing="0" Class="mb-4">
+        <MudText Typo="Typo.h4">Player Availability</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Raid-night availability for active members. Changes save automatically.
+        </MudText>
+    </MudStack>
+
+    <MudPaper Class="pa-3 mb-4" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
+        <MudStack Row="true" Spacing="4" Wrap="Wrap.Wrap">
+            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                <MudText Typo="Typo.caption">Available</MudText>
+            </MudStack>
+            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.RemoveCircle" Color="Color.Warning" Size="Size.Small" />
+                <MudText Typo="Typo.caption">Maybe — one day a week (either)</MudText>
+            </MudStack>
+            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Error" Size="Size.Small" />
+                <MudText Typo="Typo.caption">Not available</MudText>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+    }
+    else if (_rows.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">No active members found.</MudAlert>
+    }
+    else
+    {
+        <MudPaper Elevation="2">
+            <MudSimpleTable Dense="true" Hover="true" Striped="true">
+                <thead>
+                    <tr>
+                        <th>Player</th>
+                        <th style="text-align: center;">Monday</th>
+                        <th style="text-align: center;">Tuesday</th>
+                        <th>Note</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        <tr>
+                            <td>@row.AccountName</td>
+                            <td style="text-align: center;">@RenderDayToggle(row, true)</td>
+                            <td style="text-align: center;">@RenderDayToggle(row, false)</td>
+                            <td style="min-width: 240px;">
+                                <MudTextField @bind-Value="row.Note"
+                                              OnBlur="@(() => SaveRow(row))"
+                                              Variant="Variant.Text"
+                                              Margin="Margin.Dense"
+                                              Placeholder="Note..."
+                                              FullWidth="true" />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    }
+</AdminAuth>
+
+@code {
+    private bool _loading = true;
+    private List<AvailabilityRow> _rows = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var rows = await Http.GetFromJsonAsync<List<AvailabilityRow>>("api/availability");
+            _rows = rows ?? new();
+        }
+        catch (Exception)
+        {
+            _rows = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // Three colored icon buttons per day. The active status shows its semantic color;
+    // the others are greyed. Clicking always sets that status (no toggle-off ambiguity).
+    private RenderFragment RenderDayToggle(AvailabilityRow row, bool isMonday) => __builder =>
+    {
+        var current = isMonday ? row.MondayStatus : row.TuesdayStatus;
+        <MudStack Row="true" Spacing="0" Justify="Justify.Center">
+            @RenderStatusButton(row, isMonday, 2, current, Icons.Material.Filled.CheckCircle, Color.Success)
+            @RenderStatusButton(row, isMonday, 1, current, Icons.Material.Filled.RemoveCircle, Color.Warning)
+            @RenderStatusButton(row, isMonday, 0, current, Icons.Material.Filled.Cancel, Color.Error)
+        </MudStack>
+    };
+
+    private RenderFragment RenderStatusButton(
+        AvailabilityRow row, bool isMonday, int value, int? current,
+        string icon, Color activeColor) => __builder =>
+    {
+        var isActive = current == value;
+        <MudIconButton Icon="@icon"
+                       Size="Size.Small"
+                       Color="@(isActive ? activeColor : Color.Default)"
+                       Style="@(isActive ? "" : "opacity: 0.35;")"
+                       OnClick="@(() => OnStatusClicked(row, isMonday, value))" />
+    };
+
+    private async Task OnStatusClicked(AvailabilityRow row, bool isMonday, int value)
+    {
+        if (isMonday) row.MondayStatus = value;
+        else row.TuesdayStatus = value;
+        await SaveRow(row);
+    }
+
+    private async Task SaveRow(AvailabilityRow row)
+    {
+        try
+        {
+            var resp = await Http.PutAsJsonAsync(
+                $"api/availability/{row.PlayerId}",
+                new { row.MondayStatus, row.TuesdayStatus, row.Note });
+            if (!resp.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Failed to save {row.AccountName}", Severity.Error);
+            }
+        }
+        catch (Exception)
+        {
+            Snackbar.Add($"Failed to save {row.AccountName}", Severity.Error);
+        }
+    }
+
+    public class AvailabilityRow
+    {
+        public Guid PlayerId { get; set; }
+        public string AccountName { get; set; } = "";
+        public int? MondayStatus { get; set; }
+        public int? TuesdayStatus { get; set; }
+        public string? Note { get; set; }
+    }
+}

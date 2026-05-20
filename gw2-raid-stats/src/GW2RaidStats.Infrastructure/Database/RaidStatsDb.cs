@@ -27,4 +27,5 @@ public class RaidStatsDb : DataConnection
     public ITable<MechanicRoleEntity> MechanicRoles => this.GetTable<MechanicRoleEntity>();
     public ITable<PlayerRoleCapabilityEntity> PlayerRoleCapabilities => this.GetTable<PlayerRoleCapabilityEntity>();
     public ITable<ExcludedPlayerEntity> ExcludedPlayers => this.GetTable<ExcludedPlayerEntity>();
+    public ITable<PlayerAvailabilityEntity> PlayerAvailability => this.GetTable<PlayerAvailabilityEntity>();
 }
