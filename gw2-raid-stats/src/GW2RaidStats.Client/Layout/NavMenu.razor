@@ -2,7 +2,7 @@
     <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
     <MudNavLink Href="/sessions" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.History">Past Sessions</MudNavLink>
     <MudNavLink Href="/leaderboards" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Leaderboard">Leaderboards</MudNavLink>
-    <MudNavLink Href="/logs" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.List">Logs</MudNavLink>
+    <MudNavLink Href="/logs" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Search">Log Search</MudNavLink>
     <MudNavLink Href="/htcm-prog" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Timeline">HTCM Prog</MudNavLink>
 
     <MudNavGroup Title="Stats" Icon="@Icons.Material.Filled.BarChart" Expanded="true">
@@ -16,14 +16,21 @@
     <MudNavLink Href="/recap" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.EmojiEvents">Yearly Recap</MudNavLink>
 
     <MudDivider Class="my-2" />
+    <MudText Typo="Typo.overline" Class="px-4 pt-2 pb-1" Style="display: block;" Color="Color.Secondary">Admin</MudText>
 
-    <MudNavGroup Title="Admin" Icon="@Icons.Material.Filled.AdminPanelSettings">
-        <MudNavLink Href="/admin/upload" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Upload">Upload Logs</MudNavLink>
-        <MudNavLink Href="/admin/logs" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.DeleteSweep">Manage Logs</MudNavLink>
-        <MudNavLink Href="/admin/manage" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings">Manage Data</MudNavLink>
+    <MudNavGroup Title="Raid Planning" Icon="@Icons.Material.Filled.Assignment">
         <MudNavLink Href="/admin/squad-builder" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Groups">Squad Builder</MudNavLink>
         <MudNavLink Href="/admin/mechanic-roles" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Sports">Mechanic Roles</MudNavLink>
-        <MudNavLink Href="/admin/achievements" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.MilitaryTech">Achievements</MudNavLink>
+    </MudNavGroup>
+
+    <MudNavGroup Title="Log Management" Icon="@Icons.Material.Filled.Description">
+        <MudNavLink Href="/admin/upload" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Upload">Upload Logs</MudNavLink>
+        <MudNavLink Href="/admin/logs" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.DeleteSweep">Manage Logs</MudNavLink>
+    </MudNavGroup>
+
+    <MudNavGroup Title="Configuration" Icon="@Icons.Material.Filled.Tune">
+        <MudNavLink Href="/admin/manage" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings">Manage Data</MudNavLink>
+        <MudNavLink Href="/admin/achievements" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.MilitaryTech">Manage Achievements</MudNavLink>
         <MudNavLink Href="/admin/recap-stats" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.EmojiEvents">Recap Fun Stats</MudNavLink>
     </MudNavGroup>
 </MudNavMenu>
