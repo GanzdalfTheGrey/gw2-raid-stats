@@ -1,4 +1,5 @@
 using System.Text.Json;
+using GW2RaidStats.Core;
 using GW2RaidStats.Core.EliteInsights;
 using GW2RaidStats.Infrastructure.Configuration;
 using GW2RaidStats.Infrastructure.Database;
@@ -163,7 +164,8 @@ public class RescanService
                     pe.Role,
                     pe.ResurrectTime,
                     pe.QuicknessSelfUptime,
-                    pe.AlacritySelfUptime
+                    pe.AlacritySelfUptime,
+                    pe.Dps
                 })
                 .FirstOrDefaultAsync(ct);
 
@@ -220,6 +222,27 @@ public class RescanService
                         .Where(pe => pe.Id == playerEncounter.Id)
                         .Set(pe => pe.QuicknessSelfUptime, qSelf ?? playerEncounter.QuicknessSelfUptime)
                         .Set(pe => pe.AlacritySelfUptime, aSelf ?? playerEncounter.AlacritySelfUptime)
+                        .UpdateAsync(ct);
+
+                    anyUpdated = true;
+                }
+            }
+
+            // Recompute DPS for multi-target encounters. Logs imported before a fight was
+            // flagged multi-target (e.g. Kodan Brothers, Old Lion's Court) only counted
+            // dpsTargets[0] — one boss. dpsAll is the combined figure across all targets.
+            if (WingMapping.IsMultiTargetEncounter(log.TriggerId))
+            {
+                var combined = eiPlayer.DpsAll?.FirstOrDefault();
+                if (combined != null && combined.Dps != playerEncounter.Dps)
+                {
+                    await _db.PlayerEncounters
+                        .Where(pe => pe.Id == playerEncounter.Id)
+                        .Set(pe => pe.Dps, combined.Dps)
+                        .Set(pe => pe.Damage, combined.Damage)
+                        .Set(pe => pe.PowerDps, (int?)combined.PowerDps)
+                        .Set(pe => pe.CondiDps, (int?)combined.CondiDps)
+                        .Set(pe => pe.BreakbarDamage, (decimal?)combined.BreakbarDamage)
                         .UpdateAsync(ct);
 
                     anyUpdated = true;

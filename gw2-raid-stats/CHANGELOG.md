@@ -5,6 +5,11 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Kodan Brothers** and **Old Lion's Court** now record combined DPS across all bosses. Both were only counting the first target — one Kodan brother, and just the red Prototype at OLC — so DPS read low. They're now flagged as multi-target encounters (like Twin Largos). The Rescan button recomputes DPS for multi-target encounters, so historical logs get corrected without re-import (run **Admin → Manage Logs → Rescan**).
+
 ## [1.15.0] - 2026-05-13
 
 ### Added

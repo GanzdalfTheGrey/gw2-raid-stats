@@ -42,7 +42,13 @@ public static class WingMapping
 
         // Harvest Temple (multiple dragon targets)
         24375,          // Harvest Temple (normal mode)
-        43488           // Harvest Temple CM
+        43488,          // Harvest Temple CM
+
+        // Kodan Brothers (Voice of the Fallen and Claw of the Fallen) - two bosses
+        22343,
+
+        // Old Lion's Court (three Prototype dragons - Vermilion/Indigo/Arsenite)
+        25413
     };
 
     /// <summary>
