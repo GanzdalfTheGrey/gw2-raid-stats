@@ -247,6 +247,10 @@
     </MudText>
 </MudPaper>
 
+@* Legacy JSON import — hidden by default now that raw .zevtc upload is the standard path.
+   Flip _showLegacyImport to true to bring it back. *@
+@if (_showLegacyImport)
+{
 <MudDivider Class="my-4" />
 <MudText Typo="Typo.h5" Class="mb-4">Legacy Import (Pre-parsed JSON)</MudText>
 
@@ -381,6 +385,7 @@
         </MudPaper>
     </MudItem>
 </MudGrid>
+}
 
 @* Upload Progress Section *@
 @if (_isUploading && _fileProgress.Count > 0)
@@ -613,6 +618,10 @@
 </AdminAuth>
 
 @code {
+    // Legacy pre-parsed JSON import is hidden by default — raw .zevtc upload is the standard
+    // path now. Set to true to restore the Legacy Import section.
+    private bool _showLegacyImport = false;
+
     private List<IBrowserFile> _selectedFiles = new();
     private bool _isUploading;
     private bool _isImporting;

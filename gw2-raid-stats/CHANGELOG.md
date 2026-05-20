@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Upload Logs**: the "Legacy Import (Pre-parsed JSON)" section is hidden — raw `.zevtc` upload is the standard path now. The code is retained behind a flag (`_showLegacyImport`) if it's ever needed again.
 - **Nav menu reorganized**: the catch-all "Admin" group is split into three purpose-built groups under a non-interactive **Admin** section header — **Raid Planning** (Squad Builder, Mechanic Roles), **Log Management** (Upload Logs, Manage Logs), and **Configuration** (Manage Data, Manage Achievements, Recap Fun Stats). Top-level "Logs" renamed to **Log Search** to disambiguate it from Log Management.
 - **Admin → Manage Logs → Rescan** now shows a real progress bar (X / Y encounters, percent, running updated/unchanged/error counts) instead of just an indeterminate spinner. The status endpoint reports per-encounter progress as the rescan runs.
 
