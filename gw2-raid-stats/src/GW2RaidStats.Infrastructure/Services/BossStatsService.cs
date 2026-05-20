@@ -55,7 +55,7 @@ public class BossStatsService
         return bosses;
     }
 
-    public async Task<BossDetail?> GetBossDetailAsync(int triggerId, bool isCM, CancellationToken ct = default)
+    public async Task<BossDetail?> GetBossDetailAsync(int triggerId, bool isCM, string? range = null, CancellationToken ct = default)
     {
         var encounters = await _db.Encounters
             .Where(e => e.TriggerId == triggerId && e.IsCM == isCM)
@@ -78,8 +78,14 @@ public class BossStatsService
             ))
             .ToList();
 
-        // Get top DPS for this boss (guild members only)
-        var encounterIds = encounters.Where(e => e.Success).Select(e => e.Id).ToList();
+        // Get top DPS for this boss (guild members only).
+        // range == "patch" narrows the top-DPS pool to the current patch; otherwise all-time.
+        // Overall stats + recent encounters always stay all-time.
+        var topDpsFrom = await ResolvePatchStartAsync(range, ct);
+        var encounterIds = encounters
+            .Where(e => e.Success && (topDpsFrom == null || e.EncounterTime >= topDpsFrom))
+            .Select(e => e.Id)
+            .ToList();
         var includedAccounts = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
         var includedList = includedAccounts.ToList();
 
@@ -125,6 +131,18 @@ public class BossStatsService
             recentEncounters,
             topDps
         );
+    }
+
+    // Resolves a range string to a start date. "patch" = start of the most recent
+    // leaderboard patch; anything else (incl. null) = all-time (no lower bound).
+    private async Task<DateTimeOffset?> ResolvePatchStartAsync(string? range, CancellationToken ct)
+    {
+        if (range != "patch") return null;
+        var patch = await _db.LeaderboardPatches
+            .Where(p => p.StartDate <= DateTimeOffset.UtcNow)
+            .OrderByDescending(p => p.StartDate)
+            .FirstOrDefaultAsync(ct);
+        return patch?.StartDate;
     }
 }
 

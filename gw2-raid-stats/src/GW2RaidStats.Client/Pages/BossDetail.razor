@@ -109,10 +109,17 @@ else
         @* Top DPS Card *@
         <MudItem xs="12" md="4">
             <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
-                <MudText Typo="Typo.h6" Class="mb-3">
-                    <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Class="mr-2" />
-                    Top DPS
-                </MudText>
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3" Wrap="Wrap.Wrap">
+                    <MudText Typo="Typo.h6">
+                        <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Class="mr-2" />
+                        Top DPS
+                    </MudText>
+                    <MudToggleGroup T="string" Value="_dpsRange" ValueChanged="OnDpsRangeChanged"
+                                    Size="Size.Small" Color="Color.Primary">
+                        <MudToggleItem Value="@("all")" Text="All Time" />
+                        <MudToggleItem Value="@("patch")" Text="This Patch" />
+                    </MudToggleGroup>
+                </MudStack>
                 @if (_boss.TopDps.Count == 0)
                 {
                     <MudText Color="Color.Secondary">No kills recorded yet.</MudText>
@@ -202,19 +209,20 @@ else
 
     private bool _loading = true;
     private BossDetailDto? _boss;
+    private string _dpsRange = "all";  // "all" | "patch" — scopes the Top DPS list only
 
     protected override async Task OnParametersSetAsync()
     {
         await LoadBossAsync();
     }
 
-    private async Task LoadBossAsync()
+    private async Task LoadBossAsync(bool showLoading = true)
     {
-        _loading = true;
+        if (showLoading) _loading = true;
         try
         {
             _boss = await Http.GetFromJsonAsync<BossDetailDto>(
-                $"api/bosses/{TriggerId}?isCM={IsCM}");
+                $"api/bosses/{TriggerId}?isCM={IsCM}&range={_dpsRange}");
         }
         catch (Exception)
         {
@@ -222,8 +230,17 @@ else
         }
         finally
         {
-            _loading = false;
+            if (showLoading) _loading = false;
+            StateHasChanged();
         }
+    }
+
+    private async Task OnDpsRangeChanged(string range)
+    {
+        if (range == _dpsRange) return;
+        _dpsRange = range;
+        // Soft reload — keep the page visible, just swap in the new Top DPS list.
+        await LoadBossAsync(showLoading: false);
     }
 
     private void GoBack()

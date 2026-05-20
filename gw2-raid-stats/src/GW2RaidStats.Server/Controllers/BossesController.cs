@@ -33,9 +33,10 @@ public class BossesController : ControllerBase
     public async Task<ActionResult<BossDetail>> GetBossDetail(
         int triggerId,
         [FromQuery] bool isCM = false,
+        [FromQuery] string? range = null,
         CancellationToken ct = default)
     {
-        var detail = await _bossStatsService.GetBossDetailAsync(triggerId, isCM, ct);
+        var detail = await _bossStatsService.GetBossDetailAsync(triggerId, isCM, range, ct);
         if (detail == null)
         {
             return NotFound();

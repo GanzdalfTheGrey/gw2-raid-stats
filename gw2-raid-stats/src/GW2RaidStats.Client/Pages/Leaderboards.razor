@@ -135,7 +135,8 @@
                 <MudCardHeader>
                     <CardHeaderContent>
                         <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-                            <MudText Typo="Typo.h6">@boss.BossName</MudText>
+                            <MudLink Href="@($"/bosses/{boss.TriggerId}?isCM={boss.IsCM.ToString().ToLowerInvariant()}")"
+                                     Typo="Typo.h6">@boss.BossName</MudLink>
                             <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
                                 @if (boss.IsCM)
                                 {
