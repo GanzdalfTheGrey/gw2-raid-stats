@@ -97,7 +97,7 @@ public class BoonCoverageService
                         Regeneration: NullableMean(g.Select(r => r.RegenerationUptime)),
                         Protection: NullableMean(g.Select(r => r.ProtectionUptime)),
                         Swiftness: NullableMean(g.Select(r => r.SwiftnessUptime))),
-                    AvgDistance: NullableMean(g.Select(r => r.StackDistance)),
+                    AvgDistance: RobustMean.OutlierExcludedMean(g.Select(r => r.StackDistance)),
                     Players: g
                         .OrderBy(r => r.AccountName, StringComparer.OrdinalIgnoreCase)
                         .Select(r => new PlayerBoonRow(
@@ -134,7 +134,7 @@ public class BoonCoverageService
                 EncounterTime: enc.EncounterTime,
                 Subs: subs,
                 Generators: generators,
-                SquadAvgDistance: NullableMean(encRows.Select(r => r.StackDistance))));
+                SquadAvgDistance: RobustMean.OutlierExcludedMean(encRows.Select(r => r.StackDistance))));
         }
         return result;
     }
@@ -291,7 +291,7 @@ public class BoonCoverageService
             GuildAverages: guildAverages,
             PerBoss: perBoss,
             PerProfession: perProfession,
-            PlayerAvgDistance: NullableMean(playerRows.Select(r => r.StackDistance)),
+            PlayerAvgDistance: RobustMean.OutlierExcludedMean(playerRows.Select(r => r.StackDistance)),
             GuildAvgDistance: guildDistance);
     }
 
@@ -404,7 +404,7 @@ public class BoonCoverageService
                 AlacrityGenAvg: Mean(kvp.Value.AGen),
                 AlacritySelfAvg: Mean(kvp.Value.ASelf)));
 
-        var guildDistance = NullableMean(guildRows.Select(r => r.StackDistance));
+        var guildDistance = RobustMean.OutlierExcludedMean(guildRows.Select(r => r.StackDistance));
 
         return (overall, perBoss, guildDistance);
     }

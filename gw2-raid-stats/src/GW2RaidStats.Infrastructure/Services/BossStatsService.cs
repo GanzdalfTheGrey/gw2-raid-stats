@@ -143,7 +143,9 @@ public class BossStatsService
             RegenerationUptime: BoonMean(boonRows.Select(r => r.RegenerationUptime)),
             ProtectionUptime: BoonMean(boonRows.Select(r => r.ProtectionUptime)),
             SwiftnessUptime: BoonMean(boonRows.Select(r => r.SwiftnessUptime)),
-            StackDistance: BoonMean(boonRows.Select(r => r.StackDistance)));
+            // Distance excludes outliers (kiters) so a Deimos hand-kite role doesn't
+            // drag the whole-squad average — boon means stay plain.
+            StackDistance: RobustMean.OutlierExcludedMean(boonRows.Select(r => r.StackDistance)));
 
         return new BossDetail(
             triggerId,

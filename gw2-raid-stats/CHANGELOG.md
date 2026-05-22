@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Stack distance tracking** — each player's average distance to the squad's centroid (from EI's `statsAll.stackDist`; lower = tighter stacking), captured into a new `player_encounters.stack_distance` column (migration 025). Surfaced in three places:
-  - **Boon Uptime panel** — a "Dist" column per sub / per player, coloured against the encounter's squad-average distance (green at or below, amber within +10%, red beyond).
-  - **Boss detail** — a squad-average Distance chip on the Squad Boon Uptime card.
+  - **Boon Uptime panel** — a "Dist" column per sub / per player, coloured against the encounter's typical squad distance (green at or below, amber within +10%, red beyond). The baseline is an **outlier-excluded mean** — values far from the median (kiters, e.g. Deimos hand-kite or Qadim the Peerless pylons) are dropped before averaging, so one off-stack player can't mask real drift in everyone else. Boon averages keep the plain mean.
+  - **Boss detail** — a squad Distance chip on the Squad Boon Uptime card (same outlier-excluded mean).
   - **Player Profile** — an "Avg stack distance" line in the Boon Coverage card with a guild-average comparison.
   - **Boss quirk notes**: Deimos, Qadim, and Qadim the Peerless show a note that a kite/pylon role is intentionally off the stack, so a high distance / low uptime there isn't misread.
   - Backfill historical encounters via **Admin → Manage Logs → Rescan**.
