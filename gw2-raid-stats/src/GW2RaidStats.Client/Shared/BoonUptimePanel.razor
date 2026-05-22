@@ -1,6 +1,16 @@
 @* Per-encounter, per-sub boon uptime. Table on lg+ screens, wrapping chips below.
    Each sub row expands to per-player rows. Used by Home and Sessions. *@
 
+<style>
+    .boon-uptime-scroll { max-height: 72vh; overflow: auto; }
+    .boon-uptime-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background-color: var(--mud-palette-surface);
+    }
+</style>
+
 @if (Coverage is null || Coverage.Count == 0)
 {
     <MudAlert Severity="Severity.Info">No coverage data for this session.</MudAlert>
@@ -15,7 +25,8 @@ else
 
     @* ---- Table: lg and up ---- *@
     <MudHidden Breakpoint="Breakpoint.MdAndDown">
-        <MudSimpleTable Dense="true" Striped="true" Hover="true">
+        <div class="boon-uptime-scroll">
+        <MudSimpleTable Dense="true" Striped="true" Hover="true" Class="boon-uptime-table">
             <thead>
                 <tr>
                     <th>Boss</th>
@@ -110,6 +121,7 @@ else
                 }
             </tfoot>
         </MudSimpleTable>
+        </div>
     </MudHidden>
 
     @* ---- Chips: md and down ---- *@
@@ -199,8 +211,8 @@ else
 
     private static readonly BoonDef[] Boons =
     {
-        new("Q",     b => b?.Quickness,    false),
-        new("A",     b => b?.Alacrity,     false),
+        new("Quick", b => b?.Quickness,    false),
+        new("Alac",  b => b?.Alacrity,     false),
         new("Might", b => b?.Might,        true),
         new("Fury",  b => b?.Fury,         false),
         new("Regen", b => b?.Regeneration, false),
@@ -254,17 +266,26 @@ else
         return nonNull.Count == 0 ? null : nonNull.Average();
     }
 
-    // A sub-level cell gets a ⚠ when its average isn't red but at least one member is.
+    // A sub-level cell gets a ⚠ only for the clear "one bad apple" case: exactly one member
+    // in the red and every other member green (no yellows, no second red). That's the
+    // pattern worth expanding for — anything messier the average already reflects.
     private bool Outlier(SubBoonCoverage? sub, BoonDef boon)
     {
         if (sub == null) return false;
-        var avg = boon.Get(sub.Average);
-        if (IsRed(avg, boon.IsMight)) return false;
-        return sub.Players.Any(p => IsRed(boon.Get(p.Boons), boon.IsMight));
+        var values = sub.Players
+            .Select(p => boon.Get(p.Boons))
+            .Where(v => v.HasValue)
+            .Select(v => v!.Value)
+            .ToList();
+        if (values.Count < 2) return false;
+        if (values.Count(v => IsRedValue(v, boon.IsMight)) != 1) return false;
+        return values
+            .Where(v => !IsRedValue(v, boon.IsMight))
+            .All(v => IsGreenValue(v, boon.IsMight));
     }
 
-    private static bool IsRed(decimal? v, bool isMight)
-        => v.HasValue && (isMight ? v.Value < 15 : v.Value <= 80);
+    private static bool IsRedValue(decimal v, bool isMight) => isMight ? v < 15 : v <= 80;
+    private static bool IsGreenValue(decimal v, bool isMight) => isMight ? v >= 20 : v > 90;
 
     private static Color BoonColor(decimal? v, bool isMight) => v switch
     {
@@ -283,10 +304,13 @@ else
         var gens = enc.Generators
             .Where(g => g.SubGroup == subGroup)
             .OrderBy(g => g.Boon)
-            .Select(g => $"{(g.Boon == "Quickness" ? "Q" : "A")} {g.AccountName}")
+            .Select(g => $"{(g.Boon == "Quickness" ? "Quick" : "Alac")} {g.AccountName}")
             .ToList();
         return gens.Count == 0 ? "—" : string.Join(" · ", gens);
     }
+
+    private const string OutlierTitle =
+        "One sub member is in the red while the rest are green — expand to see who";
 
     private RenderFragment RenderValue(decimal? v, bool isMight, bool outlier) => __builder =>
     {
@@ -296,28 +320,31 @@ else
         }
         else
         {
-            <MudStack Row="true" Spacing="0" Justify="Justify.Center" AlignItems="AlignItems.Center">
+            @* Relative wrapper + absolutely-positioned ⚠ so the warning never shifts the chip. *@
+            <div style="position: relative; display: inline-block;">
                 <MudChip T="string" Size="Size.Small" Color="@BoonColor(v, isMight)" Variant="Variant.Filled">
                     @Format(v, isMight)
                 </MudChip>
                 @if (outlier)
                 {
                     <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Color="Color.Warning"
-                             Title="A sub member is in the red — expand to see who" />
+                             Style="position: absolute; top: -6px; right: -6px;" Title="@OutlierTitle" />
                 }
-            </MudStack>
+            </div>
         }
     };
 
     private RenderFragment RenderChip(string label, decimal? v, bool isMight, bool outlier) => __builder =>
     {
-        <MudChip T="string" Size="Size.Small" Color="@BoonColor(v, isMight)" Variant="Variant.Filled">
-            @label @Format(v, isMight)
+        <div style="position: relative; display: inline-block;">
+            <MudChip T="string" Size="Size.Small" Color="@BoonColor(v, isMight)" Variant="Variant.Filled">
+                @label @Format(v, isMight)
+            </MudChip>
             @if (outlier)
             {
-                <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Class="ml-1"
-                         Title="A sub member is in the red — expand to see who" />
+                <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Color="Color.Warning"
+                         Style="position: absolute; top: -6px; right: -6px;" Title="@OutlierTitle" />
             }
-        </MudChip>
+        </div>
     };
 }
