@@ -66,13 +66,7 @@ else
 
                 @foreach (var subGroup in MainSubs())
                 {
-                    var boonerText = BoonerText(enc, subGroup);
-                    if (boonerText.Length > 0)
-                    {
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">
-                            <strong>Sub @subGroup</strong> — @boonerText
-                        </MudText>
-                    }
+                    @RenderBooners(enc, subGroup)
                 }
 
                 <div class="boon-grid-scroll mt-2">
@@ -271,13 +265,33 @@ else
     private static string Format(decimal? v, bool isMight)
         => v == null ? "—" : isMight ? $"{v:0.0}" : $"{v:0}%";
 
-    private string BoonerText(EncounterBoonCoverage enc, int subGroup)
+    // Per-sub booner line: who provided Quickness and Alacrity, each tagged healer vs boon DPS.
+    private RenderFragment RenderBooners(EncounterBoonCoverage enc, int subGroup) => __builder =>
     {
         var gens = enc.Generators
             .Where(g => g.SubGroup == subGroup)
-            .OrderBy(g => g.Boon)
-            .Select(g => $"{(g.Boon == "Quickness" ? "Quick" : "Alac")} {g.AccountName}")
+            .OrderBy(g => g.Boon == "Quickness" ? 0 : 1)
             .ToList();
-        return gens.Count == 0 ? "" : string.Join(" · ", gens);
-    }
+        if (gens.Count == 0) return;
+
+        <MudStack Row="true" Spacing="3" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
+            <MudText Typo="Typo.body2"><strong>Sub @subGroup booners</strong></MudText>
+            @foreach (var g in gens)
+            {
+                var isHeal = g.Role.StartsWith("heal_");
+                var boonLabel = g.Boon == "Quickness" ? "Quick" : "Alac";
+                <MudText Typo="Typo.body2">
+                    <span style="opacity: 0.7;">@boonLabel:</span> <strong>@g.AccountName</strong>
+                    @if (isHeal)
+                    {
+                        <span style="color: var(--mud-palette-success); font-weight: 600;"> · healer</span>
+                    }
+                    else
+                    {
+                        <span style="opacity: 0.6;"> · boon dps</span>
+                    }
+                </MudText>
+            }
+        </MudStack>
+    };
 }
