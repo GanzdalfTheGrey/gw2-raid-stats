@@ -364,6 +364,7 @@ else
                 var boonLabel = g.Boon == "Quickness" ? "Quick" : "Alac";
                 <MudText Typo="Typo.body2">
                     <span style="opacity: 0.7;">@boonLabel:</span> <strong>@g.AccountName</strong>
+                    <span style="opacity: 0.7;"> · @g.Profession</span>
                     @if (isHeal)
                     {
                         <span style="color: var(--mud-palette-success); font-weight: 600;"> · healer</span>
