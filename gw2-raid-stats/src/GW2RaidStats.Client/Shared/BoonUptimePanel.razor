@@ -1,0 +1,323 @@
+@* Per-encounter, per-sub boon uptime. Table on lg+ screens, wrapping chips below.
+   Each sub row expands to per-player rows. Used by Home and Sessions. *@
+
+@if (Coverage is null || Coverage.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">No coverage data for this session.</MudAlert>
+}
+else
+{
+    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+        Per-sub average boon self-uptime (excludes dead/down time). Q/A and % boons: green &gt; 90%,
+        yellow &gt; 80%, red ≤ 80%. Might is average stacks: green ≥ 20, yellow ≥ 15, red below.
+        ⚠ = the sub average looks fine but a member is in the red — expand the sub to see who.
+    </MudText>
+
+    @* ---- Table: lg and up ---- *@
+    <MudHidden Breakpoint="Breakpoint.MdAndDown">
+        <MudSimpleTable Dense="true" Striped="true" Hover="true">
+            <thead>
+                <tr>
+                    <th>Boss</th>
+                    <th>Sub</th>
+                    @foreach (var b in Boons)
+                    {
+                        <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@b.Label</th>
+                    }
+                    <th style="border-left: 1px solid var(--mud-palette-divider);">Booners</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var enc in Coverage)
+                {
+                    var firstRow = true;
+                    @foreach (var subGroup in MainSubs())
+                    {
+                        var sub = enc.Subs.FirstOrDefault(s => s.SubGroup == subGroup);
+                        var isFirst = firstRow;
+                        firstRow = false;
+                        <tr style="@(isFirst ? "border-top: 2px solid var(--mud-palette-divider);" : "")">
+                            <td>
+                                @if (isFirst)
+                                {
+                                    @enc.BossName
+                                    @if (enc.IsCM)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1">CM</MudChip>
+                                    }
+                                    @if (!enc.Success)
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Error" Class="ml-1">wipe</MudText>
+                                    }
+                                }
+                            </td>
+                            <td style="white-space: nowrap;">
+                                @if (sub is { Players.Count: > 0 })
+                                {
+                                    <MudIconButton Size="Size.Small"
+                                                   Icon="@(IsExpanded(enc, subGroup) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                                                   OnClick="@(() => ToggleExpand(enc, subGroup))" />
+                                }
+                                <strong>Sub @subGroup</strong>
+                            </td>
+                            @foreach (var b in Boons)
+                            {
+                                <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">
+                                    @RenderValue(b.Get(sub?.Average), b.IsMight, Outlier(sub, b))
+                                </td>
+                            }
+                            <td style="border-left: 1px solid var(--mud-palette-divider);">
+                                <MudText Typo="Typo.caption">@BoonerText(enc, subGroup)</MudText>
+                            </td>
+                        </tr>
+                        @if (sub is { Players.Count: > 0 } && IsExpanded(enc, subGroup))
+                        {
+                            @foreach (var p in sub.Players)
+                            {
+                                <tr style="background-color: var(--mud-palette-background-gray);">
+                                    <td></td>
+                                    <td style="padding-left: 32px;">
+                                        <MudText Typo="Typo.caption">@p.AccountName</MudText>
+                                    </td>
+                                    @foreach (var b in Boons)
+                                    {
+                                        <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">
+                                            @RenderValue(b.Get(p.Boons), b.IsMight, false)
+                                        </td>
+                                    }
+                                    <td style="border-left: 1px solid var(--mud-palette-divider);"></td>
+                                </tr>
+                            }
+                        }
+                    }
+                }
+            </tbody>
+            <tfoot>
+                @foreach (var subGroup in MainSubs())
+                {
+                    var avg = SessionAverage(subGroup);
+                    <tr style="font-weight: bold; border-top: 2px solid var(--mud-palette-divider);">
+                        <td>@(subGroup == MainSubs().First() ? "Session avg" : "")</td>
+                        <td><strong>Sub @subGroup</strong></td>
+                        @foreach (var b in Boons)
+                        {
+                            <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">
+                                @RenderValue(b.Get(avg), b.IsMight, false)
+                            </td>
+                        }
+                        <td style="border-left: 1px solid var(--mud-palette-divider);"></td>
+                    </tr>
+                }
+            </tfoot>
+        </MudSimpleTable>
+    </MudHidden>
+
+    @* ---- Chips: md and down ---- *@
+    <MudHidden Breakpoint="Breakpoint.MdAndDown" Invert="true">
+        <MudStack Spacing="3">
+            @foreach (var enc in Coverage)
+            {
+                <MudPaper Class="pa-3" Elevation="1">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-2" Wrap="Wrap.Wrap">
+                        <MudText Typo="Typo.subtitle1"><strong>@enc.BossName</strong></MudText>
+                        @if (enc.IsCM)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning">CM</MudChip>
+                        }
+                        @if (!enc.Success)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Error">wipe</MudText>
+                        }
+                    </MudStack>
+                    @foreach (var subGroup in MainSubs())
+                    {
+                        var sub = enc.Subs.FirstOrDefault(s => s.SubGroup == subGroup);
+                        <div class="mb-2">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Wrap="Wrap.Wrap">
+                                <strong>Sub @subGroup</strong>
+                                @if (sub is { Players.Count: > 0 })
+                                {
+                                    <MudIconButton Size="Size.Small"
+                                                   Icon="@(IsExpanded(enc, subGroup) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                                                   OnClick="@(() => ToggleExpand(enc, subGroup))" />
+                                }
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@BoonerText(enc, subGroup)</MudText>
+                            </MudStack>
+                            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap" Class="mt-1">
+                                @foreach (var b in Boons)
+                                {
+                                    @RenderChip(b.Label, b.Get(sub?.Average), b.IsMight, Outlier(sub, b))
+                                }
+                            </MudStack>
+                            @if (sub is { Players.Count: > 0 } && IsExpanded(enc, subGroup))
+                            {
+                                <MudStack Spacing="1" Class="mt-2" Style="padding-left: 12px;">
+                                    @foreach (var p in sub.Players)
+                                    {
+                                        <div>
+                                            <MudText Typo="Typo.caption"><strong>@p.AccountName</strong></MudText>
+                                            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                                                @foreach (var b in Boons)
+                                                {
+                                                    @RenderChip(b.Label, b.Get(p.Boons), b.IsMight, false)
+                                                }
+                                            </MudStack>
+                                        </div>
+                                    }
+                                </MudStack>
+                            }
+                        </div>
+                    }
+                </MudPaper>
+            }
+            <MudPaper Class="pa-3" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
+                <MudText Typo="Typo.subtitle2" Class="mb-1"><strong>Session average</strong></MudText>
+                @foreach (var subGroup in MainSubs())
+                {
+                    var avg = SessionAverage(subGroup);
+                    <div class="mb-1">
+                        <MudText Typo="Typo.caption"><strong>Sub @subGroup</strong></MudText>
+                        <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                            @foreach (var b in Boons)
+                            {
+                                @RenderChip(b.Label, b.Get(avg), b.IsMight, false)
+                            }
+                        </MudStack>
+                    </div>
+                }
+            </MudPaper>
+        </MudStack>
+    </MudHidden>
+}
+
+@code {
+    [Parameter] public List<EncounterBoonCoverage>? Coverage { get; set; }
+
+    private readonly HashSet<(Guid, int)> _expanded = new();
+
+    private record BoonDef(string Label, Func<BoonSet?, decimal?> Get, bool IsMight);
+
+    private static readonly BoonDef[] Boons =
+    {
+        new("Q",     b => b?.Quickness,    false),
+        new("A",     b => b?.Alacrity,     false),
+        new("Might", b => b?.Might,        true),
+        new("Fury",  b => b?.Fury,         false),
+        new("Regen", b => b?.Regeneration, false),
+        new("Prot",  b => b?.Protection,   false),
+        new("Swift", b => b?.Swiftness,    false),
+    };
+
+    private bool IsExpanded(EncounterBoonCoverage enc, int subGroup)
+        => _expanded.Contains((enc.EncounterId, subGroup));
+
+    private void ToggleExpand(EncounterBoonCoverage enc, int subGroup)
+    {
+        var key = (enc.EncounterId, subGroup);
+        if (!_expanded.Remove(key)) _expanded.Add(key);
+    }
+
+    // The two subs used most across the session (by total player-encounter count) — drops a
+    // small kite/utility sub and adapts when subs aren't numbered 1 and 2.
+    private List<int> MainSubs()
+        => Coverage!
+            .SelectMany(e => e.Subs)
+            .GroupBy(s => s.SubGroup)
+            .Select(g => new { g.Key, Total = g.Sum(s => s.PlayerCount) })
+            .OrderByDescending(x => x.Total)
+            .Take(2)
+            .Select(x => x.Key)
+            .OrderBy(n => n)
+            .ToList();
+
+    private BoonSet? SessionAverage(int subGroup)
+    {
+        var subs = Coverage!
+            .Select(e => e.Subs.FirstOrDefault(s => s.SubGroup == subGroup))
+            .Where(s => s != null)
+            .Select(s => s!.Average)
+            .ToList();
+        if (subs.Count == 0) return null;
+        return new BoonSet(
+            Mean(subs.Select(a => a.Quickness)),
+            Mean(subs.Select(a => a.Alacrity)),
+            Mean(subs.Select(a => a.Might)),
+            Mean(subs.Select(a => a.Fury)),
+            Mean(subs.Select(a => a.Regeneration)),
+            Mean(subs.Select(a => a.Protection)),
+            Mean(subs.Select(a => a.Swiftness)));
+    }
+
+    private static decimal? Mean(IEnumerable<decimal?> values)
+    {
+        var nonNull = values.Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        return nonNull.Count == 0 ? null : nonNull.Average();
+    }
+
+    // A sub-level cell gets a ⚠ when its average isn't red but at least one member is.
+    private bool Outlier(SubBoonCoverage? sub, BoonDef boon)
+    {
+        if (sub == null) return false;
+        var avg = boon.Get(sub.Average);
+        if (IsRed(avg, boon.IsMight)) return false;
+        return sub.Players.Any(p => IsRed(boon.Get(p.Boons), boon.IsMight));
+    }
+
+    private static bool IsRed(decimal? v, bool isMight)
+        => v.HasValue && (isMight ? v.Value < 15 : v.Value <= 80);
+
+    private static Color BoonColor(decimal? v, bool isMight) => v switch
+    {
+        null => Color.Default,
+        _ when isMight => v >= 20 ? Color.Success : v >= 15 ? Color.Warning : Color.Error,
+        > 90 => Color.Success,
+        > 80 => Color.Warning,
+        _ => Color.Error
+    };
+
+    private static string Format(decimal? v, bool isMight)
+        => v == null ? "—" : isMight ? $"{v:0.0}" : $"{v:0}%";
+
+    private string BoonerText(EncounterBoonCoverage enc, int subGroup)
+    {
+        var gens = enc.Generators
+            .Where(g => g.SubGroup == subGroup)
+            .OrderBy(g => g.Boon)
+            .Select(g => $"{(g.Boon == "Quickness" ? "Q" : "A")} {g.AccountName}")
+            .ToList();
+        return gens.Count == 0 ? "—" : string.Join(" · ", gens);
+    }
+
+    private RenderFragment RenderValue(decimal? v, bool isMight, bool outlier) => __builder =>
+    {
+        if (v == null)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+        }
+        else
+        {
+            <MudStack Row="true" Spacing="0" Justify="Justify.Center" AlignItems="AlignItems.Center">
+                <MudChip T="string" Size="Size.Small" Color="@BoonColor(v, isMight)" Variant="Variant.Filled">
+                    @Format(v, isMight)
+                </MudChip>
+                @if (outlier)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Color="Color.Warning"
+                             Title="A sub member is in the red — expand to see who" />
+                }
+            </MudStack>
+        }
+    };
+
+    private RenderFragment RenderChip(string label, decimal? v, bool isMight, bool outlier) => __builder =>
+    {
+        <MudChip T="string" Size="Size.Small" Color="@BoonColor(v, isMight)" Variant="Variant.Filled">
+            @label @Format(v, isMight)
+            @if (outlier)
+            {
+                <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Class="ml-1"
+                         Title="A sub member is in the red — expand to see who" />
+            }
+        </MudChip>
+    };
+}

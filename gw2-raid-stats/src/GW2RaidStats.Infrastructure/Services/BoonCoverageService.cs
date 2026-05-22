@@ -65,6 +65,11 @@ public class BoonCoverageService
                 pe.Role,
                 pe.QuicknessSelfUptime,
                 pe.AlacritySelfUptime,
+                pe.MightAvgStacks,
+                pe.FuryUptime,
+                pe.RegenerationUptime,
+                pe.ProtectionUptime,
+                pe.SwiftnessUptime,
                 pe.QuicknessGeneration,
                 pe.AlacracityGeneration,
                 AccountName = p.AccountName
@@ -83,8 +88,23 @@ public class BoonCoverageService
                 .Select(g => new SubBoonCoverage(
                     SubGroup: g.Key,
                     PlayerCount: g.Count(),
-                    AvgQuicknessUptime: NullableMean(g.Select(r => r.QuicknessSelfUptime)),
-                    AvgAlacrityUptime: NullableMean(g.Select(r => r.AlacritySelfUptime))))
+                    Average: new BoonSet(
+                        Quickness: NullableMean(g.Select(r => r.QuicknessSelfUptime)),
+                        Alacrity: NullableMean(g.Select(r => r.AlacritySelfUptime)),
+                        Might: NullableMean(g.Select(r => r.MightAvgStacks)),
+                        Fury: NullableMean(g.Select(r => r.FuryUptime)),
+                        Regeneration: NullableMean(g.Select(r => r.RegenerationUptime)),
+                        Protection: NullableMean(g.Select(r => r.ProtectionUptime)),
+                        Swiftness: NullableMean(g.Select(r => r.SwiftnessUptime))),
+                    Players: g
+                        .OrderBy(r => r.AccountName, StringComparer.OrdinalIgnoreCase)
+                        .Select(r => new PlayerBoonRow(
+                            r.AccountName,
+                            r.Profession,
+                            new BoonSet(
+                                r.QuicknessSelfUptime, r.AlacritySelfUptime, r.MightAvgStacks,
+                                r.FuryUptime, r.RegenerationUptime, r.ProtectionUptime, r.SwiftnessUptime)))
+                        .ToList()))
                 .ToList();
 
             var generators = encRows
@@ -520,8 +540,24 @@ public record EncounterBoonCoverage(
 public record SubBoonCoverage(
     int SubGroup,
     int PlayerCount,
-    decimal? AvgQuicknessUptime,
-    decimal? AvgAlacrityUptime);
+    BoonSet Average,
+    List<PlayerBoonRow> Players);
+
+public record PlayerBoonRow(
+    string AccountName,
+    string Profession,
+    BoonSet Boons);
+
+// Self-uptime for all seven tracked boons. Quickness/Alacrity/Fury/Regeneration/Protection/
+// Swiftness are % uptime 0-100; Might is average stacks 0-25.
+public record BoonSet(
+    decimal? Quickness,
+    decimal? Alacrity,
+    decimal? Might,
+    decimal? Fury,
+    decimal? Regeneration,
+    decimal? Protection,
+    decimal? Swiftness);
 
 public record BoonGeneratorInfo(
     string AccountName,

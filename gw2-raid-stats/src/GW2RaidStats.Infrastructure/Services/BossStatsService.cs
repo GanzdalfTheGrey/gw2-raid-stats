@@ -112,6 +112,37 @@ public class BossStatsService
             ))
             .ToListAsync(ct);
 
+        // Whole-squad average boon self-uptime over the same (range-scoped) encounters.
+        // Includes pugs — this is squad uptime, not a guild-only metric.
+        var boonRows = await _db.PlayerEncounters
+            .Where(pe => encounterIds.Contains(pe.EncounterId))
+            .Select(pe => new
+            {
+                pe.QuicknessSelfUptime,
+                pe.AlacritySelfUptime,
+                pe.MightAvgStacks,
+                pe.FuryUptime,
+                pe.RegenerationUptime,
+                pe.ProtectionUptime,
+                pe.SwiftnessUptime
+            })
+            .ToListAsync(ct);
+
+        static decimal? BoonMean(IEnumerable<decimal?> values)
+        {
+            var nonNull = values.Where(v => v.HasValue).Select(v => v!.Value).ToList();
+            return nonNull.Count == 0 ? null : nonNull.Average();
+        }
+
+        var squadBoons = new BossSquadBoons(
+            QuicknessUptime: BoonMean(boonRows.Select(r => r.QuicknessSelfUptime)),
+            AlacrityUptime: BoonMean(boonRows.Select(r => r.AlacritySelfUptime)),
+            MightAvgStacks: BoonMean(boonRows.Select(r => r.MightAvgStacks)),
+            FuryUptime: BoonMean(boonRows.Select(r => r.FuryUptime)),
+            RegenerationUptime: BoonMean(boonRows.Select(r => r.RegenerationUptime)),
+            ProtectionUptime: BoonMean(boonRows.Select(r => r.ProtectionUptime)),
+            SwiftnessUptime: BoonMean(boonRows.Select(r => r.SwiftnessUptime)));
+
         return new BossDetail(
             triggerId,
             first.BossName,
@@ -129,7 +160,8 @@ public class BossStatsService
                 ? encounters.Where(e => e.Success).Average(e => e.DurationMs) / 1000.0
                 : null,
             recentEncounters,
-            topDps
+            topDps,
+            squadBoons
         );
     }
 
@@ -175,7 +207,20 @@ public record BossDetail(
     double? FastestKillSeconds,
     double? AverageKillSeconds,
     List<BossEncounter> RecentEncounters,
-    List<BossTopDps> TopDps
+    List<BossTopDps> TopDps,
+    BossSquadBoons SquadBoons
+);
+
+// Whole-squad average boon self-uptime across the boss's (range-scoped) successful encounters.
+// Percentages 0-100, except MightAvgStacks which is average stacks 0-25. Null = no data.
+public record BossSquadBoons(
+    decimal? QuicknessUptime,
+    decimal? AlacrityUptime,
+    decimal? MightAvgStacks,
+    decimal? FuryUptime,
+    decimal? RegenerationUptime,
+    decimal? ProtectionUptime,
+    decimal? SwiftnessUptime
 );
 
 public record BossEncounter(

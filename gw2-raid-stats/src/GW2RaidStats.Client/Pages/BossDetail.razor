@@ -147,6 +147,30 @@ else
             </MudPaper>
         </MudItem>
 
+        @* Squad Boon Uptime *@
+        <MudItem xs="12">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-1" Wrap="Wrap.Wrap">
+                    <MudText Typo="Typo.h6">
+                        <MudIcon Icon="@Icons.Material.Filled.Bolt" Class="mr-2" />
+                        Squad Boon Uptime
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Whole-squad average self-uptime — follows the @(_dpsRange == "patch" ? "This Patch" : "All Time") range above.
+                    </MudText>
+                </MudStack>
+                <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                    @RenderBoonChip("Quickness", _boss.SquadBoons.QuicknessUptime, false)
+                    @RenderBoonChip("Alacrity", _boss.SquadBoons.AlacrityUptime, false)
+                    @RenderBoonChip("Might", _boss.SquadBoons.MightAvgStacks, true)
+                    @RenderBoonChip("Fury", _boss.SquadBoons.FuryUptime, false)
+                    @RenderBoonChip("Regen", _boss.SquadBoons.RegenerationUptime, false)
+                    @RenderBoonChip("Protection", _boss.SquadBoons.ProtectionUptime, false)
+                    @RenderBoonChip("Swiftness", _boss.SquadBoons.SwiftnessUptime, false)
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
         @* Recent Encounters *@
         <MudItem xs="12">
             <MudPaper Class="pa-4" Elevation="2">
@@ -269,6 +293,21 @@ else
         };
     }
 
+    // % boons: green > 90, yellow > 80, red ≤ 80. Might (avg stacks): green ≥ 20, yellow ≥ 15.
+    private RenderFragment RenderBoonChip(string label, decimal? value, bool isMight) => __builder =>
+    {
+        var color = value switch
+        {
+            null => Color.Default,
+            _ when isMight => value >= 20 ? Color.Success : value >= 15 ? Color.Warning : Color.Error,
+            > 90 => Color.Success,
+            > 80 => Color.Warning,
+            _ => Color.Error
+        };
+        var text = value == null ? "—" : isMight ? $"{value:0.0}" : $"{value:0}%";
+        <MudChip T="string" Size="Size.Small" Color="@color" Variant="Variant.Filled">@label @text</MudChip>
+    };
+
     private string FormatDuration(double seconds)
     {
         var ts = TimeSpan.FromSeconds(seconds);
@@ -290,7 +329,18 @@ else
         double? FastestKillSeconds,
         double? AverageKillSeconds,
         List<BossEncounterDto> RecentEncounters,
-        List<BossTopDpsDto> TopDps
+        List<BossTopDpsDto> TopDps,
+        BossSquadBoonsDto SquadBoons
+    );
+
+    public record BossSquadBoonsDto(
+        decimal? QuicknessUptime,
+        decimal? AlacrityUptime,
+        decimal? MightAvgStacks,
+        decimal? FuryUptime,
+        decimal? RegenerationUptime,
+        decimal? ProtectionUptime,
+        decimal? SwiftnessUptime
     );
 
     public record BossEncounterDto(

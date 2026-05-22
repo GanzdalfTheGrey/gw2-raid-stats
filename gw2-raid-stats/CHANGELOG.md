@@ -8,7 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Tier-2 boon capture** (Might, Fury, Regeneration, Protection, Swiftness): the importer now records each player's self-uptime for these boons from EI's `buffUptimesActive`, in five new `player_encounters` columns. Might is stored as average stacks (0-25); the rest as percentage uptime. Migration 024. Historical encounters backfill via **Admin → Manage Logs → Rescan**. Display (Boon Uptime tab + boss detail) lands in a follow-up.
+- **Tier-2 boon tracking** (Might, Fury, Regeneration, Protection, Swiftness) — alongside Quickness and Alacrity:
+  - Captured per-player from EI's `buffUptimesActive` into five new `player_encounters` columns (migration 024). Might is average stacks (0-25); the rest are percentage uptime. Backfill historical encounters via **Admin → Manage Logs → Rescan**.
+  - The session **"Session Stats" tab is renamed "Boon Uptime"** and rebuilt: per-encounter, per-sub averages for all 7 boons, each sub row expandable to per-player rows. A ⚠ flags a cell where the sub average looks fine but a member is in the red. Layout is responsive — a full table on large screens, wrapping chips on tablet/mobile.
+  - **Boss detail** gets a **Squad Boon Uptime** card — whole-squad average of all 7 boons, following the same All Time / This Patch range as the Top DPS toggle.
+  - Color thresholds: % boons green > 90 / yellow > 80 / red ≤ 80; Might green ≥ 20 / yellow ≥ 15 / red below.
 - **Player Availability page** (Admin → Raid Planning → Availability): admin-locked grid of active members with Monday / Tuesday raid-night availability — green (available), yellow (maybe — one day a week, either), red (not available) — plus a free-text note per player. Changes auto-save. Migration 023.
 - **Boss detail page** Top DPS list now has an **All Time / This Patch** toggle, so you can see the current-patch top 5 separately from the all-time top 5. Defaults to This Patch. Overall boss stats and recent encounters stay all-time.
 - **Leaderboards** boss names are now links — clicking one opens that boss's detail page.

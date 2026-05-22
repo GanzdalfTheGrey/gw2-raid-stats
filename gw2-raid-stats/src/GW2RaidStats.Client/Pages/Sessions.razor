@@ -132,7 +132,7 @@ else
                                 </tbody>
                             </MudSimpleTable>
                         </MudTabPanel>
-                        <MudTabPanel Text="Session Stats" Icon="@Icons.Material.Filled.BarChart">
+                        <MudTabPanel Text="Boon Uptime" Icon="@Icons.Material.Filled.BarChart">
                             @if (_boonCoverage == null)
                             {
                                 <MudStack AlignItems="AlignItems.Center" Class="pa-4">
@@ -140,96 +140,9 @@ else
                                     <MudText Typo="Typo.caption" Color="Color.Secondary">Computing boon coverage...</MudText>
                                 </MudStack>
                             }
-                            else if (_boonCoverage.Count == 0)
-                            {
-                                <MudAlert Severity="Severity.Info">No coverage data for this session.</MudAlert>
-                            }
                             else
                             {
-                                var mainSubs = MainSubs(_boonCoverage);
-                                int? subA = mainSubs.Count > 0 ? mainSubs[0] : null;
-                                int? subB = mainSubs.Count > 1 ? mainSubs[1] : null;
-                                var visibleSubs = mainSubs.ToHashSet();
-                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
-                                    Per-sub average Quickness / Alacrity self-uptime (excludes dead/down time).
-                                    Green &gt; 90%, yellow &gt; 80%, red ≤ 80%. Shows the two largest subs by player count — a small kite/utility sub is omitted.
-                                </MudText>
-                                <MudSimpleTable Dense="true" Striped="true" Hover="true">
-                                    <thead>
-                                        <tr>
-                                            <th rowspan="2">Boss</th>
-                                            @if (subA.HasValue)
-                                            {
-                                                <th colspan="2" style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Sub @subA</th>
-                                            }
-                                            @if (subB.HasValue)
-                                            {
-                                                <th colspan="2" style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Sub @subB</th>
-                                            }
-                                            <th rowspan="2" style="border-left: 1px solid var(--mud-palette-divider);">Booners</th>
-                                        </tr>
-                                        <tr>
-                                            @if (subA.HasValue)
-                                            {
-                                                <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Q</th>
-                                                <th style="text-align: center;">A</th>
-                                            }
-                                            @if (subB.HasValue)
-                                            {
-                                                <th style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">Q</th>
-                                                <th style="text-align: center;">A</th>
-                                            }
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (var enc in _boonCoverage)
-                                        {
-                                            var encSubA = subA.HasValue ? enc.Subs.FirstOrDefault(s => s.SubGroup == subA.Value) : null;
-                                            var encSubB = subB.HasValue ? enc.Subs.FirstOrDefault(s => s.SubGroup == subB.Value) : null;
-                                            var visibleGenerators = enc.Generators.Where(g => visibleSubs.Contains(g.SubGroup)).ToList();
-                                            <tr>
-                                                <td>
-                                                    @enc.BossName
-                                                    @if (enc.IsCM)
-                                                    {
-                                                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1">CM</MudChip>
-                                                    }
-                                                    @if (!enc.Success)
-                                                    {
-                                                        <MudText Typo="Typo.caption" Color="Color.Error" Class="ml-1">wipe</MudText>
-                                                    }
-                                                </td>
-                                                @if (subA.HasValue)
-                                                {
-                                                    <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptime(encSubA?.AvgQuicknessUptime)</td>
-                                                    <td style="text-align: center;">@RenderUptime(encSubA?.AvgAlacrityUptime)</td>
-                                                }
-                                                @if (subB.HasValue)
-                                                {
-                                                    <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptime(encSubB?.AvgQuicknessUptime)</td>
-                                                    <td style="text-align: center;">@RenderUptime(encSubB?.AvgAlacrityUptime)</td>
-                                                }
-                                                <td style="border-left: 1px solid var(--mud-palette-divider);">@RenderGenerators(visibleGenerators)</td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                    <tfoot>
-                                        <tr style="font-weight: bold; border-top: 2px solid var(--mud-palette-divider);">
-                                            <td>Session avg</td>
-                                            @if (subA.HasValue)
-                                            {
-                                                <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptime(SessionAvg(_boonCoverage, subA.Value, true))</td>
-                                                <td style="text-align: center;">@RenderUptime(SessionAvg(_boonCoverage, subA.Value, false))</td>
-                                            }
-                                            @if (subB.HasValue)
-                                            {
-                                                <td style="text-align: center; border-left: 1px solid var(--mud-palette-divider);">@RenderUptime(SessionAvg(_boonCoverage, subB.Value, true))</td>
-                                                <td style="text-align: center;">@RenderUptime(SessionAvg(_boonCoverage, subB.Value, false))</td>
-                                            }
-                                            <td style="border-left: 1px solid var(--mud-palette-divider);"></td>
-                                        </tr>
-                                    </tfoot>
-                                </MudSimpleTable>
+                                <BoonUptimePanel Coverage="_boonCoverage" />
                             }
                         </MudTabPanel>
                     </MudTabs>
@@ -318,85 +231,6 @@ else
         }
     }
 
-    // --- Render helpers (mirror Home.razor's Session Stats helpers) ---
-
-    private static Color UptimeColor(decimal? pct) => pct switch
-    {
-        null => Color.Default,
-        > 90 => Color.Success,
-        > 80 => Color.Warning,
-        _ => Color.Error
-    };
-
-    // Identify the two "main" subs across the session = top 2 by total player-encounter count.
-    // Drops a small kite/utility sub (e.g., 1-player hand-kite) and adapts when subs aren't
-    // numbered 1 and 2 (a squad in subs 2 and 4 still shows up correctly). Sorted by sub
-    // number so the columns appear left-to-right in numeric order.
-    private static List<int> MainSubs(List<EncounterBoonCoverage> encs)
-    {
-        var ranked = encs
-            .SelectMany(e => e.Subs)
-            .GroupBy(s => s.SubGroup)
-            .Select(g => new { SubGroup = g.Key, TotalPlayers = g.Sum(s => s.PlayerCount) })
-            .OrderByDescending(x => x.TotalPlayers)
-            .Take(2)
-            .Select(x => x.SubGroup)
-            .OrderBy(n => n)
-            .ToList();
-        return ranked;
-    }
-
-    // Session-wide mean for one sub × one boon. Unweighted across encounters: each row
-    // contributes one number per cell. Nulls (missing sub on that encounter) are skipped.
-    private static decimal? SessionAvg(List<EncounterBoonCoverage> encs, int subGroup, bool quickness)
-    {
-        var values = encs
-            .Select(e => e.Subs.FirstOrDefault(s => s.SubGroup == subGroup))
-            .Where(s => s != null)
-            .Select(s => quickness ? s!.AvgQuicknessUptime : s!.AvgAlacrityUptime)
-            .Where(v => v.HasValue)
-            .Select(v => v!.Value)
-            .ToList();
-        return values.Count > 0 ? values.Average() : null;
-    }
-
-    private RenderFragment RenderUptime(decimal? pct) => __builder =>
-    {
-        if (pct == null)
-        {
-            <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
-        }
-        else
-        {
-            <MudChip T="string" Size="Size.Small" Color="@UptimeColor(pct)" Variant="Variant.Filled">
-                @($"{pct:0}%")
-            </MudChip>
-        }
-    };
-
-    private RenderFragment RenderGenerators(List<BoonGeneratorInfo> generators) => __builder =>
-    {
-        if (generators.Count == 0)
-        {
-            <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
-            return;
-        }
-        var bySub = generators.GroupBy(g => g.SubGroup).OrderBy(g => g.Key);
-        <MudStack Spacing="0">
-            @foreach (var subGroup in bySub)
-            {
-                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
-                    <MudText Typo="Typo.caption" Style="min-width: 28px;"><strong>S@(subGroup.Key):</strong></MudText>
-                    @foreach (var gen in subGroup.OrderBy(g => g.Boon))
-                    {
-                        var letter = gen.Boon == "Quickness" ? "Q" : "A";
-                        <MudText Typo="Typo.caption">@letter @gen.AccountName</MudText>
-                    }
-                </MudStack>
-            }
-        </MudStack>
-    };
-
     private static string FormatDuration(int durationMs)
     {
         var ts = TimeSpan.FromMilliseconds(durationMs);
@@ -438,28 +272,4 @@ else
         DateTimeOffset EncounterTime,
         int DurationMs,
         string? LogUrl);
-
-    public record EncounterBoonCoverage(
-        Guid EncounterId,
-        string BossName,
-        bool IsCM,
-        bool Success,
-        int DurationMs,
-        DateTimeOffset EncounterTime,
-        List<SubBoonCoverage> Subs,
-        List<BoonGeneratorInfo> Generators);
-
-    public record SubBoonCoverage(
-        int SubGroup,
-        int PlayerCount,
-        decimal? AvgQuicknessUptime,
-        decimal? AvgAlacrityUptime);
-
-    public record BoonGeneratorInfo(
-        string AccountName,
-        string Profession,
-        string Role,
-        int SubGroup,
-        string Boon,
-        decimal? GenerationPct);
 }
