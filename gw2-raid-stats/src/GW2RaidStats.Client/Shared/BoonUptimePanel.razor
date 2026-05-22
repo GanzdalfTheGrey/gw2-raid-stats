@@ -31,8 +31,6 @@
         white-space: nowrap;
         padding-left: 6px;
     }
-    .boon-sub-row { cursor: pointer; }
-    .boon-sub-row:hover td { filter: brightness(1.15); }
 </style>
 
 @if (Coverage is null || Coverage.Count == 0)
@@ -41,17 +39,25 @@
 }
 else
 {
-    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
-        Average boon self-uptime per sub (excludes dead/down time). Green / amber / red by
-        threshold — % boons: &gt; 90 / &gt; 80 / ≤ 80; Might (avg stacks): ≥ 20 / ≥ 15 / below.
-        A red-outlined cell means the sub average is fine but exactly one member is in the red —
-        click the sub to expand its players.
+    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+        Boon self-uptime (excludes dead/down time). Green / amber / red by threshold —
+        % boons: &gt; 90 / &gt; 80 / ≤ 80; Might (avg stacks): ≥ 20 / ≥ 15 / below.
+        A red-outlined cell means the sub average is fine but exactly one member is in the red.
     </MudText>
+
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+        <MudText Typo="Typo.body2">View:</MudText>
+        <MudToggleGroup T="string" Value="_viewMode" ValueChanged="OnViewModeChanged"
+                        Size="Size.Small" Color="Color.Primary">
+            <MudToggleItem Value="@("subs")" Text="Sub averages" />
+            <MudToggleItem Value="@("players")" Text="All players" />
+        </MudToggleGroup>
+    </MudStack>
 
     <MudStack Spacing="3">
         @foreach (var enc in Coverage)
         {
-            <MudPaper Class="pa-3" Elevation="1">
+            <MudPaper Class="pa-3" Outlined="true">
                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
                     <MudText Typo="Typo.subtitle1"><strong>@enc.BossName</strong></MudText>
                     @if (enc.IsCM)
@@ -84,17 +90,8 @@ else
                             @foreach (var subGroup in MainSubs())
                             {
                                 var sub = enc.Subs.FirstOrDefault(s => s.SubGroup == subGroup);
-                                var canExpand = sub is { Players.Count: > 0 };
-                                <tr class="@(canExpand ? "boon-sub-row" : "")"
-                                    @onclick="@(() => { if (canExpand) ToggleExpand(enc, subGroup); })">
-                                    <td class="boon-label">
-                                        @if (canExpand)
-                                        {
-                                            <MudIcon Icon="@(IsExpanded(enc, subGroup) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
-                                                     Size="Size.Small" Style="vertical-align: middle;" />
-                                        }
-                                        <strong>Sub @subGroup</strong>
-                                    </td>
+                                <tr>
+                                    <td class="boon-label"><strong>Sub @subGroup</strong></td>
                                     @foreach (var b in Boons)
                                     {
                                         <td style="@CellStyle(b.Get(sub?.Average), b.IsMight, Outlier(sub, b))">
@@ -102,9 +99,9 @@ else
                                         </td>
                                     }
                                 </tr>
-                                @if (canExpand && IsExpanded(enc, subGroup))
+                                @if (_viewMode == "players" && sub is { Players.Count: > 0 })
                                 {
-                                    @foreach (var p in sub!.Players)
+                                    @foreach (var p in sub.Players)
                                     {
                                         <tr>
                                             <td class="boon-label" style="padding-left: 28px;">
@@ -164,7 +161,13 @@ else
 @code {
     [Parameter] public List<EncounterBoonCoverage>? Coverage { get; set; }
 
-    private readonly HashSet<(Guid, int)> _expanded = new();
+    // "subs" = sub-average rows only; "players" = sub rows plus their per-player rows.
+    private string _viewMode = "subs";
+
+    private void OnViewModeChanged(string mode)
+    {
+        if (mode is "subs" or "players") _viewMode = mode;
+    }
 
     private record BoonDef(string Label, Func<BoonSet?, decimal?> Get, bool IsMight);
 
@@ -178,15 +181,6 @@ else
         new("Prot",  b => b?.Protection,   false),
         new("Swift", b => b?.Swiftness,    false),
     };
-
-    private bool IsExpanded(EncounterBoonCoverage enc, int subGroup)
-        => _expanded.Contains((enc.EncounterId, subGroup));
-
-    private void ToggleExpand(EncounterBoonCoverage enc, int subGroup)
-    {
-        var key = (enc.EncounterId, subGroup);
-        if (!_expanded.Remove(key)) _expanded.Add(key);
-    }
 
     // The two subs used most across the session (by total player-encounter count) — drops a
     // small kite/utility sub and adapts when subs aren't numbered 1 and 2.
