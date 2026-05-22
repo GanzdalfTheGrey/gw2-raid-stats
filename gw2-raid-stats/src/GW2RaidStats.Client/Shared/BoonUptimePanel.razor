@@ -137,63 +137,29 @@ else
                                     }
                                 }
                             }
+                            @* All-time average for this boss — the baseline to compare the
+                               session's subs above against. *@
+                            @if (enc.BossAllTimeAverage != null)
+                            {
+                                <tr class="boon-spacer"><td colspan="@(Boons.Length + 1)"></td></tr>
+                                <tr>
+                                    <td class="boon-label">
+                                        <strong>Average</strong>
+                                        <span style="opacity: 0.6;">all-time</span>
+                                    </td>
+                                    @foreach (var b in Boons)
+                                    {
+                                        <td style="@CellStyle(b.Get(enc.BossAllTimeAverage), b.IsMight, false)">
+                                            @Format(b.Get(enc.BossAllTimeAverage), b.IsMight)
+                                        </td>
+                                    }
+                                </tr>
+                            }
                         </tbody>
                     </table>
                 </div>
             </MudPaper>
         }
-
-        @* Boss averages — encounters grouped by boss (multiple pulls rolled together) *@
-        <MudPaper Class="pa-3" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
-            <MudText Typo="Typo.subtitle2" Class="mb-1"><strong>Boss averages</strong></MudText>
-            <div class="boon-grid-scroll">
-                <table class="boon-grid">
-                    <thead>
-                        <tr>
-                            <th class="boon-label"></th>
-                            @foreach (var b in Boons)
-                            {
-                                <th>@b.Label</th>
-                            }
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @{ var bossIdx = 0; }
-                        @foreach (var bg in BossGroups())
-                        {
-                            if (bossIdx > 0)
-                            {
-                                <tr class="boon-spacer"><td colspan="@(Boons.Length + 1)"></td></tr>
-                            }
-                            bossIdx++;
-                            <tr>
-                                <td class="boon-label" colspan="@(Boons.Length + 1)">
-                                    <strong>@bg.Name</strong>
-                                    @if (bg.IsCM)
-                                    {
-                                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1">CM</MudChip>
-                                    }
-                                    <span style="opacity: 0.6;"> · @bg.Encounters.Count pull@(bg.Encounters.Count == 1 ? "" : "s")</span>
-                                </td>
-                            </tr>
-                            @foreach (var subGroup in MainSubs())
-                            {
-                                var avg = AverageOf(bg.Encounters, subGroup);
-                                <tr>
-                                    <td class="boon-label" style="padding-left: 28px;"><strong>Sub @subGroup</strong></td>
-                                    @foreach (var b in Boons)
-                                    {
-                                        <td style="@CellStyle(b.Get(avg), b.IsMight, false)">
-                                            @Format(b.Get(avg), b.IsMight)
-                                        </td>
-                                    }
-                                </tr>
-                            }
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </MudPaper>
 
         @* Session average — same grid, one row per main sub, no expand *@
         <MudPaper Class="pa-3" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
@@ -292,14 +258,6 @@ else
             Mean(subs.Select(a => a.Swiftness)));
     }
 
-    private record BossGroup(string Name, bool IsCM, List<EncounterBoonCoverage> Encounters);
-
-    // Encounters grouped by boss, in first-appearance order.
-    private List<BossGroup> BossGroups()
-        => Coverage!
-            .GroupBy(e => (e.BossName, e.IsCM))
-            .Select(g => new BossGroup(g.Key.BossName, g.Key.IsCM, g.ToList()))
-            .ToList();
 
     private static decimal? Mean(IEnumerable<decimal?> values)
     {

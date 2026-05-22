@@ -11,7 +11,8 @@ public record EncounterBoonCoverage(
     int DurationMs,
     DateTimeOffset EncounterTime,
     List<SubBoonCoverage> Subs,
-    List<BoonGeneratorInfo> Generators);
+    List<BoonGeneratorInfo> Generators,
+    BoonSet? BossAllTimeAverage);
 
 public record SubBoonCoverage(
     int SubGroup,
