@@ -33,7 +33,13 @@
     }
     .boon-grid tr.boon-spacer td {
         padding: 0;
-        height: 8px;
+        height: 14px;
+        min-width: 0;
+        background: transparent;
+    }
+    .boon-grid tr.boon-inner-spacer td {
+        padding: 0;
+        height: 5px;
         min-width: 0;
         background: transparent;
     }
@@ -114,6 +120,7 @@ else
                                 </tr>
                                 @if (playerView && sub is { Players.Count: > 0 })
                                 {
+                                    <tr class="boon-inner-spacer"><td colspan="@(Boons.Length + 1)"></td></tr>
                                     @foreach (var p in sub.Players)
                                     {
                                         <tr>
