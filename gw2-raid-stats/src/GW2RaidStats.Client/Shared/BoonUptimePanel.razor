@@ -31,6 +31,12 @@
         white-space: nowrap;
         padding-left: 6px;
     }
+    .boon-grid tr.boon-spacer td {
+        padding: 0;
+        height: 8px;
+        min-width: 0;
+        background: transparent;
+    }
 </style>
 
 @if (Coverage is null || Coverage.Count == 0)
@@ -45,29 +51,29 @@ else
         A red-outlined cell means the sub average is fine but exactly one member is in the red.
     </MudText>
 
-    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
-        <MudText Typo="Typo.body2">View:</MudText>
-        <MudToggleGroup T="string" Value="_viewMode" ValueChanged="OnViewModeChanged"
-                        Size="Size.Small" Color="Color.Primary">
-            <MudToggleItem Value="@("subs")" Text="Sub averages" />
-            <MudToggleItem Value="@("players")" Text="All players" />
-        </MudToggleGroup>
-    </MudStack>
-
     <MudStack Spacing="3">
         @foreach (var enc in Coverage)
         {
-            <MudPaper Class="pa-3" Outlined="true">
-                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
-                    <MudText Typo="Typo.subtitle1"><strong>@enc.BossName</strong></MudText>
-                    @if (enc.IsCM)
-                    {
-                        <MudChip T="string" Size="Size.Small" Color="Color.Warning">CM</MudChip>
-                    }
-                    <MudChip T="string" Size="Size.Small"
-                             Color="@(enc.Success ? Color.Success : Color.Error)" Variant="Variant.Text">
-                        @(enc.Success ? "Kill" : "Wipe")
-                    </MudChip>
+            <MudPaper Class="pa-3" Outlined="true" Style="background-color: var(--mud-palette-background-gray);">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+                        <MudText Typo="Typo.subtitle1"><strong>@enc.BossName</strong></MudText>
+                        @if (enc.IsCM)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning">CM</MudChip>
+                        }
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(enc.Success ? Color.Success : Color.Error)" Variant="Variant.Text">
+                            @(enc.Success ? "Kill" : "Wipe")
+                        </MudChip>
+                    </MudStack>
+                    <MudToggleGroup T="string"
+                                    Value="@(IsPlayerView(enc.EncounterId) ? "players" : "subs")"
+                                    ValueChanged="@(v => SetView(enc.EncounterId, v))"
+                                    Size="Size.Small" Color="Color.Primary">
+                        <MudToggleItem Value="@("subs")" Text="Subs" />
+                        <MudToggleItem Value="@("players")" Text="Players" />
+                    </MudToggleGroup>
                 </MudStack>
 
                 @foreach (var subGroup in MainSubs())
@@ -87,9 +93,16 @@ else
                             </tr>
                         </thead>
                         <tbody>
+                            @{ var subIdx = 0; }
                             @foreach (var subGroup in MainSubs())
                             {
                                 var sub = enc.Subs.FirstOrDefault(s => s.SubGroup == subGroup);
+                                var playerView = IsPlayerView(enc.EncounterId);
+                                if (playerView && subIdx > 0)
+                                {
+                                    <tr class="boon-spacer"><td colspan="@(Boons.Length + 1)"></td></tr>
+                                }
+                                subIdx++;
                                 <tr>
                                     <td class="boon-label"><strong>Sub @subGroup</strong></td>
                                     @foreach (var b in Boons)
@@ -99,7 +112,7 @@ else
                                         </td>
                                     }
                                 </tr>
-                                @if (_viewMode == "players" && sub is { Players.Count: > 0 })
+                                @if (playerView && sub is { Players.Count: > 0 })
                                 {
                                     @foreach (var p in sub.Players)
                                     {
@@ -161,12 +174,16 @@ else
 @code {
     [Parameter] public List<EncounterBoonCoverage>? Coverage { get; set; }
 
-    // "subs" = sub-average rows only; "players" = sub rows plus their per-player rows.
-    private string _viewMode = "subs";
+    // Encounters currently in the per-player view. Toggled per card; default (not in the
+    // set) = sub-average rows only.
+    private readonly HashSet<Guid> _playerView = new();
 
-    private void OnViewModeChanged(string mode)
+    private bool IsPlayerView(Guid encounterId) => _playerView.Contains(encounterId);
+
+    private void SetView(Guid encounterId, string mode)
     {
-        if (mode is "subs" or "players") _viewMode = mode;
+        if (mode == "players") _playerView.Add(encounterId);
+        else _playerView.Remove(encounterId);
     }
 
     private record BoonDef(string Label, Func<BoonSet?, decimal?> Get, bool IsMight);
