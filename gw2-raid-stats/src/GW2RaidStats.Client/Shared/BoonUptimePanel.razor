@@ -54,6 +54,8 @@ else
     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
         Boon self-uptime (excludes dead/down time). Green / amber / red by threshold —
         % boons: &gt; 90 / &gt; 80 / ≤ 80; Might (avg stacks): ≥ 20 / ≥ 15 / below.
+        <strong>Dist</strong> = average distance to the squad centre, coloured against the
+        encounter's squad average (green at or below it, amber within +10%, red beyond).
         A red-outlined cell means the sub average is fine but exactly one member is in the red.
     </MudText>
 
@@ -86,6 +88,13 @@ else
                 {
                     @RenderBooners(enc, subGroup)
                 }
+                @if (BossQuirkNotes.TryGetValue(enc.BossName, out var quirk))
+                {
+                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="mt-1">
+                        <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Color="Color.Info" />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary"><em>@quirk</em></MudText>
+                    </MudStack>
+                }
 
                 <div class="boon-grid-scroll mt-2">
                     <table class="boon-grid">
@@ -96,6 +105,7 @@ else
                                 {
                                     <th>@b.Label</th>
                                 }
+                                <th>Dist</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -106,7 +116,7 @@ else
                                 var playerView = IsPlayerView(enc.EncounterId);
                                 if (playerView && subIdx > 0)
                                 {
-                                    <tr class="boon-spacer"><td colspan="@(Boons.Length + 1)"></td></tr>
+                                    <tr class="boon-spacer"><td colspan="@(Boons.Length + 2)"></td></tr>
                                 }
                                 subIdx++;
                                 <tr>
@@ -117,10 +127,13 @@ else
                                             @Format(b.Get(sub?.Average), b.IsMight)
                                         </td>
                                     }
+                                    <td style="@DistCellStyle(sub?.AvgDistance, enc.SquadAvgDistance)">
+                                        @FmtDist(sub?.AvgDistance)
+                                    </td>
                                 </tr>
                                 @if (playerView && sub is { Players.Count: > 0 })
                                 {
-                                    <tr class="boon-inner-spacer"><td colspan="@(Boons.Length + 1)"></td></tr>
+                                    <tr class="boon-inner-spacer"><td colspan="@(Boons.Length + 2)"></td></tr>
                                     @foreach (var p in sub.Players)
                                     {
                                         <tr>
@@ -133,6 +146,9 @@ else
                                                     @Format(b.Get(p.Boons), b.IsMight)
                                                 </td>
                                             }
+                                            <td style="@DistCellStyle(p.Distance, enc.SquadAvgDistance)">
+                                                @FmtDist(p.Distance)
+                                            </td>
                                         </tr>
                                     }
                                 }
@@ -155,6 +171,7 @@ else
                             {
                                 <th>@b.Label</th>
                             }
+                            <th>Dist</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -169,6 +186,9 @@ else
                                         @Format(b.Get(avg), b.IsMight)
                                     </td>
                                 }
+                                <td style="@DistCellStyle(SessionAvgDistance(subGroup), SessionSquadDistance())">
+                                    @FmtDist(SessionAvgDistance(subGroup))
+                                </td>
                             </tr>
                         }
                     </tbody>
@@ -219,7 +239,49 @@ else
             .OrderBy(n => n)
             .ToList();
 
+    // Bosses where a role is intentionally away from the stack — their high distance /
+    // low uptime is by design, not a mistake. Keyed by canonical boss name.
+    private static readonly Dictionary<string, string> BossQuirkNotes = new()
+    {
+        ["Deimos"] = "Hand-kite role is away from the stack by design — expect one high distance / low uptime.",
+        ["Qadim"] = "Kiting duty (lamps / wyvern) pulls a player or two off the stack.",
+        ["Qadim the Peerless"] = "Pylon kiters are away from the centre by design.",
+    };
+
     private BoonSet? SessionAverage(int subGroup) => AverageOf(Coverage!, subGroup);
+
+    // Session-wide mean of one sub's average stack distance.
+    private decimal? SessionAvgDistance(int subGroup)
+        => Mean(Coverage!
+            .Select(e => e.Subs.FirstOrDefault(s => s.SubGroup == subGroup)?.AvgDistance));
+
+    // Session-wide squad-mean distance — the colouring baseline for the session card.
+    private decimal? SessionSquadDistance()
+        => Mean(Coverage!.Select(e => e.SquadAvgDistance));
+
+    // Distance colour band relative to a baseline (lower is better): green at or below,
+    // yellow within +10%, red beyond. 0 = no data.
+    private static int DistBand(decimal? v, decimal? baseline)
+    {
+        if (v == null || baseline == null || baseline <= 0) return 0;
+        if (v <= baseline) return 3;
+        if (v <= baseline * 1.10m) return 2;
+        return 1;
+    }
+
+    private static string DistCellStyle(decimal? v, decimal? baseline)
+    {
+        var bg = DistBand(v, baseline) switch
+        {
+            3 => "rgba(102, 187, 106, 0.28)",
+            2 => "rgba(255, 167, 38, 0.30)",
+            1 => "rgba(239, 83, 80, 0.34)",
+            _ => "transparent"
+        };
+        return $"background-color: {bg};";
+    }
+
+    private static string FmtDist(decimal? v) => v == null ? "—" : $"{v:0}";
 
     // Mean of one sub's averages across a set of encounters.
     private static BoonSet? AverageOf(IEnumerable<EncounterBoonCoverage> encs, int subGroup)

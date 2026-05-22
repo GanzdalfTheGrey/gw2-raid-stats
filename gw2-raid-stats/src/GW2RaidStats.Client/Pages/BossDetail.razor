@@ -167,6 +167,13 @@ else
                     @RenderBoonChip("Regen", _boss.SquadBoons.RegenerationUptime, false)
                     @RenderBoonChip("Protection", _boss.SquadBoons.ProtectionUptime, false)
                     @RenderBoonChip("Swiftness", _boss.SquadBoons.SwiftnessUptime, false)
+                    @if (_boss.SquadBoons.StackDistance.HasValue)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined"
+                                 Title="Average distance to the squad centre (GW2 units; lower = tighter stacking)">
+                            Distance @($"{_boss.SquadBoons.StackDistance.Value:0}")
+                        </MudChip>
+                    }
                 </MudStack>
             </MudPaper>
         </MudItem>
@@ -340,7 +347,8 @@ else
         decimal? FuryUptime,
         decimal? RegenerationUptime,
         decimal? ProtectionUptime,
-        decimal? SwiftnessUptime
+        decimal? SwiftnessUptime,
+        decimal? StackDistance
     );
 
     public record BossEncounterDto(

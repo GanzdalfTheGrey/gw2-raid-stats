@@ -102,6 +102,10 @@ public class PlayerEncounterEntity
     [Column("swiftness_uptime")]
     public decimal? SwiftnessUptime { get; set; }
 
+    // Average distance to the squad's centroid (EI statsAll.stackDist; GW2 units, lower = tighter).
+    [Column("stack_distance")]
+    public decimal? StackDistance { get; set; }
+
     // Healing stats (from extension - requires arcdps healing extension)
     [Column("healing")]
     public int Healing { get; set; }

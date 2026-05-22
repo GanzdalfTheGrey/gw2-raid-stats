@@ -70,6 +70,7 @@ public class BoonCoverageService
                 pe.RegenerationUptime,
                 pe.ProtectionUptime,
                 pe.SwiftnessUptime,
+                pe.StackDistance,
                 pe.QuicknessGeneration,
                 pe.AlacracityGeneration,
                 AccountName = p.AccountName
@@ -96,6 +97,7 @@ public class BoonCoverageService
                         Regeneration: NullableMean(g.Select(r => r.RegenerationUptime)),
                         Protection: NullableMean(g.Select(r => r.ProtectionUptime)),
                         Swiftness: NullableMean(g.Select(r => r.SwiftnessUptime))),
+                    AvgDistance: NullableMean(g.Select(r => r.StackDistance)),
                     Players: g
                         .OrderBy(r => r.AccountName, StringComparer.OrdinalIgnoreCase)
                         .Select(r => new PlayerBoonRow(
@@ -103,7 +105,8 @@ public class BoonCoverageService
                             r.Profession,
                             new BoonSet(
                                 r.QuicknessSelfUptime, r.AlacritySelfUptime, r.MightAvgStacks,
-                                r.FuryUptime, r.RegenerationUptime, r.ProtectionUptime, r.SwiftnessUptime)))
+                                r.FuryUptime, r.RegenerationUptime, r.ProtectionUptime, r.SwiftnessUptime),
+                            r.StackDistance))
                         .ToList()))
                 .ToList();
 
@@ -130,7 +133,8 @@ public class BoonCoverageService
                 DurationMs: enc.DurationMs,
                 EncounterTime: enc.EncounterTime,
                 Subs: subs,
-                Generators: generators));
+                Generators: generators,
+                SquadAvgDistance: NullableMean(encRows.Select(r => r.StackDistance))));
         }
         return result;
     }
@@ -159,6 +163,7 @@ public class BoonCoverageService
                 pe.Role,
                 pe.QuicknessSelfUptime,
                 pe.AlacritySelfUptime,
+                pe.StackDistance,
                 e.TriggerId,
                 e.BossName,
                 e.IsCM,
@@ -173,7 +178,9 @@ public class BoonCoverageService
                 Alacrity: BoonSummary.Empty,
                 GuildAverages: GuildBoonAverages.Empty,
                 PerBoss: new(),
-                PerProfession: new());
+                PerProfession: new(),
+                PlayerAvgDistance: null,
+                GuildAvgDistance: null);
         }
 
         var encounterIds = playerRows.Select(r => r.EncounterId).Distinct().ToList();
@@ -241,7 +248,7 @@ public class BoonCoverageService
             perRow.Select(r => r.AGen),
             perRow.Select(r => r.ASelf));
 
-        var (guildAverages, guildPerBoss) = await GetGuildAveragesAsync(rangeStart, rangeEnd, ct);
+        var (guildAverages, guildPerBoss, guildDistance) = await GetGuildAveragesAsync(rangeStart, rangeEnd, ct);
 
         // Group by trigger ID, not raw boss name — EI sometimes writes "Cardinal Adina 1" etc.
         // for split-log artifacts. Trigger ID is the canonical boss identity.
@@ -283,7 +290,9 @@ public class BoonCoverageService
             Alacrity: alacrity,
             GuildAverages: guildAverages,
             PerBoss: perBoss,
-            PerProfession: perProfession);
+            PerProfession: perProfession,
+            PlayerAvgDistance: NullableMean(playerRows.Select(r => r.StackDistance)),
+            GuildAvgDistance: guildDistance);
     }
 
     /// <summary>
@@ -292,10 +301,10 @@ public class BoonCoverageService
     /// (including pugs) — that's what "the sub's uptime you delivered" means. The contributing
     /// rows are filtered to guildies so pug performance doesn't muddy the comparison.
     /// </summary>
-    private async Task<(GuildBoonAverages Overall, Dictionary<(int TriggerId, bool IsCM), GuildBoonAverages> PerBoss)> GetGuildAveragesAsync(
+    private async Task<(GuildBoonAverages Overall, Dictionary<(int TriggerId, bool IsCM), GuildBoonAverages> PerBoss, decimal? Distance)> GetGuildAveragesAsync(
         DateTimeOffset? rangeStart, DateTimeOffset? rangeEnd, CancellationToken ct)
     {
-        var empty = (GuildBoonAverages.Empty, new Dictionary<(int, bool), GuildBoonAverages>());
+        var empty = (GuildBoonAverages.Empty, new Dictionary<(int, bool), GuildBoonAverages>(), (decimal?)null);
 
         var includedAccountsSet = await _includedPlayers.GetIncludedAccountNamesAsync(ct);
         if (includedAccountsSet.Count == 0) return empty;
@@ -318,6 +327,7 @@ public class BoonCoverageService
                 pe.Role,
                 pe.QuicknessSelfUptime,
                 pe.AlacritySelfUptime,
+                pe.StackDistance,
                 e.TriggerId,
                 e.IsCM
             })
@@ -394,7 +404,9 @@ public class BoonCoverageService
                 AlacrityGenAvg: Mean(kvp.Value.AGen),
                 AlacritySelfAvg: Mean(kvp.Value.ASelf)));
 
-        return (overall, perBoss);
+        var guildDistance = NullableMean(guildRows.Select(r => r.StackDistance));
+
+        return (overall, perBoss, guildDistance);
     }
 
     // --- Trends view ---
@@ -535,18 +547,21 @@ public record EncounterBoonCoverage(
     int DurationMs,
     DateTimeOffset EncounterTime,
     List<SubBoonCoverage> Subs,
-    List<BoonGeneratorInfo> Generators);
+    List<BoonGeneratorInfo> Generators,
+    decimal? SquadAvgDistance);
 
 public record SubBoonCoverage(
     int SubGroup,
     int PlayerCount,
     BoonSet Average,
+    decimal? AvgDistance,
     List<PlayerBoonRow> Players);
 
 public record PlayerBoonRow(
     string AccountName,
     string Profession,
-    BoonSet Boons);
+    BoonSet Boons,
+    decimal? Distance);
 
 // Self-uptime for all seven tracked boons. Quickness/Alacrity/Fury/Regeneration/Protection/
 // Swiftness are % uptime 0-100; Might is average stacks 0-25.
@@ -572,7 +587,9 @@ public record PlayerBoonCoverage(
     BoonSummary Alacrity,
     GuildBoonAverages GuildAverages,
     List<BoonPerBoss> PerBoss,
-    List<BoonPerProfession> PerProfession);
+    List<BoonPerProfession> PerProfession,
+    decimal? PlayerAvgDistance,
+    decimal? GuildAvgDistance);
 
 public record GuildBoonAverages(
     decimal? QuicknessGenAvg,

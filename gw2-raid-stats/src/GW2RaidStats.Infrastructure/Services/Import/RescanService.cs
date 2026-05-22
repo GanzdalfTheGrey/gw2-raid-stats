@@ -166,6 +166,7 @@ public class RescanService
                     pe.QuicknessSelfUptime,
                     pe.AlacritySelfUptime,
                     pe.MightAvgStacks,
+                    pe.StackDistance,
                     pe.Dps
                 })
                 .FirstOrDefaultAsync(ct);
@@ -211,6 +212,20 @@ public class RescanService
                     .UpdateAsync(ct);
 
                 anyUpdated = true;
+            }
+
+            // Backfill stack distance when null (added in migration 025).
+            if (playerEncounter.StackDistance == null)
+            {
+                var stackDist = eiPlayer.StatsAll?.FirstOrDefault()?.StackDist;
+                if (stackDist.HasValue)
+                {
+                    await _db.PlayerEncounters
+                        .Where(pe => pe.Id == playerEncounter.Id)
+                        .Set(pe => pe.StackDistance, stackDist)
+                        .UpdateAsync(ct);
+                    anyUpdated = true;
+                }
             }
 
             // Backfill boon self-uptime when null. Quickness/Alacrity added in migration 022;

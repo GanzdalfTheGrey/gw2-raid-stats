@@ -5,6 +5,16 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Stack distance tracking** — each player's average distance to the squad's centroid (from EI's `statsAll.stackDist`; lower = tighter stacking), captured into a new `player_encounters.stack_distance` column (migration 025). Surfaced in three places:
+  - **Boon Uptime panel** — a "Dist" column per sub / per player, coloured against the encounter's squad-average distance (green at or below, amber within +10%, red beyond).
+  - **Boss detail** — a squad-average Distance chip on the Squad Boon Uptime card.
+  - **Player Profile** — an "Avg stack distance" line in the Boon Coverage card with a guild-average comparison.
+  - **Boss quirk notes**: Deimos, Qadim, and Qadim the Peerless show a note that a kite/pylon role is intentionally off the stack, so a high distance / low uptime there isn't misread.
+  - Backfill historical encounters via **Admin → Manage Logs → Rescan**.
+
 ## [1.15.2] - 2026-05-13
 
 ### Added

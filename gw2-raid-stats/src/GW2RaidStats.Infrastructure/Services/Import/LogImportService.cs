@@ -218,6 +218,9 @@ public class LogImportService
                 ProtectionUptime = boons.Protection,
                 SwiftnessUptime = boons.Swiftness,
 
+                // Average distance to squad centroid
+                StackDistance = eiPlayer.StatsAll?.FirstOrDefault()?.StackDist,
+
                 // Healing stats (from extension)
                 Healing = healingTotal,
                 HealingPowerHealing = healingPower,

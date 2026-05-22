@@ -273,6 +273,31 @@ else
                         </MudItem>
                     </MudGrid>
 
+                    @if (_boonCoverage.PlayerAvgDistance.HasValue)
+                    {
+                        <MudPaper Class="pa-3 mt-2" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
+                            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
+                                <MudText Typo="Typo.body2"><strong>Avg stack distance</strong></MudText>
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
+                                         Color="@DistanceColor(_boonCoverage.PlayerAvgDistance, _boonCoverage.GuildAvgDistance)">
+                                    @($"{_boonCoverage.PlayerAvgDistance.Value:0}")
+                                </MudChip>
+                                @if (_boonCoverage.GuildAvgDistance.HasValue)
+                                {
+                                    var delta = _boonCoverage.PlayerAvgDistance.Value - _boonCoverage.GuildAvgDistance.Value;
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        guild @($"{_boonCoverage.GuildAvgDistance.Value:0}")
+                                        (@(delta >= 0 ? "+" : "")@($"{delta:0}"))
+                                    </MudText>
+                                }
+                            </MudStack>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Average distance to the squad centre — lower is tighter stacking. Green at or below the
+                                guild average, amber within +10%, red beyond.
+                            </MudText>
+                        </MudPaper>
+                    }
+
                     @* Generation / Self breakdown lives in tabs so each side gets full width *@
                     <MudTabs Outlined="false" Rounded="true" Border="false" Position="Position.Top" Class="mt-3" PanelClass="pa-0 pt-3">
                         <MudTabPanel Text="As Generator" Icon="@Icons.Material.Filled.Bolt">
@@ -588,6 +613,16 @@ else
         _ => Color.Error
     };
 
+    // Stack distance vs the guild average (lower is better): green at or below, amber
+    // within +10%, red beyond.
+    private static Color DistanceColor(decimal? value, decimal? guildAvg)
+    {
+        if (value == null || guildAvg == null || guildAvg <= 0) return Color.Default;
+        if (value <= guildAvg) return Color.Success;
+        if (value <= guildAvg * 1.10m) return Color.Warning;
+        return Color.Error;
+    }
+
     private static (decimal? avg, int encounters) Pick(BoonSummary s, BoonSlice slice)
         => slice == BoonSlice.Generation
             ? (s.GenerationAvg, s.GenerationEncounters)
@@ -874,7 +909,9 @@ else
         BoonSummary Alacrity,
         GuildBoonAverages GuildAverages,
         List<BoonPerBoss> PerBoss,
-        List<BoonPerProfession> PerProfession);
+        List<BoonPerProfession> PerProfession,
+        decimal? PlayerAvgDistance,
+        decimal? GuildAvgDistance);
 
     public record GuildBoonAverages(
         decimal? QuicknessGenAvg,

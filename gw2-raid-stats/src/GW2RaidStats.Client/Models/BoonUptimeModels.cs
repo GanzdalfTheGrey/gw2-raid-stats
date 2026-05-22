@@ -11,18 +11,21 @@ public record EncounterBoonCoverage(
     int DurationMs,
     DateTimeOffset EncounterTime,
     List<SubBoonCoverage> Subs,
-    List<BoonGeneratorInfo> Generators);
+    List<BoonGeneratorInfo> Generators,
+    decimal? SquadAvgDistance);
 
 public record SubBoonCoverage(
     int SubGroup,
     int PlayerCount,
     BoonSet Average,
+    decimal? AvgDistance,
     List<PlayerBoonRow> Players);
 
 public record PlayerBoonRow(
     string AccountName,
     string Profession,
-    BoonSet Boons);
+    BoonSet Boons,
+    decimal? Distance);
 
 // Quickness/Alacrity/Fury/Regeneration/Protection/Swiftness are % uptime 0-100;
 // Might is average stacks 0-25.

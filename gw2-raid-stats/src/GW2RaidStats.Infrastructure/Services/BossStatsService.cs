@@ -124,7 +124,8 @@ public class BossStatsService
                 pe.FuryUptime,
                 pe.RegenerationUptime,
                 pe.ProtectionUptime,
-                pe.SwiftnessUptime
+                pe.SwiftnessUptime,
+                pe.StackDistance
             })
             .ToListAsync(ct);
 
@@ -141,7 +142,8 @@ public class BossStatsService
             FuryUptime: BoonMean(boonRows.Select(r => r.FuryUptime)),
             RegenerationUptime: BoonMean(boonRows.Select(r => r.RegenerationUptime)),
             ProtectionUptime: BoonMean(boonRows.Select(r => r.ProtectionUptime)),
-            SwiftnessUptime: BoonMean(boonRows.Select(r => r.SwiftnessUptime)));
+            SwiftnessUptime: BoonMean(boonRows.Select(r => r.SwiftnessUptime)),
+            StackDistance: BoonMean(boonRows.Select(r => r.StackDistance)));
 
         return new BossDetail(
             triggerId,
@@ -220,7 +222,8 @@ public record BossSquadBoons(
     decimal? FuryUptime,
     decimal? RegenerationUptime,
     decimal? ProtectionUptime,
-    decimal? SwiftnessUptime
+    decimal? SwiftnessUptime,
+    decimal? StackDistance
 );
 
 public record BossEncounter(
