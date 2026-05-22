@@ -76,40 +76,6 @@ public class BoonCoverageService
             })
             .ToListAsync(ct);
 
-        // All-time whole-squad boon average for each boss in the session — the baseline
-        // the per-encounter cards compare against. Keyed by (trigger id, CM).
-        var triggerIds = encounters.Select(e => e.TriggerId).Distinct().ToList();
-        var allTimeRows = await (
-            from pe in _db.PlayerEncounters
-            join e in _db.Encounters on pe.EncounterId equals e.Id
-            where triggerIds.Contains(e.TriggerId)
-            select new
-            {
-                e.TriggerId,
-                e.IsCM,
-                pe.QuicknessSelfUptime,
-                pe.AlacritySelfUptime,
-                pe.MightAvgStacks,
-                pe.FuryUptime,
-                pe.RegenerationUptime,
-                pe.ProtectionUptime,
-                pe.SwiftnessUptime
-            })
-            .ToListAsync(ct);
-
-        var allTimeByBoss = allTimeRows
-            .GroupBy(r => (r.TriggerId, r.IsCM))
-            .ToDictionary(
-                g => g.Key,
-                g => new BoonSet(
-                    NullableMean(g.Select(r => r.QuicknessSelfUptime)),
-                    NullableMean(g.Select(r => r.AlacritySelfUptime)),
-                    NullableMean(g.Select(r => r.MightAvgStacks)),
-                    NullableMean(g.Select(r => r.FuryUptime)),
-                    NullableMean(g.Select(r => r.RegenerationUptime)),
-                    NullableMean(g.Select(r => r.ProtectionUptime)),
-                    NullableMean(g.Select(r => r.SwiftnessUptime))));
-
         var result = new List<EncounterBoonCoverage>(encounters.Count);
         foreach (var enc in encounters.OrderBy(e => e.EncounterTime))
         {
@@ -164,8 +130,7 @@ public class BoonCoverageService
                 DurationMs: enc.DurationMs,
                 EncounterTime: enc.EncounterTime,
                 Subs: subs,
-                Generators: generators,
-                BossAllTimeAverage: allTimeByBoss.GetValueOrDefault((enc.TriggerId, enc.IsCM))));
+                Generators: generators));
         }
         return result;
     }
@@ -570,8 +535,7 @@ public record EncounterBoonCoverage(
     int DurationMs,
     DateTimeOffset EncounterTime,
     List<SubBoonCoverage> Subs,
-    List<BoonGeneratorInfo> Generators,
-    BoonSet? BossAllTimeAverage);
+    List<BoonGeneratorInfo> Generators);
 
 public record SubBoonCoverage(
     int SubGroup,

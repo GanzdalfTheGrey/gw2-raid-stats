@@ -137,24 +137,6 @@ else
                                     }
                                 }
                             }
-                            @* All-time average for this boss — the baseline to compare the
-                               session's subs above against. *@
-                            @if (enc.BossAllTimeAverage != null)
-                            {
-                                <tr class="boon-spacer"><td colspan="@(Boons.Length + 1)"></td></tr>
-                                <tr>
-                                    <td class="boon-label">
-                                        <strong>Average</strong>
-                                        <span style="opacity: 0.6;">all-time</span>
-                                    </td>
-                                    @foreach (var b in Boons)
-                                    {
-                                        <td style="@CellStyle(b.Get(enc.BossAllTimeAverage), b.IsMight, false)">
-                                            @Format(b.Get(enc.BossAllTimeAverage), b.IsMight)
-                                        </td>
-                                    }
-                                </tr>
-                            }
                         </tbody>
                     </table>
                 </div>
