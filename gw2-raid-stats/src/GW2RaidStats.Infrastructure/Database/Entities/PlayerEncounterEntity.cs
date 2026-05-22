@@ -85,6 +85,23 @@ public class PlayerEncounterEntity
     [Column("alacrity_self_uptime")]
     public decimal? AlacritySelfUptime { get; set; }
 
+    // Tier-2 boon self-uptime (same EI buffUptimesActive source). MightAvgStacks is average
+    // stacks 0-25; the rest are percentage uptime 0-100.
+    [Column("might_avg_stacks")]
+    public decimal? MightAvgStacks { get; set; }
+
+    [Column("fury_uptime")]
+    public decimal? FuryUptime { get; set; }
+
+    [Column("regeneration_uptime")]
+    public decimal? RegenerationUptime { get; set; }
+
+    [Column("protection_uptime")]
+    public decimal? ProtectionUptime { get; set; }
+
+    [Column("swiftness_uptime")]
+    public decimal? SwiftnessUptime { get; set; }
+
     // Healing stats (from extension - requires arcdps healing extension)
     [Column("healing")]
     public int Healing { get; set; }

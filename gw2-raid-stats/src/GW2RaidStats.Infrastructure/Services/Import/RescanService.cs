@@ -165,6 +165,7 @@ public class RescanService
                     pe.ResurrectTime,
                     pe.QuicknessSelfUptime,
                     pe.AlacritySelfUptime,
+                    pe.MightAvgStacks,
                     pe.Dps
                 })
                 .FirstOrDefaultAsync(ct);
@@ -212,16 +213,27 @@ public class RescanService
                 anyUpdated = true;
             }
 
-            // Backfill boon self-uptime when null (added in migration 022)
-            if (playerEncounter.QuicknessSelfUptime == null || playerEncounter.AlacritySelfUptime == null)
+            // Backfill boon self-uptime when null. Quickness/Alacrity added in migration 022;
+            // the tier-2 boons (Might/Fury/Regen/Protection/Swiftness) in migration 024 —
+            // MightAvgStacks being null flags an encounter that predates the tier-2 columns.
+            if (playerEncounter.QuicknessSelfUptime == null
+                || playerEncounter.AlacritySelfUptime == null
+                || playerEncounter.MightAvgStacks == null)
             {
-                var (qSelf, aSelf) = LogImportService.GetBoonSelfUptimeFromPlayer(eiPlayer);
-                if (qSelf.HasValue || aSelf.HasValue)
+                var boons = LogImportService.GetBoonSelfUptimeFromPlayer(eiPlayer);
+                if (boons.Quickness.HasValue || boons.Alacrity.HasValue || boons.MightAvgStacks.HasValue
+                    || boons.Fury.HasValue || boons.Regeneration.HasValue
+                    || boons.Protection.HasValue || boons.Swiftness.HasValue)
                 {
                     await _db.PlayerEncounters
                         .Where(pe => pe.Id == playerEncounter.Id)
-                        .Set(pe => pe.QuicknessSelfUptime, qSelf ?? playerEncounter.QuicknessSelfUptime)
-                        .Set(pe => pe.AlacritySelfUptime, aSelf ?? playerEncounter.AlacritySelfUptime)
+                        .Set(pe => pe.QuicknessSelfUptime, boons.Quickness ?? playerEncounter.QuicknessSelfUptime)
+                        .Set(pe => pe.AlacritySelfUptime, boons.Alacrity ?? playerEncounter.AlacritySelfUptime)
+                        .Set(pe => pe.MightAvgStacks, boons.MightAvgStacks)
+                        .Set(pe => pe.FuryUptime, boons.Fury)
+                        .Set(pe => pe.RegenerationUptime, boons.Regeneration)
+                        .Set(pe => pe.ProtectionUptime, boons.Protection)
+                        .Set(pe => pe.SwiftnessUptime, boons.Swiftness)
                         .UpdateAsync(ct);
 
                     anyUpdated = true;

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Tier-2 boon capture** (Might, Fury, Regeneration, Protection, Swiftness): the importer now records each player's self-uptime for these boons from EI's `buffUptimesActive`, in five new `player_encounters` columns. Might is stored as average stacks (0-25); the rest as percentage uptime. Migration 024. Historical encounters backfill via **Admin → Manage Logs → Rescan**. Display (Boon Uptime tab + boss detail) lands in a follow-up.
 - **Player Availability page** (Admin → Raid Planning → Availability): admin-locked grid of active members with Monday / Tuesday raid-night availability — green (available), yellow (maybe — one day a week, either), red (not available) — plus a free-text note per player. Changes auto-save. Migration 023.
 - **Boss detail page** Top DPS list now has an **All Time / This Patch** toggle, so you can see the current-patch top 5 separately from the all-time top 5. Defaults to This Patch. Overall boss stats and recent encounters stay all-time.
 - **Leaderboards** boss names are now links — clicking one opens that boss's detail page.
