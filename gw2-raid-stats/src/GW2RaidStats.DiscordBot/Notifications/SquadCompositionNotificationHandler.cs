@@ -135,13 +135,17 @@ public class SquadCompositionNotificationHandler : INotificationHandler
             }
         }
 
-        // Mechanics — one inline field per boss, so Discord can tile them 3-up on
-        // desktop and we no longer pour 14 bosses into a single 1024-cap field (which
-        // is what was cutting the tail off after "Twin Largos • Tan..."). Bosses with
-        // no assigned mechanic players are dropped so the section stays focused.
+        // Mechanics — one full-width field per boss, prefixed with the boss's order
+        // number in the squad. Splitting the old single field per boss keeps each
+        // value well under Discord's 1024-char cap (the old single-field version had
+        // to truncate after ~14 bosses). The Order index comes from the unfiltered
+        // PerBoss list so the numbers line up with the Bosses list in the description
+        // — gaps (e.g. 9, 11, 13 missing) just mean those bosses had no mechanic
+        // assignments and were dropped.
         var mechBosses = data.PerBoss
-            .Select(b => new
+            .Select((b, idx) => new
             {
+                Order = idx + 1,
                 b.BossName,
                 b.IsResetSegment,
                 Lines = b.Mechanics
@@ -165,12 +169,11 @@ public class SquadCompositionNotificationHandler : INotificationHandler
             embed.AddField("Mechanics", "​", inline: false);
             foreach (var boss in mechBosses)
             {
-                // Field names render bold in Discord — the previous "**Boss**" prefix
-                // inside the text is replaced by the field name itself.
-                var name = boss.BossName + (boss.IsResetSegment ? " (reset)" : "");
+                // Field names render bold in Discord; no need for **...** inside.
+                var name = $"{boss.Order}. {boss.BossName}" + (boss.IsResetSegment ? " (reset)" : "");
                 var value = string.Join("\n", boss.Lines);
                 if (value.Length > 1024) value = value[..1020] + "...";
-                embed.AddField(name, value, inline: true);
+                embed.AddField(name, value, inline: false);
             }
         }
 
