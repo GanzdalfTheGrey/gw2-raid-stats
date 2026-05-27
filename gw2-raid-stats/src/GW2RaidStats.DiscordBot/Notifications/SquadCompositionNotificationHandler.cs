@@ -68,10 +68,9 @@ public class SquadCompositionNotificationHandler : INotificationHandler
             .WithColor(Color.Purple)
             .WithCurrentTimestamp();
 
-        if (!string.IsNullOrWhiteSpace(data.BossesText))
-        {
-            embed.WithDescription($"**Bosses:** {data.BossesText}");
-        }
+        // No top-level Bosses description — the Mechanics section below lists every
+        // boss in order with its number, so a duplicate comma-separated list is just
+        // noise.
 
         // Sub-group fields
         foreach (var sub in data.SubGroups.OrderBy(s => s.Index))
