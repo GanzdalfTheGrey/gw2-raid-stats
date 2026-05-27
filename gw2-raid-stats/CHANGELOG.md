@@ -5,6 +5,11 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Squad Builder — "Optimize loading blocks" toggle** on Random Bosses (default on). Keeps bosses sharing an instance back-to-back so the squad skips a loading screen between them: Gorseval → Sabetha; Cairn → MO → Samarog → Deimos; CA → Twin Largos → Qadim; one of Adina/Sabir → Qadim the Peerless (random pick when all three W7 bosses are rolled — the other floats and same-wing avoidance keeps it off both ends of the chain). Broken runs fall back to the existing same-wing avoidance.
+
 ## [1.15.3] - 2026-05-22
 
 ### Added

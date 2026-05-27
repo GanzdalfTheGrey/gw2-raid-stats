@@ -124,6 +124,10 @@
                                 </MudSelect>
                                 <MudSwitch T="bool" @bind-Value="_randomReplace" Color="Color.Primary"
                                            Label="Replace current selection" />
+                                <MudTooltip Text="Keep bosses in the same instance back-to-back so the squad skips a loading screen: Gorseval → Sabetha; Cairn → MO → Samarog → Deimos; CA → Twin Largos → Qadim; one of Adina/Sabir → Qadim the Peerless. Broken runs fall back to standard same-wing avoidance.">
+                                    <MudSwitch T="bool" @bind-Value="_optimizeLoading" Color="Color.Primary"
+                                               Label="Optimize loading blocks" />
+                                </MudTooltip>
                                 <MudButton Variant="Variant.Filled" Color="Color.Primary"
                                            StartIcon="@Icons.Material.Filled.Casino"
                                            OnClick="RollRandomBosses" FullWidth="true">
@@ -405,6 +409,7 @@
     private int _randomCount = 5;
     private HashSet<int> _randomWings = new(); // empty = all wings
     private bool _randomReplace = true;
+    private bool _optimizeLoading = true;
 
     private string WingsLabel(List<string> selectedValues)
     {
@@ -540,7 +545,7 @@
             .OrderBy(_ => rng.Next())
             .Take(n)
             .ToList();
-        var picked = ShuffleAvoidingSameWing(pickedBosses, rng)
+        var picked = ShuffleAvoidingSameWing(pickedBosses, rng, _optimizeLoading)
             .Select(b => b.TriggerId)
             .ToList();
 
@@ -556,17 +561,99 @@
         Snackbar.Add($"Rolled {picked.Count} boss(es)", Severity.Success);
     }
 
-    // Shuffle picks so that adjacent entries are not the same wing when possible.
-    // Uses the "reorganize string" approach: at each step pick the largest remaining
-    // wing-bucket whose wing differs from the previous placement. Falls back to the
-    // largest bucket if every remaining boss shares the previous wing.
-    private static List<BossOption> ShuffleAvoidingSameWing(List<BossOption> bosses, Random rng)
+    // Same-instance load-screen-skip blocks. A "chain" is a contiguous run of selected
+    // bosses inside a block (in block order) — that run is placed back-to-back in the
+    // result so the squad skips an instance load. If the picks break the block (e.g.
+    // MO and Deimos selected, Samarog not), each side falls back to its own singleton
+    // and the normal same-wing avoidance keeps them apart. W7 is special: Adina and
+    // Sabir are interchangeable predecessors to QtP, handled in BuildLoadingChains.
+    private static readonly int[][] LoadingBlocks =
     {
-        var buckets = bosses
-            .GroupBy(b => b.Wing)
+        new[] { 15429, 15375 },                  // W1: Gorseval -> Sabetha (VG sits alone)
+        new[] { 17194, 17172, 17188, 17154 },    // W4: Cairn -> MO -> Samarog -> Deimos
+        new[] { 43974, 21105, 20934 },           // W6: CA -> Twin Largos -> Qadim
+    };
+
+    private const int W7Adina = 22006;
+    private const int W7Sabir = 21964;
+    private const int W7QtP   = 22000;
+
+    // Build the list of chains for these picks. Each chain is placed back-to-back in
+    // the result; chains of length 1 are just regular singletons.
+    private static List<List<BossOption>> BuildLoadingChains(List<BossOption> picks, Random rng)
+    {
+        var byId = picks.ToDictionary(b => b.TriggerId);
+        var used = new HashSet<int>();
+        var chains = new List<List<BossOption>>();
+
+        // Standard blocks: walk the block, group consecutive selected runs.
+        foreach (var block in LoadingBlocks)
+        {
+            int i = 0;
+            while (i < block.Length)
+            {
+                if (byId.ContainsKey(block[i]))
+                {
+                    var run = new List<BossOption>();
+                    while (i < block.Length && byId.ContainsKey(block[i]))
+                    {
+                        run.Add(byId[block[i]]);
+                        used.Add(block[i]);
+                        i++;
+                    }
+                    chains.Add(run);
+                }
+                else
+                {
+                    i++;
+                }
+            }
+        }
+
+        // W7: Adina/Sabir -> QtP. With QtP plus one of them, chain that one. With QtP
+        // and both, pick a random predecessor; the other becomes a singleton. Both
+        // chain endpoints are W7, so the same-wing rule keeps the spare off either side.
+        bool hasAdina = byId.ContainsKey(W7Adina);
+        bool hasSabir = byId.ContainsKey(W7Sabir);
+        bool hasQtP   = byId.ContainsKey(W7QtP);
+        if (hasQtP && (hasAdina || hasSabir))
+        {
+            int pre = hasAdina && hasSabir
+                ? (rng.Next(2) == 0 ? W7Adina : W7Sabir)
+                : (hasAdina ? W7Adina : W7Sabir);
+            chains.Add(new List<BossOption> { byId[pre], byId[W7QtP] });
+            used.Add(pre);
+            used.Add(W7QtP);
+        }
+
+        // Everything else becomes a 1-element chain.
+        foreach (var p in picks.Where(p => !used.Contains(p.TriggerId)))
+        {
+            chains.Add(new List<BossOption> { p });
+        }
+
+        return chains;
+    }
+
+    // Shuffle picks so that adjacent entries are not the same wing when possible.
+    // Uses the "reorganize string" approach over chains: at each step pick the largest
+    // remaining wing-bucket whose wing differs from the previous placement, then expand
+    // its chain into the result. Falls back to the largest bucket if every remaining
+    // chain shares the previous wing. With optimizeLoading off, every chain has length 1
+    // and the behaviour is identical to the original per-boss algorithm.
+    private static List<BossOption> ShuffleAvoidingSameWing(
+        List<BossOption> bosses, Random rng, bool optimizeLoading)
+    {
+        var chains = optimizeLoading
+            ? BuildLoadingChains(bosses, rng)
+            : bosses.Select(b => new List<BossOption> { b }).ToList();
+
+        // Every chain we build is single-wing, so the chain's wing is well-defined.
+        var buckets = chains
+            .GroupBy(c => c[0].Wing)
             .ToDictionary(
                 g => g.Key,
-                g => (Queue<BossOption>)new Queue<BossOption>(g.OrderBy(_ => rng.Next())));
+                g => (Queue<List<BossOption>>)new Queue<List<BossOption>>(g.OrderBy(_ => rng.Next())));
 
         var result = new List<BossOption>(bosses.Count);
         int? lastWing = null;
@@ -581,7 +668,7 @@
             var maxCount = candidates.Max(kv => kv.Value.Count);
             var topWings = candidates.Where(kv => kv.Value.Count == maxCount).ToList();
             var chosen = topWings[rng.Next(topWings.Count)];
-            result.Add(chosen.Value.Dequeue());
+            result.AddRange(chosen.Value.Dequeue());
             lastWing = chosen.Key;
         }
         return result;
