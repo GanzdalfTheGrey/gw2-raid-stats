@@ -107,63 +107,70 @@ public class SquadCompositionNotificationHandler : INotificationHandler
             embed.AddField($"Sub {sub.Index}", sb.ToString().TrimEnd(), inline: true);
         }
 
-        // Mid-set swaps (from reset segments)
+        // Mid-set swaps — one full-width field per reset segment. Splitting per segment
+        // keeps each field well under Discord's 1024-char-per-field cap (the old
+        // single-field version had to truncate at 1024 and lost the tail of long sets).
         if (data.Swaps != null && data.Swaps.Count > 0)
         {
-            var swapSb = new StringBuilder();
+            // Section header — empty-value field reads as a subheading.
+            embed.AddField("Mid-set Swaps", "​", inline: false);
             foreach (var swap in data.Swaps)
             {
-                swapSb.AppendLine($"**At {swap.FromBossName}:**");
+                string value;
                 if (swap.Entries.Count == 0)
                 {
-                    swapSb.AppendLine("  • (mechanic re-assignment only — no base-role swaps)");
+                    value = "*(mechanic re-assignment only — no base-role swaps)*";
                 }
                 else
                 {
-                    foreach (var e in swap.Entries)
+                    value = string.Join("\n", swap.Entries.Select(e =>
                     {
                         var from = string.IsNullOrEmpty(e.FromRole) ? "—" : FormatRole(e.FromRole);
                         var to = string.IsNullOrEmpty(e.ToRole) ? "—" : FormatRole(e.ToRole);
-                        swapSb.AppendLine($"  • {e.AccountName}: {from} → {to}");
-                    }
+                        return $"• {e.AccountName}: {from} → {to}";
+                    }));
                 }
+                if (value.Length > 1024) value = value[..1020] + "...";
+                embed.AddField($"At {swap.FromBossName}", value, inline: false);
             }
-            var swapText = swapSb.ToString().TrimEnd();
-            if (swapText.Length > 1024) swapText = swapText[..1020] + "...";
-            embed.AddField("Mid-set Swaps", swapText);
         }
 
-        // Mechanics field (consolidated)
+        // Mechanics — one inline field per boss, so Discord can tile them 3-up on
+        // desktop and we no longer pour 14 bosses into a single 1024-cap field (which
+        // is what was cutting the tail off after "Twin Largos • Tan..."). Bosses with
+        // no assigned mechanic players are dropped so the section stays focused.
         var mechBosses = data.PerBoss
-            .Where(b => b.Mechanics.Any(m => m.AssignedPlayers.Any(p => p.PlayerId.HasValue)))
+            .Select(b => new
+            {
+                b.BossName,
+                b.IsResetSegment,
+                Lines = b.Mechanics
+                    .Select(m => new
+                    {
+                        m.Name,
+                        Names = m.AssignedPlayers
+                            .Where(p => p.PlayerId.HasValue)
+                            .Select(p => MentionOrName(p.PlayerId, p.AccountName))
+                            .ToList()
+                    })
+                    .Where(m => m.Names.Count > 0)
+                    .Select(m => $"• {m.Name}: {string.Join(", ", m.Names)}")
+                    .ToList()
+            })
+            .Where(b => b.Lines.Count > 0)
             .ToList();
+
         if (mechBosses.Count > 0)
         {
-            var sb = new StringBuilder();
+            embed.AddField("Mechanics", "​", inline: false);
             foreach (var boss in mechBosses)
             {
-                var lines = new List<string>();
-                foreach (var mech in boss.Mechanics)
-                {
-                    var names = mech.AssignedPlayers
-                        .Where(p => p.PlayerId.HasValue)
-                        .Select(p => MentionOrName(p.PlayerId, p.AccountName))
-                        .ToList();
-                    if (names.Count == 0) continue;
-                    lines.Add($"  • {mech.Name}: {string.Join(", ", names)}");
-                }
-                if (lines.Count > 0)
-                {
-                    var marker = boss.IsResetSegment ? " *(reset)*" : "";
-                    sb.AppendLine($"**{boss.BossName}**{marker}");
-                    foreach (var line in lines) sb.AppendLine(line);
-                }
-            }
-            var text = sb.ToString().TrimEnd();
-            if (!string.IsNullOrEmpty(text))
-            {
-                if (text.Length > 1024) text = text[..1020] + "...";
-                embed.AddField("Mechanics", text);
+                // Field names render bold in Discord — the previous "**Boss**" prefix
+                // inside the text is replaced by the field name itself.
+                var name = boss.BossName + (boss.IsResetSegment ? " (reset)" : "");
+                var value = string.Join("\n", boss.Lines);
+                if (value.Length > 1024) value = value[..1020] + "...";
+                embed.AddField(name, value, inline: true);
             }
         }
 
