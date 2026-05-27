@@ -136,12 +136,11 @@ public class SquadCompositionNotificationHandler : INotificationHandler
         }
 
         // Mechanics — one full-width field per boss, prefixed with the boss's order
-        // number in the squad. Splitting the old single field per boss keeps each
-        // value well under Discord's 1024-char cap (the old single-field version had
-        // to truncate after ~14 bosses). The Order index comes from the unfiltered
-        // PerBoss list so the numbers line up with the Bosses list in the description
-        // — gaps (e.g. 9, 11, 13 missing) just mean those bosses had no mechanic
-        // assignments and were dropped.
+        // number in the squad. Splitting one-field-per-boss keeps each value well
+        // under Discord's 1024-char cap (the old single-field version truncated after
+        // ~14 bosses). Every boss in the squad gets a row, even those with no
+        // mechanic assignments — that way the numbering stays consecutive and the
+        // commander can see at a glance which bosses still need assignments.
         var mechBosses = data.PerBoss
             .Select((b, idx) => new
             {
@@ -161,7 +160,6 @@ public class SquadCompositionNotificationHandler : INotificationHandler
                     .Select(m => $"• {m.Name}: {string.Join(", ", m.Names)}")
                     .ToList()
             })
-            .Where(b => b.Lines.Count > 0)
             .ToList();
 
         if (mechBosses.Count > 0)
@@ -171,7 +169,9 @@ public class SquadCompositionNotificationHandler : INotificationHandler
             {
                 // Field names render bold in Discord; no need for **...** inside.
                 var name = $"{boss.Order}. {boss.BossName}" + (boss.IsResetSegment ? " (reset)" : "");
-                var value = string.Join("\n", boss.Lines);
+                var value = boss.Lines.Count > 0
+                    ? string.Join("\n", boss.Lines)
+                    : "*(no mechanic assignments)*";
                 if (value.Length > 1024) value = value[..1020] + "...";
                 embed.AddField(name, value, inline: false);
             }

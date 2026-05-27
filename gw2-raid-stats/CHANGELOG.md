@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Squad Builder — "Optimize loading blocks" toggle** on Random Bosses (default on). Keeps bosses sharing an instance back-to-back so the squad skips a loading screen between them: Gorseval → Sabetha; Cairn → MO → Samarog → Deimos; CA → Twin Largos → Qadim; one of Adina/Sabir → Qadim the Peerless (random pick when all three W7 bosses are rolled — the other floats and same-wing avoidance keeps it off both ends of the chain). Broken runs fall back to the existing same-wing avoidance.
 
 ### Fixed
-- **Discord squad post — Mechanics and Mid-set Swaps no longer truncated.** Both sections were stuffed into a single embed field, which Discord caps at 1024 characters — long squads lost the tail of the boss list (e.g. "Twin Largos • Tan..." with Dhuum missing). Now each boss gets its own full-width mechanics field — prefixed with the boss's order number in the squad (gaps where a boss had no mechanic assignments) — and each reset segment gets its own swaps field, so the full set fits without overflow.
+- **Discord squad post — Mechanics and Mid-set Swaps no longer truncated.** Both sections were stuffed into a single embed field, which Discord caps at 1024 characters — long squads lost the tail of the boss list (e.g. "Twin Largos • Tan..." with Dhuum missing). Now each boss gets its own full-width mechanics field, prefixed with its order number in the squad. Bosses with no mechanic assignments are kept in the list with a `(no mechanic assignments)` note so the numbering stays consecutive and the commander can spot what still needs assigning. Each reset segment also gets its own swaps field.
 
 ## [1.15.3] - 2026-05-22
 
