@@ -60,10 +60,15 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddScoped<Top5NotificationHandler>();
         services.AddScoped<AchievementNotificationHandler>();
         services.AddScoped<SquadCompositionNotificationHandler>();
+        services.AddScoped<EventPostNotificationHandler>();
+
+        // Event button-interaction handler (registered with the bot interaction router)
+        services.AddScoped<EventInteractionHandler>();
 
         // Background services
         services.AddHostedService<DiscordBotService>();
         services.AddHostedService<NotificationProcessor>();
+        services.AddHostedService<EventReminderProcessor>();
     })
     .ConfigureLogging(logging =>
     {

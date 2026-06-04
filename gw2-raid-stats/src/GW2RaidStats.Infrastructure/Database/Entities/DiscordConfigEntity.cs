@@ -23,6 +23,14 @@ public class DiscordConfigEntity
     [Column("wall_of_shame_enabled"), NotNull]
     public bool WallOfShameEnabled { get; set; }
 
+    // Per-feature destination channels. Null = fall back to NotificationChannelId so
+    // guilds that haven't opted into a split keep working unchanged.
+    [Column("squad_builder_channel_id")]
+    public long? SquadBuilderChannelId { get; set; }
+
+    [Column("events_channel_id")]
+    public long? EventsChannelId { get; set; }
+
     [Column("created_at"), NotNull]
     public DateTimeOffset CreatedAt { get; set; }
 

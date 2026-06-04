@@ -1,0 +1,134 @@
+@page "/admin/bot-configuration"
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+
+<PageTitle>GW2 Raid Stats - Bot Configuration</PageTitle>
+
+<AdminAuth>
+    <MudStack Spacing="0" Class="mb-4">
+        <MudText Typo="Typo.h4">Discord Bot Configuration</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Per-guild channel routing and toggles. Channel IDs are 18–19 digit numbers — copy from
+            Discord with Developer Mode on (right-click channel → Copy ID). Leave a per-feature
+            channel blank to fall back to the notifications channel. Changes save on blur / toggle.
+        </MudText>
+    </MudStack>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+    }
+    else if (_rows.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">
+            No guild configurations yet. Invite the bot to a server and run
+            <code>/config notifications #channel</code> there to create the first row.
+        </MudAlert>
+    }
+    else
+    {
+        @foreach (var row in _rows)
+        {
+            <MudPaper Class="pa-4 mb-3" Elevation="1">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3" Wrap="Wrap.Wrap">
+                    <MudText Typo="Typo.h6">@(row.GuildName ?? "(no name)")</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Guild ID: @row.GuildId</MudText>
+                </MudStack>
+
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="long?" @bind-Value="row.NotificationChannelId"
+                                      OnBlur="@(() => Save(row))"
+                                      Label="Notifications channel"
+                                      HelperText="Session summaries, achievements, records, milestones."
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="long?" @bind-Value="row.SquadBuilderChannelId"
+                                      OnBlur="@(() => Save(row))"
+                                      Label="Squad Builder channel"
+                                      HelperText="Squad composition posts. Blank = use notifications channel."
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="long?" @bind-Value="row.EventsChannelId"
+                                      OnBlur="@(() => Save(row))"
+                                      Label="Events channel"
+                                      HelperText="Event signup posts. Blank = use notifications channel."
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudStack Row="true" Spacing="4" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="mt-2">
+                            <MudSwitch T="bool" @bind-Value="row.NotificationsEnabled"
+                                       @bind-Value:after="@(() => Save(row))"
+                                       Label="Notifications enabled" Color="Color.Primary" />
+                            <MudSwitch T="bool" @bind-Value="row.WallOfShameEnabled"
+                                       @bind-Value:after="@(() => Save(row))"
+                                       Label="Wall of Shame" Color="Color.Primary" />
+                        </MudStack>
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+        }
+    }
+</AdminAuth>
+
+@code {
+    private bool _loading = true;
+    private List<BotConfigRow> _rows = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var rows = await Http.GetFromJsonAsync<List<BotConfigRow>>("api/admin/bot-config");
+            _rows = rows ?? new();
+        }
+        catch (Exception)
+        {
+            _rows = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task Save(BotConfigRow row)
+    {
+        try
+        {
+            var resp = await Http.PutAsJsonAsync(
+                $"api/admin/bot-config/{row.GuildId}",
+                new
+                {
+                    row.NotificationChannelId,
+                    row.NotificationsEnabled,
+                    row.SquadBuilderChannelId,
+                    row.EventsChannelId,
+                    row.WallOfShameEnabled
+                });
+            if (!resp.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Failed to save config for {row.GuildName ?? row.GuildId.ToString()}", Severity.Error);
+            }
+        }
+        catch (Exception)
+        {
+            Snackbar.Add($"Failed to save config for {row.GuildName ?? row.GuildId.ToString()}", Severity.Error);
+        }
+    }
+
+    // Mirrors BotConfigDto on the server; class (not record) because the textfields
+    // bind two-way and need set-able properties.
+    public class BotConfigRow
+    {
+        public long GuildId { get; set; }
+        public string? GuildName { get; set; }
+        public long? NotificationChannelId { get; set; }
+        public bool NotificationsEnabled { get; set; }
+        public long? SquadBuilderChannelId { get; set; }
+        public long? EventsChannelId { get; set; }
+        public bool WallOfShameEnabled { get; set; }
+    }
+}

@@ -106,6 +106,21 @@ public class DiscordBotService : BackgroundService
     {
         try
         {
+            // Button / select-menu interactions are routed to dedicated handlers; slash
+            // commands continue through InteractionService as before.
+            if (interaction is SocketMessageComponent component)
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var eventHandler = scope.ServiceProvider.GetRequiredService<EventInteractionHandler>();
+                if (eventHandler.CanHandle(component.Data.CustomId))
+                {
+                    await eventHandler.HandleAsync(component, CancellationToken.None);
+                    return;
+                }
+                _logger.LogDebug("Unhandled message component: {CustomId}", component.Data.CustomId);
+                return;
+            }
+
             var context = new SocketInteractionContext(_client, interaction);
             var result = await _interactionService.ExecuteCommandAsync(context, _serviceProvider);
 

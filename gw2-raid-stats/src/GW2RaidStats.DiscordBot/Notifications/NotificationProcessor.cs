@@ -103,13 +103,14 @@ public class NotificationProcessor : BackgroundService
 
         foreach (var config in configs)
         {
-            if (!config.NotificationChannelId.HasValue) continue;
+            var channelId = ResolveChannelId(config, notification.NotificationType);
+            if (!channelId.HasValue) continue;
 
-            var channel = _client.GetChannel((ulong)config.NotificationChannelId.Value) as Discord.IMessageChannel;
+            var channel = _client.GetChannel((ulong)channelId.Value) as Discord.IMessageChannel;
             if (channel == null)
             {
                 _logger.LogWarning("Could not find channel {ChannelId} for guild {GuildId}",
-                    config.NotificationChannelId, config.GuildId);
+                    channelId, config.GuildId);
                 continue;
             }
 
@@ -126,6 +127,19 @@ public class NotificationProcessor : BackgroundService
         }
     }
 
+    // Per-feature channel routing. Squad-composition posts go to the dedicated
+    // squad-builder channel if one is configured; everything else uses the main
+    // notifications channel. Both fall through to the notifications channel when
+    // the dedicated channel is null, so guilds that haven't opted into a split
+    // keep working unchanged.
+    private static long? ResolveChannelId(DiscordConfigEntity config, string notificationType) =>
+        notificationType switch
+        {
+            "squad_composition" => config.SquadBuilderChannelId ?? config.NotificationChannelId,
+            "event_post"        => config.EventsChannelId       ?? config.NotificationChannelId,
+            _                   => config.NotificationChannelId
+        };
+
     private INotificationHandler? GetHandler(string notificationType)
     {
         return notificationType switch
@@ -137,6 +151,7 @@ public class NotificationProcessor : BackgroundService
             "top_5" => _serviceProvider.GetService<Top5NotificationHandler>(),
             "achievement_unlocked" => _serviceProvider.GetService<AchievementNotificationHandler>(),
             "squad_composition" => _serviceProvider.GetService<SquadCompositionNotificationHandler>(),
+            "event_post" => _serviceProvider.GetService<EventPostNotificationHandler>(),
             _ => null
         };
     }

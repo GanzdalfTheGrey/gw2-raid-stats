@@ -28,4 +28,7 @@ public class RaidStatsDb : DataConnection
     public ITable<PlayerRoleCapabilityEntity> PlayerRoleCapabilities => this.GetTable<PlayerRoleCapabilityEntity>();
     public ITable<ExcludedPlayerEntity> ExcludedPlayers => this.GetTable<ExcludedPlayerEntity>();
     public ITable<PlayerAvailabilityEntity> PlayerAvailability => this.GetTable<PlayerAvailabilityEntity>();
+    public ITable<EventEntity> Events => this.GetTable<EventEntity>();
+    public ITable<EventSignupEntity> EventSignups => this.GetTable<EventSignupEntity>();
+    public ITable<EventReminderPreferenceEntity> EventReminderPreferences => this.GetTable<EventReminderPreferenceEntity>();
 }

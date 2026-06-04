@@ -32,6 +32,30 @@ public class ConfigCommands : InteractionModuleBase<SocketInteractionContext>
         }
     }
 
+    [SlashCommand("squad-builder", "Set a dedicated channel for squad composition posts (leave empty to use the notifications channel)")]
+    public async Task SetSquadBuilderChannelAsync(
+        [Summary("channel", "The channel to post squad compositions to (leave empty to use the notifications channel)")]
+        ITextChannel? channel = null)
+    {
+        await _configService.SetSquadBuilderChannelAsync(Context.Guild.Id, channel?.Id);
+        var msg = channel == null
+            ? "Squad composition posts will use the notifications channel."
+            : $"Squad composition posts will go to {channel.Mention}.";
+        await RespondAsync(msg, ephemeral: true);
+    }
+
+    [SlashCommand("events", "Set a dedicated channel for event signup posts (leave empty to use the notifications channel)")]
+    public async Task SetEventsChannelAsync(
+        [Summary("channel", "The channel to post events to (leave empty to use the notifications channel)")]
+        ITextChannel? channel = null)
+    {
+        await _configService.SetEventsChannelAsync(Context.Guild.Id, channel?.Id);
+        var msg = channel == null
+            ? "Event posts will use the notifications channel."
+            : $"Event posts will go to {channel.Mention}.";
+        await RespondAsync(msg, ephemeral: true);
+    }
+
     [SlashCommand("shame", "Enable or disable the wall of shame feature")]
     public async Task SetWallOfShameAsync(
         [Summary("enabled", "Whether to enable the wall of shame")]
@@ -63,6 +87,16 @@ public class ConfigCommands : InteractionModuleBase<SocketInteractionContext>
                 : "Disabled";
 
             embed.AddField("Notifications", notificationStatus, inline: true);
+            embed.AddField("Squad Builder",
+                config.SquadBuilderChannelId.HasValue
+                    ? $"<#{config.SquadBuilderChannelId}>"
+                    : "*(uses notifications channel)*",
+                inline: true);
+            embed.AddField("Events",
+                config.EventsChannelId.HasValue
+                    ? $"<#{config.EventsChannelId}>"
+                    : "*(uses notifications channel)*",
+                inline: true);
             embed.AddField("Wall of Shame", config.WallOfShameEnabled ? "Enabled" : "Disabled", inline: true);
         }
 

@@ -5,6 +5,18 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Discord bot event signups (Phase 1)** — schedule one-off events from the dashboard and let raid members sign up via Discord buttons. Each event can define a list of role slots (e.g. *Heal Quick × 1*, *Boon DPS Alac × 1*, *DPS × 6*); signups overflow to Reserve when a slot is full. The Discord embed re-renders in place on every signup change — the live roster shows each player's Discord mention + linked GW2 account name, with separate Reserve and accepted sections. Buttons: one per role slot, **Reserve**, and **Drop out**. Events with no slots defined fall back to Accept / Reserve only. Cancelling an event greys the buttons and marks the embed `CANCELLED`.
+  - **Admin pages** at `/admin/events` (list of upcoming + past with edit / cancel / delete / post-to-Discord actions) and `/admin/events/new` + `/admin/events/{id}/edit` (form with role-slot editor). Wrapped in `<AdminAuth>`. Migrations 027 + 028.
+  - **Reminder DMs**: opt-in via `/events reminders enabled:true` (status via `/events reminders-status`). When enabled, the bot DMs each accepted user 30 minutes before the event starts. Each event fires reminders exactly once; cancelled events skip the dispatch. Migration 029.
+  - **Per-feature channel routing**: separate `/config squad-builder #channel` and `/config events #channel` so squad-composition posts and event signups can be routed to dedicated channels (each falls back to the main notifications channel when unset). Same controls live on the new **Bot Configuration** admin page (`/admin/bot-configuration`). Migration 026.
+- **Bot Configuration page** under Configuration in the nav — per-guild row showing all four channel IDs (Notifications, Squad Builder, Events, plus Wall-of-Shame toggle and Notifications-enabled toggle), edits save on blur/toggle.
+
+### Deployment
+- Apply migrations 026 (`AddPerFeatureChannels`), 027 (`AddEvents`), 028 (`AddEventSignups`), 029 (`AddEventReminderPreferences`) via `psql` against existing DBs.
+
 ## [1.15.4] - 2026-05-27
 
 ### Added

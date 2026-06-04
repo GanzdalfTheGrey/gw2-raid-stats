@@ -79,6 +79,26 @@ public class DiscordConfigService
         }
     }
 
+    public async Task SetSquadBuilderChannelAsync(ulong guildId, ulong? channelId, CancellationToken ct = default)
+    {
+        var config = await GetOrCreateConfigAsync(guildId, ct: ct);
+        config.SquadBuilderChannelId = channelId.HasValue ? (long)channelId.Value : null;
+        config.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.UpdateAsync(config, token: ct);
+
+        _logger.LogInformation("Set squad-builder channel for guild {GuildId} to {ChannelId}", guildId, channelId);
+    }
+
+    public async Task SetEventsChannelAsync(ulong guildId, ulong? channelId, CancellationToken ct = default)
+    {
+        var config = await GetOrCreateConfigAsync(guildId, ct: ct);
+        config.EventsChannelId = channelId.HasValue ? (long)channelId.Value : null;
+        config.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.UpdateAsync(config, token: ct);
+
+        _logger.LogInformation("Set events channel for guild {GuildId} to {ChannelId}", guildId, channelId);
+    }
+
     public async Task SetWallOfShameAsync(ulong guildId, bool enabled, CancellationToken ct = default)
     {
         var config = await GetOrCreateConfigAsync(guildId, ct: ct);

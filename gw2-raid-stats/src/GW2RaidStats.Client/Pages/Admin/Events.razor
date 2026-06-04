@@ -1,0 +1,215 @@
+@page "/admin/events"
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+@using GW2RaidStats.Core.Events
+
+<PageTitle>GW2 Raid Stats - Events</PageTitle>
+
+<AdminAuth>
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+        <MudStack Spacing="0">
+            <MudText Typo="Typo.h4">Events</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Scheduled events that members sign up for via Discord buttons. Posts route to each
+                guild's configured Events channel (or the Notifications channel as fallback).
+            </MudText>
+        </MudStack>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   Href="/admin/events/new">
+            New Event
+        </MudButton>
+    </MudStack>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+    }
+    else
+    {
+        <MudTabs Elevation="0" PanelClass="pt-4">
+            <MudTabPanel Text="@($"Upcoming ({_upcoming.Count})")">
+                @if (_upcoming.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">No upcoming events.</MudAlert>
+                }
+                else
+                {
+                    @foreach (var ev in _upcoming)
+                    {
+                        @RenderEvent(ev, isPast: false)
+                    }
+                }
+            </MudTabPanel>
+            <MudTabPanel Text="@($"Past ({_past.Count})")">
+                @if (_past.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">No past events yet.</MudAlert>
+                }
+                else
+                {
+                    @foreach (var ev in _past)
+                    {
+                        @RenderEvent(ev, isPast: true)
+                    }
+                }
+            </MudTabPanel>
+        </MudTabs>
+    }
+</AdminAuth>
+
+@code {
+    private List<EventDto> _upcoming = new();
+    private List<EventDto> _past = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _upcoming = await Http.GetFromJsonAsync<List<EventDto>>("api/admin/events?range=upcoming") ?? new();
+            _past = await Http.GetFromJsonAsync<List<EventDto>>("api/admin/events?range=past") ?? new();
+        }
+        catch (Exception)
+        {
+            _upcoming = new();
+            _past = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private RenderFragment RenderEvent(EventDto ev, bool isPast) => __builder =>
+    {
+        var statusColor = ev.Status == "Cancelled"
+            ? Color.Error
+            : (ev.Posted ? Color.Success : Color.Default);
+        var statusLabel = ev.Status == "Cancelled"
+            ? "Cancelled"
+            : (ev.Posted ? "Posted" : "Draft");
+
+        <MudPaper Class="pa-4 mb-3" Elevation="1">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="mb-2">
+                <MudStack Spacing="0">
+                    <MudText Typo="Typo.h6">@ev.Title</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        @ev.ScheduledAt.LocalDateTime.ToString("dddd, MMM d • h:mm tt")
+                    </MudText>
+                </MudStack>
+                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
+                    <MudChip T="string" Size="Size.Small" Color="@statusColor" Variant="Variant.Outlined">@statusLabel</MudChip>
+                    @if (!isPast)
+                    {
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Send"
+                                   OnClick="@(() => PostAsync(ev))">
+                            @(ev.Posted ? "Repost" : "Post to Discord")
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Edit"
+                                   Href="@($"/admin/events/{ev.Id}/edit")">
+                            Edit
+                        </MudButton>
+                        @if (ev.Status != "Cancelled")
+                        {
+                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Warning"
+                                       OnClick="@(() => CancelAsync(ev))">
+                                Cancel
+                            </MudButton>
+                        }
+                    }
+                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Error"
+                               OnClick="@(() => DeleteAsync(ev))">
+                        Delete
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+
+            @if (!string.IsNullOrEmpty(ev.Description))
+            {
+                <MudText Typo="Typo.body2" Class="mb-2">@ev.Description</MudText>
+            }
+
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                @ev.SignupCount signed up
+                @if (ev.RoleSlots != null && ev.RoleSlots.Count > 0)
+                {
+                    <span> · Slots: @string.Join(", ", ev.RoleSlots.Select(s => $"{s.Label}×{s.Count}"))</span>
+                }
+            </MudText>
+        </MudPaper>
+    };
+
+    private async Task PostAsync(EventDto ev)
+    {
+        try
+        {
+            var resp = await Http.PostAsync($"api/admin/events/{ev.Id}/post", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Queued '{ev.Title}' for Discord", Severity.Success);
+                await ReloadAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to queue post", Severity.Error);
+            }
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Failed to queue post", Severity.Error);
+        }
+    }
+
+    private async Task CancelAsync(EventDto ev)
+    {
+        try
+        {
+            var resp = await Http.PostAsync($"api/admin/events/{ev.Id}/cancel", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Cancelled '{ev.Title}'", Severity.Info);
+                await ReloadAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to cancel", Severity.Error);
+            }
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Failed to cancel", Severity.Error);
+        }
+    }
+
+    private async Task DeleteAsync(EventDto ev)
+    {
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/admin/events/{ev.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Deleted '{ev.Title}'", Severity.Info);
+                await ReloadAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to delete", Severity.Error);
+            }
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Failed to delete", Severity.Error);
+        }
+    }
+
+    public record EventDto(
+        Guid Id, long GuildId, string Title, string? Description,
+        DateTimeOffset ScheduledAt, string Timezone, string Status,
+        bool Posted, int SignupCount, List<RoleSlot>? RoleSlots);
+}

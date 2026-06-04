@@ -1,0 +1,248 @@
+@page "/admin/events/new"
+@page "/admin/events/{Id:guid}/edit"
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@using GW2RaidStats.Core.Events
+
+<PageTitle>GW2 Raid Stats - @(_isNew ? "New Event" : "Edit Event")</PageTitle>
+
+<AdminAuth>
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h4">@(_isNew ? "New Event" : "Edit Event")</MudText>
+        <MudButton StartIcon="@Icons.Material.Filled.ArrowBack" Href="/admin/events">Back to list</MudButton>
+    </MudStack>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+    }
+    else if (_guilds.Count == 0)
+    {
+        <MudAlert Severity="Severity.Warning">
+            No Discord guild configurations found. Configure the bot in a guild first
+            (<code>/config notifications #channel</code>) before creating events.
+        </MudAlert>
+    }
+    else
+    {
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="long" @bind-Value="_form.GuildId"
+                               Label="Discord guild" Required="true"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var g in _guilds)
+                        {
+                            <MudSelectItem Value="@g.GuildId">@(string.IsNullOrEmpty(g.GuildName) ? g.GuildId.ToString() : g.GuildName)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string" @bind-Value="_form.Title" Label="Title" Required="true"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudTextField T="string" @bind-Value="_form.Description" Label="Description"
+                                  Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudDatePicker @bind-Date="_date" Label="Date" Required="true"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTimePicker @bind-Time="_time" Label="Time" Required="true"
+                                   AmPm="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudText Typo="Typo.h6" Class="mt-2 mb-1">Role slots</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                        Leave empty for a generic Accept / Reserve event. Add one row per role with how many
+                        people can fill it. Examples: <em>Heal Quick × 1</em>, <em>Boon DPS Alac × 1</em>,
+                        <em>DPS × 6</em>. Signups that overflow a full slot are placed in Reserve.
+                    </MudText>
+                    @if (_form.RoleSlots.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Info" Class="mb-3">
+                            No role slots — signups will be Accept / Reserve only.
+                        </MudAlert>
+                    }
+                    @foreach (var slot in _form.RoleSlots)
+                    {
+                        var captureSlot = slot;
+                        <MudGrid Class="mb-1" Spacing="2">
+                            <MudItem xs="8" md="6">
+                                <MudTextField T="string" @bind-Value="captureSlot.Label"
+                                              Label="Role label" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            </MudItem>
+                            <MudItem xs="3" md="2">
+                                <MudNumericField T="int" @bind-Value="captureSlot.Count"
+                                                 Label="Count" Min="1" Max="50"
+                                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            </MudItem>
+                            <MudItem xs="1" md="1" Class="d-flex align-center">
+                                <MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Error"
+                                               OnClick="@(() => RemoveSlot(captureSlot))" />
+                            </MudItem>
+                        </MudGrid>
+                    }
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="AddSlot" Class="mt-2">
+                        Add slot
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <MudDivider Class="my-4" />
+
+            <MudStack Row="true" Spacing="2" Justify="Justify.FlexEnd">
+                <MudButton Href="/admin/events">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Save"
+                           OnClick="SaveAsync" Disabled="@(_saving || !CanSave())">
+                    @(_saving ? "Saving..." : "Save")
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+</AdminAuth>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private bool _isNew => Id == null;
+    private bool _loading = true;
+    private bool _saving = false;
+    private DateTime? _date = DateTime.Today.AddDays(1);
+    private TimeSpan? _time = new TimeSpan(19, 0, 0);
+    private List<GuildOption> _guilds = new();
+    private EventFormModel _form = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _guilds = await Http.GetFromJsonAsync<List<GuildOption>>("api/admin/bot-config") ?? new();
+            if (_guilds.Count == 1) _form.GuildId = _guilds[0].GuildId;
+
+            if (Id.HasValue)
+            {
+                var ev = await Http.GetFromJsonAsync<EventDetailResp>($"api/admin/events/{Id}");
+                if (ev != null)
+                {
+                    _form.GuildId = ev.GuildId;
+                    _form.Title = ev.Title;
+                    _form.Description = ev.Description;
+                    _form.RoleSlots = ev.RoleSlots?
+                        .Select(s => new SlotEditRow { Id = s.Id, Label = s.Label, Count = s.Count })
+                        .ToList() ?? new();
+                    _date = ev.ScheduledAt.LocalDateTime.Date;
+                    _time = ev.ScheduledAt.LocalDateTime.TimeOfDay;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Failed to load event", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private bool CanSave() => _form.GuildId != 0
+                              && !string.IsNullOrWhiteSpace(_form.Title)
+                              && _date.HasValue && _time.HasValue;
+
+    private void AddSlot() => _form.RoleSlots.Add(new SlotEditRow
+    {
+        // Short stable id (first 8 hex chars of a guid) — plenty for uniqueness within an event.
+        Id = Guid.NewGuid().ToString("N").Substring(0, 8),
+        Label = "",
+        Count = 1
+    });
+
+    private void RemoveSlot(SlotEditRow slot) => _form.RoleSlots.Remove(slot);
+
+    private async Task SaveAsync()
+    {
+        if (!CanSave()) return;
+        _saving = true;
+        try
+        {
+            // Date + time are entered in browser-local time; convert to DateTimeOffset
+            // using the browser's offset on the chosen date (handles DST correctly).
+            var localDateTime = _date!.Value.Date + _time!.Value;
+            var offset = TimeZoneInfo.Local.GetUtcOffset(localDateTime);
+            var scheduled = new DateTimeOffset(localDateTime, offset);
+
+            var slots = _form.RoleSlots
+                .Where(s => !string.IsNullOrWhiteSpace(s.Label) && s.Count > 0)
+                .Select(s => new RoleSlot(s.Id, s.Label.Trim(), s.Count))
+                .ToList();
+
+            var body = new
+            {
+                GuildId = _form.GuildId,
+                Title = _form.Title.Trim(),
+                Description = string.IsNullOrWhiteSpace(_form.Description) ? null : _form.Description.Trim(),
+                ScheduledAt = scheduled,
+                Timezone = TimeZoneInfo.Local.Id,
+                RoleSlots = slots
+            };
+
+            HttpResponseMessage resp;
+            if (_isNew)
+            {
+                resp = await Http.PostAsJsonAsync("api/admin/events", body);
+            }
+            else
+            {
+                resp = await Http.PutAsJsonAsync($"api/admin/events/{Id}", body);
+            }
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Snackbar.Add(_isNew ? "Event created" : "Event saved", Severity.Success);
+                Nav.NavigateTo("/admin/events");
+            }
+            else
+            {
+                Snackbar.Add("Failed to save event", Severity.Error);
+            }
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Failed to save event", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private class EventFormModel
+    {
+        public long GuildId { get; set; }
+        public string Title { get; set; } = "";
+        public string? Description { get; set; }
+        public List<SlotEditRow> RoleSlots { get; set; } = new();
+    }
+
+    private class SlotEditRow
+    {
+        public string Id { get; set; } = "";
+        public string Label { get; set; } = "";
+        public int Count { get; set; } = 1;
+    }
+
+    public record GuildOption(long GuildId, string? GuildName);
+
+    public record EventDetailResp(
+        Guid Id, long GuildId, string Title, string? Description,
+        DateTimeOffset ScheduledAt, string Timezone, string Status, List<RoleSlot>? RoleSlots);
+}
