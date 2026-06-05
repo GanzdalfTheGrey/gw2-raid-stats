@@ -49,7 +49,7 @@ public static class EventEmbedBuilder
         {
             var accepted = signups.Where(s => s.Status == "Accepted").ToList();
             var value = accepted.Count == 0 ? "*(none yet)*" : string.Join("\n", accepted.Select(FormatSignup));
-            embed.AddField($"Accepted ({accepted.Count})", value, inline: false);
+            embed.AddField($"Signed Up ({accepted.Count})", value, inline: false);
         }
 
         var reserves = signups.Where(s => s.Status == "Reserve").ToList();
@@ -59,7 +59,7 @@ public static class EventEmbedBuilder
         }
 
         var acceptedCount = signups.Count(s => s.Status == "Accepted");
-        embed.WithFooter($"{acceptedCount} accepted · {reserves.Count} reserve · click a slot to sign up, Drop out to remove yourself");
+        embed.WithFooter($"{acceptedCount} signed up · {reserves.Count} reserve · click a slot to sign up, Drop out to remove yourself");
 
         var components = BuildComponents(ev, roleSlots, signups, cancelled);
         return (embed.Build(), components);
@@ -72,15 +72,16 @@ public static class EventEmbedBuilder
         bool cancelled)
     {
         var builder = new ComponentBuilder();
+        var placed = 0;
 
         if (roleSlots != null && roleSlots.Count > 0)
         {
-            // Slot buttons fill rows 0..3 at 5 buttons per row. Discord caps at 25
-            // buttons total; we reserve row 4 for Reserve/Drop so cap slot buttons at 20.
-            var placed = 0;
+            // Slot buttons flow at 5 per row; Reserve and Drop continue on the same row
+            // when there's space (no empty rows between slots and actions). Cap slot
+            // buttons at 23 so Reserve + Drop always fit under Discord's 25-button cap.
             foreach (var slot in roleSlots)
             {
-                if (placed >= 20) break;
+                if (placed >= 23) break;
                 var slotCount = signups.Count(s => s.SlotId == slot.Id && s.Status == "Accepted");
                 var isFull = slotCount >= slot.Count;
                 builder.WithButton(
@@ -95,16 +96,25 @@ public static class EventEmbedBuilder
         else
         {
             builder.WithButton(
-                label: "Accept",
+                label: "Sign Up",
                 customId: $"event:{ev.Id}:accept",
                 style: ButtonStyle.Success,
-                row: 0,
+                row: placed / 5,
                 disabled: cancelled);
+            placed++;
         }
 
-        // Reserve + Drop pinned to row 4 so they stay findable regardless of slot count.
-        builder.WithButton("Reserve", $"event:{ev.Id}:reserve", ButtonStyle.Secondary, row: 4, disabled: cancelled);
-        builder.WithButton("Drop out", $"event:{ev.Id}:drop", ButtonStyle.Danger, row: 4, disabled: cancelled);
+        builder.WithButton("Reserve", $"event:{ev.Id}:reserve", ButtonStyle.Secondary, row: placed / 5, disabled: cancelled);
+        placed++;
+
+        // Drop only renders when the event has at least one signup — keeps brand-new
+        // events visually clean. Discord can't hide a button per-viewer, so users who
+        // haven't signed up can still click it; the handler returns a clean ephemeral
+        // "You weren't signed up" in that case.
+        if (signups.Count > 0)
+        {
+            builder.WithButton("Drop out", $"event:{ev.Id}:drop", ButtonStyle.Danger, row: placed / 5, disabled: cancelled);
+        }
 
         return builder.Build();
     }

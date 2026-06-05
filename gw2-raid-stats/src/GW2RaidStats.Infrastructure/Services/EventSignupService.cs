@@ -89,9 +89,10 @@ public class EventSignupService
         return new SignupResult(entity, OverflowedToReserve: false);
     }
 
-    public async Task DropAsync(Guid eventId, ulong discordUserId, CancellationToken ct = default)
+    /// <summary>Returns the number of signup rows deleted (0 if the user wasn't signed up).</summary>
+    public async Task<int> DropAsync(Guid eventId, ulong discordUserId, CancellationToken ct = default)
     {
-        await _db.EventSignups
+        return await _db.EventSignups
             .Where(s => s.EventId == eventId && s.DiscordUserId == (long)discordUserId)
             .DeleteAsync(ct);
     }

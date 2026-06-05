@@ -91,14 +91,19 @@ public class EventInteractionHandler
                     break;
                 case "accept":
                     await _signups.JoinAcceptAsync(eventId, discordUserId, ct);
-                    ack = "Accepted.";
+                    ack = "You're signed up.";
                     break;
                 case "reserve":
                     await _signups.JoinReserveAsync(eventId, discordUserId, ct);
                     ack = "You're in Reserve.";
                     break;
                 case "drop":
-                    await _signups.DropAsync(eventId, discordUserId, ct);
+                    var deleted = await _signups.DropAsync(eventId, discordUserId, ct);
+                    if (deleted == 0)
+                    {
+                        await interaction.RespondAsync("You weren't signed up.", ephemeral: true);
+                        return;
+                    }
                     ack = "You've dropped out.";
                     break;
                 default:
