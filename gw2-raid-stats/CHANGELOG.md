@@ -5,7 +5,7 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.16.0] - 2026-06-05
 
 ### Added
 - **Discord bot event signups (Phase 1)** — schedule one-off events from the dashboard and let raid members sign up via Discord buttons. Each event can define a list of role slots (e.g. *Heal Quick × 1*, *Boon DPS Alac × 1*, *DPS × 6*); signups overflow to Reserve when a slot is full. The Discord embed re-renders in place on every signup change — the live roster shows each player's Discord mention + linked GW2 account name, with separate Reserve and accepted sections. Buttons: one per role slot, **Reserve**, and **Drop out**. Events with no slots defined fall back to Accept / Reserve only. Cancelling an event greys the buttons and marks the embed `CANCELLED`.
