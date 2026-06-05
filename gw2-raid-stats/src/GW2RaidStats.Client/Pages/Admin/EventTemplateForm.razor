@@ -1,16 +1,16 @@
-@page "/admin/events/new"
-@page "/admin/events/{Id:guid}/edit"
+@page "/admin/events/templates/new"
+@page "/admin/events/templates/{Id:guid}/edit"
 @inject HttpClient Http
 @inject ISnackbar Snackbar
 @inject NavigationManager Nav
 @using GW2RaidStats.Core.Events
 
-<PageTitle>GW2 Raid Stats - @(_isNew ? "New Event" : "Edit Event")</PageTitle>
+<PageTitle>GW2 Raid Stats - @(_isNew ? "New Template" : "Edit Template")</PageTitle>
 
 <AdminAuth>
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
-        <MudText Typo="Typo.h4">@(_isNew ? "New Event" : "Edit Event")</MudText>
-        <MudButton StartIcon="@Icons.Material.Filled.ArrowBack" Href="/admin/events">Back to list</MudButton>
+        <MudText Typo="Typo.h4">@(_isNew ? "New Template" : "Edit Template")</MudText>
+        <MudButton StartIcon="@Icons.Material.Filled.ArrowBack" Href="/admin/events/templates">Back to templates</MudButton>
     </MudStack>
 
     @if (_loading)
@@ -21,7 +21,7 @@
     {
         <MudAlert Severity="Severity.Warning">
             No Discord guild configurations found. Configure the bot in a guild first
-            (<code>/config notifications #channel</code>) before creating events.
+            (<code>/config notifications #channel</code>) before creating templates.
         </MudAlert>
     }
     else
@@ -29,8 +29,7 @@
         <MudPaper Class="pa-4" Elevation="2">
             <MudGrid>
                 <MudItem xs="12" md="6">
-                    <MudSelect T="long" @bind-Value="_form.GuildId"
-                               Label="Discord guild" Required="true"
+                    <MudSelect T="long" @bind-Value="_form.GuildId" Label="Discord guild" Required="true"
                                Variant="Variant.Outlined" Margin="Margin.Dense">
                         @foreach (var g in _guilds)
                         {
@@ -39,18 +38,25 @@
                     </MudSelect>
                 </MudItem>
                 <MudItem xs="12" md="6">
-                    <MudTextField T="string" @bind-Value="_form.Title" Label="Title" Required="true"
+                    <MudTextField T="string" @bind-Value="_form.Name" Label="Template name" Required="true"
+                                  Placeholder="e.g. Monday Raid"
                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
                 </MudItem>
 
                 <MudItem xs="12">
-                    <MudTextField T="string" @bind-Value="_form.Description" Label="Description"
+                    <MudTextField T="string" @bind-Value="_form.Description" Label="Description (sent in the embed)"
                                   Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" />
                 </MudItem>
 
                 <MudItem xs="12" md="4">
-                    <MudDatePicker @bind-Date="_date" Label="Date" Required="true"
-                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudSelect T="int" @bind-Value="_form.DayOfWeek" Label="Day of week"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @for (int i = 0; i < 7; i++)
+                        {
+                            var dayValue = i;
+                            <MudSelectItem Value="@dayValue">@DayNames[dayValue]</MudSelectItem>
+                        }
+                    </MudSelect>
                 </MudItem>
                 <MudItem xs="12" md="4">
                     <MudTimePicker @bind-Time="_time" Label="Time" Required="true"
@@ -67,16 +73,21 @@
                 </MudItem>
 
                 <MudItem xs="12">
+                    <MudSwitch T="bool" @bind-Value="_form.Active"
+                               Label="Active (eligible for Post next)" Color="Color.Primary" />
+                </MudItem>
+
+                <MudItem xs="12">
                     <MudText Typo="Typo.h6" Class="mt-2 mb-1">Role slots</MudText>
                     <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
-                        Leave empty for a generic Accept / Reserve event. Add one row per role with how many
-                        people can fill it. Examples: <em>Heal Quick × 1</em>, <em>Boon DPS Alac × 1</em>,
-                        <em>DPS × 6</em>. Signups that overflow a full slot are placed in Reserve.
+                        Leave empty for a generic Accept / Reserve template. Spawned events snapshot
+                        these slots at spawn time — edits affect future spawns; existing live events
+                        only get the new slots if you re-click <strong>Post next</strong>.
                     </MudText>
                     @if (_form.RoleSlots.Count == 0)
                     {
                         <MudAlert Severity="Severity.Info" Class="mb-3">
-                            No role slots — signups will be Accept / Reserve only.
+                            No role slots — events will be Accept / Reserve only.
                         </MudAlert>
                     }
                     @foreach (var slot in _form.RoleSlots)
@@ -108,7 +119,7 @@
             <MudDivider Class="my-4" />
 
             <MudStack Row="true" Spacing="2" Justify="Justify.FlexEnd">
-                <MudButton Href="/admin/events">Cancel</MudButton>
+                <MudButton Href="/admin/events/templates">Cancel</MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary"
                            StartIcon="@Icons.Material.Filled.Save"
                            OnClick="SaveAsync" Disabled="@(_saving || !CanSave())">
@@ -122,6 +133,10 @@
 @code {
     [Parameter] public Guid? Id { get; set; }
 
+    private static readonly string[] DayNames = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+
+    // Common IANA zones the dropdown offers; the browser's local zone is auto-inserted
+    // at the top if not already present, so users almost always have their zone in reach.
     private static readonly string[] BaseTimezones = new[]
     {
         "UTC",
@@ -135,11 +150,10 @@
     private bool _isNew => Id == null;
     private bool _loading = true;
     private bool _saving = false;
-    private DateTime? _date = DateTime.Today.AddDays(1);
     private TimeSpan? _time = new TimeSpan(19, 0, 0);
     private List<GuildOption> _guilds = new();
     private List<string> _timezones = new();
-    private EventFormModel _form = new();
+    private FormModel _form = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -155,37 +169,26 @@
 
             if (Id.HasValue)
             {
-                var ev = await Http.GetFromJsonAsync<EventDetailResp>($"api/admin/events/{Id}");
-                if (ev != null)
+                var t = await Http.GetFromJsonAsync<TemplateResp>($"api/admin/event-templates/{Id}");
+                if (t != null)
                 {
-                    _form.GuildId = ev.GuildId;
-                    _form.Title = ev.Title;
-                    _form.Description = ev.Description;
-                    _form.Timezone = string.IsNullOrEmpty(ev.Timezone) ? local : ev.Timezone;
-                    if (!_timezones.Contains(_form.Timezone)) _timezones.Insert(0, _form.Timezone);
-                    _form.RoleSlots = ev.RoleSlots?
+                    _form.GuildId = t.GuildId;
+                    _form.Name = t.Name;
+                    _form.Description = t.Description;
+                    _form.DayOfWeek = t.DayOfWeek;
+                    _form.Timezone = t.Timezone;
+                    if (!_timezones.Contains(t.Timezone)) _timezones.Insert(0, t.Timezone);
+                    _form.Active = t.Active;
+                    _form.RoleSlots = t.RoleSlots?
                         .Select(s => new SlotEditRow { Id = s.Id, Label = s.Label, Count = s.Count })
                         .ToList() ?? new();
-                    // Render the stored UTC time in the event's own TZ so the user edits
-                    // the same wall-clock time they originally entered.
-                    try
-                    {
-                        var tz = TimeZoneInfo.FindSystemTimeZoneById(_form.Timezone);
-                        var inTz = TimeZoneInfo.ConvertTime(ev.ScheduledAt, tz);
-                        _date = inTz.Date;
-                        _time = inTz.TimeOfDay;
-                    }
-                    catch
-                    {
-                        _date = ev.ScheduledAt.LocalDateTime.Date;
-                        _time = ev.ScheduledAt.LocalDateTime.TimeOfDay;
-                    }
+                    if (TimeSpan.TryParse(t.TimeOfDay, out var ts)) _time = ts;
                 }
             }
         }
         catch (Exception)
         {
-            Snackbar.Add("Failed to load event", Severity.Error);
+            Snackbar.Add("Failed to load template", Severity.Error);
         }
         finally
         {
@@ -194,13 +197,12 @@
     }
 
     private bool CanSave() => _form.GuildId != 0
-                              && !string.IsNullOrWhiteSpace(_form.Title)
+                              && !string.IsNullOrWhiteSpace(_form.Name)
                               && !string.IsNullOrWhiteSpace(_form.Timezone)
-                              && _date.HasValue && _time.HasValue;
+                              && _time.HasValue;
 
     private void AddSlot() => _form.RoleSlots.Add(new SlotEditRow
     {
-        // Short stable id (first 8 hex chars of a guid) — plenty for uniqueness within an event.
         Id = Guid.NewGuid().ToString("N").Substring(0, 8),
         Label = "",
         Count = 1
@@ -214,15 +216,6 @@
         _saving = true;
         try
         {
-            // Date + time are wall-clock in the picked timezone; convert to DateTimeOffset
-            // using that zone's offset on the chosen date (handles DST correctly).
-            var localDateTime = _date!.Value.Date + _time!.Value;
-            TimeZoneInfo formTz;
-            try { formTz = TimeZoneInfo.FindSystemTimeZoneById(_form.Timezone); }
-            catch { formTz = TimeZoneInfo.Local; }
-            var offset = formTz.GetUtcOffset(localDateTime);
-            var scheduled = new DateTimeOffset(localDateTime, offset);
-
             var slots = _form.RoleSlots
                 .Where(s => !string.IsNullOrWhiteSpace(s.Label) && s.Count > 0)
                 .Select(s => new RoleSlot(s.Id, s.Label.Trim(), s.Count))
@@ -231,36 +224,32 @@
             var body = new
             {
                 GuildId = _form.GuildId,
-                Title = _form.Title.Trim(),
+                Name = _form.Name.Trim(),
                 Description = string.IsNullOrWhiteSpace(_form.Description) ? null : _form.Description.Trim(),
-                ScheduledAt = scheduled,
+                DayOfWeek = _form.DayOfWeek,
+                TimeOfDay = _time!.Value.ToString(@"hh\:mm\:ss"),
                 Timezone = _form.Timezone,
-                RoleSlots = slots
+                RoleSlots = slots,
+                Active = _form.Active
             };
 
-            HttpResponseMessage resp;
-            if (_isNew)
-            {
-                resp = await Http.PostAsJsonAsync("api/admin/events", body);
-            }
-            else
-            {
-                resp = await Http.PutAsJsonAsync($"api/admin/events/{Id}", body);
-            }
+            var resp = _isNew
+                ? await Http.PostAsJsonAsync("api/admin/event-templates", body)
+                : await Http.PutAsJsonAsync($"api/admin/event-templates/{Id}", body);
 
             if (resp.IsSuccessStatusCode)
             {
-                Snackbar.Add(_isNew ? "Event created" : "Event saved", Severity.Success);
-                Nav.NavigateTo("/admin/events");
+                Snackbar.Add(_isNew ? "Template created" : "Template saved", Severity.Success);
+                Nav.NavigateTo("/admin/events/templates");
             }
             else
             {
-                Snackbar.Add("Failed to save event", Severity.Error);
+                Snackbar.Add("Failed to save template", Severity.Error);
             }
         }
         catch (Exception)
         {
-            Snackbar.Add("Failed to save event", Severity.Error);
+            Snackbar.Add("Failed to save template", Severity.Error);
         }
         finally
         {
@@ -268,12 +257,14 @@
         }
     }
 
-    private class EventFormModel
+    private class FormModel
     {
         public long GuildId { get; set; }
-        public string Title { get; set; } = "";
+        public string Name { get; set; } = "";
         public string? Description { get; set; }
+        public int DayOfWeek { get; set; } = 1; // Monday default
         public string Timezone { get; set; } = "UTC";
+        public bool Active { get; set; } = true;
         public List<SlotEditRow> RoleSlots { get; set; } = new();
     }
 
@@ -286,7 +277,8 @@
 
     public record GuildOption(long GuildId, string? GuildName);
 
-    public record EventDetailResp(
-        Guid Id, long GuildId, string Title, string? Description,
-        DateTimeOffset ScheduledAt, string Timezone, string Status, List<RoleSlot>? RoleSlots);
+    public record TemplateResp(
+        Guid Id, long GuildId, string Name, string? Description,
+        int DayOfWeek, string TimeOfDay, string Timezone,
+        List<RoleSlot>? RoleSlots, bool Active, DateTimeOffset? NextOccurrence);
 }

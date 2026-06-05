@@ -31,4 +31,5 @@ public class RaidStatsDb : DataConnection
     public ITable<EventEntity> Events => this.GetTable<EventEntity>();
     public ITable<EventSignupEntity> EventSignups => this.GetTable<EventSignupEntity>();
     public ITable<EventReminderPreferenceEntity> EventReminderPreferences => this.GetTable<EventReminderPreferenceEntity>();
+    public ITable<EventTemplateEntity> EventTemplates => this.GetTable<EventTemplateEntity>();
 }

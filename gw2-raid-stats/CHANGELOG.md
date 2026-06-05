@@ -13,9 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Reminder DMs**: opt-in via `/events reminders enabled:true` (status via `/events reminders-status`). When enabled, the bot DMs each accepted user 30 minutes before the event starts. Each event fires reminders exactly once; cancelled events skip the dispatch. Migration 029.
   - **Per-feature channel routing**: separate `/config squad-builder #channel` and `/config events #channel` so squad-composition posts and event signups can be routed to dedicated channels (each falls back to the main notifications channel when unset). Same controls live on the new **Bot Configuration** admin page (`/admin/bot-configuration`). Migration 026.
 - **Bot Configuration page** under Configuration in the nav — per-guild row showing all four channel IDs (Notifications, Squad Builder, Events, plus Wall-of-Shame toggle and Notifications-enabled toggle), edits save on blur/toggle.
+- **Recurring event templates (Phase 2)** at `/admin/events/templates` — define an event once (name, description, day-of-week, time-of-day, IANA timezone, role slots) and spawn the next occurrence's event with one click via the per-template **"Post [date]"** button. DST-aware (e.g. "Monday 19:00 America/Chicago" stays at 19:00 Chicago across DST shifts). Posting twice for the same occurrence refreshes the live event in place, so editing the template and re-clicking Post pushes the updates to Discord. No auto-poster — scheduling is manual for now. Migration 030.
+- **Display timezone picker** on the Events list — re-renders every scheduled time in the picked IANA zone. Defaults to the browser's local TZ; dropdown of common zones with the browser zone auto-inserted at the top.
+- **Entry timezone picker** on the Event form — controls how the entered date+time is interpreted on save. Editing an existing event defaults to its stored TZ and shows the time as the wall-clock you originally entered (no surprise shifts from cross-timezone editing).
 
 ### Deployment
-- Apply migrations 026 (`AddPerFeatureChannels`), 027 (`AddEvents`), 028 (`AddEventSignups`), 029 (`AddEventReminderPreferences`) via `psql` against existing DBs.
+- Apply migrations 026 (`AddPerFeatureChannels`), 027 (`AddEvents`), 028 (`AddEventSignups`), 029 (`AddEventReminderPreferences`), 030 (`AddEventTemplates`) via `psql` against existing DBs.
 
 ## [1.15.4] - 2026-05-27
 

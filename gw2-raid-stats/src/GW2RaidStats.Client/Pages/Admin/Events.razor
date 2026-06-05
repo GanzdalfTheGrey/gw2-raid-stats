@@ -6,7 +6,7 @@
 <PageTitle>GW2 Raid Stats - Events</PageTitle>
 
 <AdminAuth>
-    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2" Wrap="Wrap.Wrap">
         <MudStack Spacing="0">
             <MudText Typo="Typo.h4">Events</MudText>
             <MudText Typo="Typo.body2" Color="Color.Secondary">
@@ -14,11 +14,30 @@
                 guild's configured Events channel (or the Notifications channel as fallback).
             </MudText>
         </MudStack>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.Add"
-                   Href="/admin/events/new">
-            New Event
-        </MudButton>
+        <MudStack Row="true" Spacing="1">
+            <MudButton StartIcon="@Icons.Material.Filled.EventRepeat"
+                       Href="/admin/events/templates">
+                Manage templates
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       Href="/admin/events/new">
+                New Event
+            </MudButton>
+        </MudStack>
+    </MudStack>
+
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+        <MudIcon Icon="@Icons.Material.Filled.Public" Size="Size.Small" Color="Color.Secondary" />
+        <MudText Typo="Typo.body2" Color="Color.Secondary">Display times in:</MudText>
+        <MudSelect T="string" @bind-Value="_displayTimezone"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                   Style="max-width: 280px;">
+            @foreach (var tz in _timezones)
+            {
+                <MudSelectItem Value="@tz">@tz</MudSelectItem>
+            }
+        </MudSelect>
     </MudStack>
 
     @if (_loading)
@@ -63,7 +82,42 @@
     private List<EventDto> _past = new();
     private bool _loading = true;
 
-    protected override async Task OnInitializedAsync() => await ReloadAsync();
+    // Display timezone — defaults to the browser's local zone; changing it re-renders
+    // every time on the page in the new zone. Doesn't persist across page loads.
+    private static readonly string[] BaseTimezones = new[]
+    {
+        "UTC",
+        "America/New_York", "America/Chicago", "America/Denver",
+        "America/Los_Angeles", "America/Anchorage", "Pacific/Honolulu",
+        "Europe/London", "Europe/Berlin", "Europe/Moscow",
+        "Asia/Dubai", "Asia/Kolkata", "Asia/Shanghai", "Asia/Tokyo",
+        "Australia/Sydney"
+    };
+    private List<string> _timezones = new();
+    private string _displayTimezone = "UTC";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _timezones = new List<string>(BaseTimezones);
+        var local = TimeZoneInfo.Local.Id;
+        if (!_timezones.Contains(local)) _timezones.Insert(0, local);
+        _displayTimezone = local;
+        await ReloadAsync();
+    }
+
+    private string FormatScheduledAt(DateTimeOffset dt)
+    {
+        try
+        {
+            var tz = TimeZoneInfo.FindSystemTimeZoneById(_displayTimezone);
+            var inTz = TimeZoneInfo.ConvertTime(dt, tz);
+            return inTz.ToString("dddd, MMM d • h:mm tt");
+        }
+        catch
+        {
+            return dt.LocalDateTime.ToString("dddd, MMM d • h:mm tt");
+        }
+    }
 
     private async Task ReloadAsync()
     {
@@ -82,6 +136,7 @@
         {
             _loading = false;
         }
+        StateHasChanged();
     }
 
     private RenderFragment RenderEvent(EventDto ev, bool isPast) => __builder =>
@@ -98,7 +153,7 @@
                 <MudStack Spacing="0">
                     <MudText Typo="Typo.h6">@ev.Title</MudText>
                     <MudText Typo="Typo.caption" Color="Color.Secondary">
-                        @ev.ScheduledAt.LocalDateTime.ToString("dddd, MMM d • h:mm tt")
+                        @FormatScheduledAt(ev.ScheduledAt)
                     </MudText>
                 </MudStack>
                 <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">

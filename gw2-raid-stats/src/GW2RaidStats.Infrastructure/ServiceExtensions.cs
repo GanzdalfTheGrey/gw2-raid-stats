@@ -65,6 +65,7 @@ public static class ServiceExtensions
         services.AddScoped<AvailabilityService>();
         services.AddScoped<EventService>();
         services.AddScoped<EventSignupService>();
+        services.AddScoped<EventTemplateService>();
 
         // Achievement services - new architecture
         services.AddScoped<AchievementBackfillService>();

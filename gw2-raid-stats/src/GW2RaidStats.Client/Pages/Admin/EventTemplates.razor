@@ -1,0 +1,173 @@
+@page "/admin/events/templates"
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+@using GW2RaidStats.Core.Events
+
+<PageTitle>GW2 Raid Stats - Event Templates</PageTitle>
+
+<AdminAuth>
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+        <MudStack Spacing="0">
+            <MudText Typo="Typo.h4">Event Templates</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Recurring event definitions (e.g. "Monday Raid 7pm CST"). Click <strong>Post next</strong>
+                on a template to spawn (or refresh) the event for its next occurrence and post it to Discord.
+                Scheduling is manual — no auto-poster runs in Phase 2.
+            </MudText>
+        </MudStack>
+        <MudStack Row="true" Spacing="1">
+            <MudButton StartIcon="@Icons.Material.Filled.ArrowBack" Href="/admin/events">Events</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       Href="/admin/events/templates/new">
+                New Template
+            </MudButton>
+        </MudStack>
+    </MudStack>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+    }
+    else if (_templates.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">
+            No templates yet. Create one to start scheduling recurring events.
+        </MudAlert>
+    }
+    else
+    {
+        @foreach (var t in _templates)
+        {
+            <MudPaper Class="pa-4 mb-3" Elevation="1">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="mb-2">
+                    <MudStack Spacing="0">
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.h6">@t.Name</MudText>
+                            @if (!t.Active)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">Inactive</MudChip>
+                            }
+                        </MudStack>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @($"{DayNames[t.DayOfWeek]} at {FormatTime(t.TimeOfDay)} · {t.Timezone}")
+                        </MudText>
+                    </MudStack>
+                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
+                        <MudButton Variant="Variant.Filled" Size="Size.Small" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Send"
+                                   OnClick="@(() => PostNextAsync(t))"
+                                   Disabled="@(!t.Active)">
+                            @PostButtonLabel(t)
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Edit"
+                                   Href="@($"/admin/events/templates/{t.Id}/edit")">
+                            Edit
+                        </MudButton>
+                        <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Error"
+                                   OnClick="@(() => DeleteAsync(t))">
+                            Delete
+                        </MudButton>
+                    </MudStack>
+                </MudStack>
+
+                @if (!string.IsNullOrEmpty(t.Description))
+                {
+                    <MudText Typo="Typo.body2" Class="mb-2">@t.Description</MudText>
+                }
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    @if (t.RoleSlots != null && t.RoleSlots.Count > 0)
+                    {
+                        <span>Slots: @string.Join(", ", t.RoleSlots.Select(s => $"{s.Label}×{s.Count}"))</span>
+                    }
+                    else
+                    {
+                        <span>No role slots — Accept / Reserve only</span>
+                    }
+                </MudText>
+            </MudPaper>
+        }
+    }
+</AdminAuth>
+
+@code {
+    private List<TemplateDto> _templates = new();
+    private bool _loading = true;
+
+    private static readonly string[] DayNames = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _templates = await Http.GetFromJsonAsync<List<TemplateDto>>("api/admin/event-templates") ?? new();
+        }
+        catch (Exception) { _templates = new(); }
+        finally { _loading = false; }
+    }
+
+    private string PostButtonLabel(TemplateDto t)
+    {
+        if (t.NextOccurrence == null) return "Post next";
+        var local = t.NextOccurrence.Value.LocalDateTime;
+        return $"Post {local:ddd MMM d}";
+    }
+
+    private static string FormatTime(string tod)
+    {
+        if (TimeSpan.TryParse(tod, out var ts))
+            return DateTime.Today.Add(ts).ToString("h:mm tt");
+        return tod;
+    }
+
+    private async Task PostNextAsync(TemplateDto t)
+    {
+        try
+        {
+            var resp = await Http.PostAsync($"api/admin/event-templates/{t.Id}/post-next", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Posted '{t.Name}' to Discord", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Failed to post template", Severity.Error);
+            }
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Failed to post template", Severity.Error);
+        }
+    }
+
+    private async Task DeleteAsync(TemplateDto t)
+    {
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/admin/event-templates/{t.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Deleted '{t.Name}'", Severity.Info);
+                await ReloadAsync();
+            }
+            else
+            {
+                Snackbar.Add("Failed to delete", Severity.Error);
+            }
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Failed to delete", Severity.Error);
+        }
+    }
+
+    public record TemplateDto(
+        Guid Id, long GuildId, string Name, string? Description,
+        int DayOfWeek, string TimeOfDay, string Timezone,
+        List<RoleSlot>? RoleSlots, bool Active,
+        DateTimeOffset? NextOccurrence);
+}
