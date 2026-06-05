@@ -1,3 +1,4 @@
+using GW2RaidStats.Core.Events;
 using GW2RaidStats.Infrastructure.Database;
 using GW2RaidStats.Infrastructure.Database.Entities;
 using LinqToDB;
@@ -53,28 +54,87 @@ public class EventSignupService
     }
 
     /// <summary>
-    /// Sign up for a specific role slot. If the slot is already at capacity (excluding
-    /// the requesting user), the user is placed in Reserve and OverflowedToReserve=true
-    /// so callers can ephemerally explain the bump.
+    /// Sign up for a specific role slot. Overflow rules (any → user goes to Reserve):
+    ///   * the slot itself is at its per-slot capacity, OR
+    ///   * <paramref name="enforceBoonCaps"/> is true AND the chosen slot's role or boon
+    ///     tag is already at the squad-wide cap of 2 (heals / boondps / quicks / alacs).
+    /// All "current count" checks exclude the requesting user so moving slots within
+    /// the same tag doesn't double-count and falsely overflow.
     /// </summary>
     public async Task<SignupResult> JoinSlotAsync(
-        Guid eventId, ulong discordUserId, string slotId, int slotCapacity, CancellationToken ct = default)
+        Guid eventId, ulong discordUserId, string slotId,
+        List<RoleSlot> allSlots, bool enforceBoonCaps,
+        CancellationToken ct = default)
     {
-        var currentInSlot = await _db.EventSignups
+        var slot = allSlots.FirstOrDefault(s => s.Id == slotId);
+        if (slot == null)
+        {
+            // Slot vanished between embed render and click — treat as reserve.
+            var entity = await UpsertAsync(eventId, discordUserId, slotId: null, status: "Reserve", ct);
+            return new SignupResult(entity, OverflowedToReserve: true, OverflowReason: "That slot no longer exists");
+        }
+
+        var currentInSlot = await CountAcceptedAsync(eventId, new List<string> { slotId }, discordUserId, ct);
+        if (currentInSlot >= slot.Count)
+        {
+            var entity = await UpsertAsync(eventId, discordUserId, slotId: null, status: "Reserve", ct);
+            return new SignupResult(entity, OverflowedToReserve: true, OverflowReason: $"**{slot.Label}** is full");
+        }
+
+        if (enforceBoonCaps)
+        {
+            // Squad-wide caps derived from the role/boon tags. Cap is the standard 2 for
+            // all four groups (heals, boondps, quicks, alacs).
+            const int boonCap = 2;
+            if (!string.IsNullOrEmpty(slot.Role))
+            {
+                var roleSlotIds = allSlots.Where(s => s.Role == slot.Role).Select(s => s.Id).ToList();
+                var inRole = await CountAcceptedAsync(eventId, roleSlotIds, discordUserId, ct);
+                if (inRole >= boonCap)
+                {
+                    var entity = await UpsertAsync(eventId, discordUserId, slotId: null, status: "Reserve", ct);
+                    return new SignupResult(entity, OverflowedToReserve: true,
+                        OverflowReason: $"The squad already has 2 {FormatGroupName(slot.Role)}");
+                }
+            }
+            if (!string.IsNullOrEmpty(slot.Boon))
+            {
+                var boonSlotIds = allSlots.Where(s => s.Boon == slot.Boon).Select(s => s.Id).ToList();
+                var inBoon = await CountAcceptedAsync(eventId, boonSlotIds, discordUserId, ct);
+                if (inBoon >= boonCap)
+                {
+                    var entity = await UpsertAsync(eventId, discordUserId, slotId: null, status: "Reserve", ct);
+                    return new SignupResult(entity, OverflowedToReserve: true,
+                        OverflowReason: $"The squad already has 2 {FormatGroupName(slot.Boon)}");
+                }
+            }
+        }
+
+        var ok = await UpsertAsync(eventId, discordUserId, slotId, "Accepted", ct);
+        return new SignupResult(ok, OverflowedToReserve: false);
+    }
+
+    private async Task<int> CountAcceptedAsync(
+        Guid eventId, List<string> slotIds, ulong discordUserId, CancellationToken ct)
+    {
+        if (slotIds.Count == 0) return 0;
+        return await _db.EventSignups
             .Where(s => s.EventId == eventId
-                     && s.SlotId == slotId
+                     && s.SlotId != null
+                     && slotIds.Contains(s.SlotId!)
                      && s.Status == "Accepted"
                      && s.DiscordUserId != (long)discordUserId)
             .CountAsync(ct);
-
-        var overflow = currentInSlot >= slotCapacity;
-        var entity = await UpsertAsync(
-            eventId, discordUserId,
-            overflow ? null : slotId,
-            overflow ? "Reserve" : "Accepted",
-            ct);
-        return new SignupResult(entity, overflow);
     }
+
+    private static string FormatGroupName(string tag) => tag switch
+    {
+        "heal" => "healers",
+        "boondps" => "boon DPS",
+        "quick" => "Quickness providers",
+        "alac" => "Alacrity providers",
+        _ => tag
+    };
 
     public async Task<SignupResult> JoinReserveAsync(Guid eventId, ulong discordUserId, CancellationToken ct = default)
     {
@@ -138,7 +198,7 @@ public class EventSignupService
     }
 }
 
-public record SignupResult(EventSignupEntity Signup, bool OverflowedToReserve);
+public record SignupResult(EventSignupEntity Signup, bool OverflowedToReserve, string? OverflowReason = null);
 
 public record EventSignupRow(
     Guid Id,

@@ -84,12 +84,16 @@ public static class EventEmbedBuilder
                 if (placed >= 23) break;
                 var slotCount = signups.Count(s => s.SlotId == slot.Id && s.Status == "Accepted");
                 var isFull = slotCount >= slot.Count;
+                // Boon-cap enforcement disables a slot's button when its role tag (e.g.
+                // heal) or boon tag (e.g. quick) has already hit the squad-wide cap of 2.
+                var capReached = ev.EnforceBoonCaps && IsAnyTagCapReached(slot, roleSlots, signups);
+                var labelSuffix = isFull ? " ✓" : (capReached ? " ⛔" : "");
                 builder.WithButton(
-                    label: isFull ? $"{slot.Label} ✓" : slot.Label,
+                    label: $"{slot.Label}{labelSuffix}",
                     customId: $"event:{ev.Id}:slot:{slot.Id}",
                     style: ButtonStyle.Primary,
                     row: placed / 5,
-                    disabled: cancelled || isFull);
+                    disabled: cancelled || isFull || capReached);
                 placed++;
             }
         }
@@ -125,5 +129,25 @@ public static class EventEmbedBuilder
         return string.IsNullOrEmpty(s.AccountName)
             ? $"• {mention}"
             : $"• {mention} — *{s.AccountName}*";
+    }
+
+    // Mirrors EventSignupService.JoinSlotAsync — keeps button disable state in sync
+    // with the server-side overflow rule (squad-wide cap of 2 per role/boon tag).
+    private static bool IsAnyTagCapReached(RoleSlot slot, List<RoleSlot> allSlots, List<EventSignupRow> signups)
+    {
+        const int cap = 2;
+        if (!string.IsNullOrEmpty(slot.Role))
+        {
+            var roleSlotIds = allSlots.Where(s => s.Role == slot.Role).Select(s => s.Id).ToHashSet();
+            var roleCount = signups.Count(s => s.SlotId != null && roleSlotIds.Contains(s.SlotId) && s.Status == "Accepted");
+            if (roleCount >= cap) return true;
+        }
+        if (!string.IsNullOrEmpty(slot.Boon))
+        {
+            var boonSlotIds = allSlots.Where(s => s.Boon == slot.Boon).Select(s => s.Id).ToHashSet();
+            var boonCount = signups.Count(s => s.SlotId != null && boonSlotIds.Contains(s.SlotId) && s.Status == "Accepted");
+            if (boonCount >= cap) return true;
+        }
+        return false;
     }
 }

@@ -52,6 +52,7 @@ public class EventTemplatesController : ControllerBase
             TimeOfDay = body.TimeOfDay,
             Timezone = string.IsNullOrEmpty(body.Timezone) ? "UTC" : body.Timezone,
             RoleSlotsJson = SerializeSlots(body.RoleSlots),
+            EnforceBoonCaps = body.EnforceBoonCaps,
             Active = body.Active
         };
         var created = await _templates.CreateAsync(entity, ct);
@@ -70,6 +71,7 @@ public class EventTemplatesController : ControllerBase
         entity.TimeOfDay = body.TimeOfDay;
         entity.Timezone = string.IsNullOrEmpty(body.Timezone) ? "UTC" : body.Timezone;
         entity.RoleSlotsJson = SerializeSlots(body.RoleSlots);
+        entity.EnforceBoonCaps = body.EnforceBoonCaps;
         entity.Active = body.Active;
         await _templates.UpdateAsync(entity, ct);
         return NoContent();
@@ -114,7 +116,8 @@ public class EventTemplatesController : ControllerBase
                 Description = t.Description,
                 ScheduledAt = nextAt,
                 Timezone = t.Timezone,
-                RoleSlotsJson = t.RoleSlotsJson
+                RoleSlotsJson = t.RoleSlotsJson,
+                EnforceBoonCaps = t.EnforceBoonCaps
             }, ct);
         }
         else
@@ -123,6 +126,7 @@ public class EventTemplatesController : ControllerBase
             existing.Title = t.Name;
             existing.Description = t.Description;
             existing.RoleSlotsJson = t.RoleSlotsJson;
+            existing.EnforceBoonCaps = t.EnforceBoonCaps;
             existing.Status = "Scheduled";
             await _events.UpdateAsync(existing, ct);
             ev = existing;
@@ -157,17 +161,17 @@ public class EventTemplatesController : ControllerBase
             t.Id, t.GuildId, t.Name, t.Description,
             t.DayOfWeek, t.TimeOfDay, t.Timezone,
             DeserializeSlots(t.RoleSlotsJson),
-            t.Active, next);
+            t.EnforceBoonCaps, t.Active, next);
     }
 }
 
 public record EventTemplateDto(
     Guid Id, long GuildId, string Name, string? Description,
     int DayOfWeek, string TimeOfDay, string Timezone,
-    List<RoleSlot>? RoleSlots, bool Active,
+    List<RoleSlot>? RoleSlots, bool EnforceBoonCaps, bool Active,
     DateTimeOffset? NextOccurrence);
 
 public record EventTemplateCreateDto(
     long GuildId, string Name, string? Description,
     int DayOfWeek, string TimeOfDay, string? Timezone,
-    List<RoleSlot>? RoleSlots, bool Active);
+    List<RoleSlot>? RoleSlots, bool EnforceBoonCaps, bool Active);

@@ -64,7 +64,8 @@ public class EventsController : ControllerBase
             Description = body.Description,
             ScheduledAt = body.ScheduledAt,
             Timezone = string.IsNullOrEmpty(body.Timezone) ? "UTC" : body.Timezone,
-            RoleSlotsJson = SerializeSlots(body.RoleSlots)
+            RoleSlotsJson = SerializeSlots(body.RoleSlots),
+            EnforceBoonCaps = body.EnforceBoonCaps
         };
         var created = await _events.CreateAsync(entity, ct);
         return Ok(MapToDetail(created, new List<EventSignupRow>()));
@@ -81,6 +82,7 @@ public class EventsController : ControllerBase
         entity.ScheduledAt = body.ScheduledAt;
         entity.Timezone = string.IsNullOrEmpty(body.Timezone) ? "UTC" : body.Timezone;
         entity.RoleSlotsJson = SerializeSlots(body.RoleSlots);
+        entity.EnforceBoonCaps = body.EnforceBoonCaps;
         await _events.UpdateAsync(entity, ct);
         return NoContent();
     }
@@ -128,26 +130,26 @@ public class EventsController : ControllerBase
 
     private static EventListDto MapToList(EventEntity e, int signupCount) =>
         new(e.Id, e.GuildId, e.Title, e.Description, e.ScheduledAt, e.Timezone, e.Status,
-            e.MessageId != null, signupCount, DeserializeSlots(e.RoleSlotsJson));
+            e.MessageId != null, signupCount, DeserializeSlots(e.RoleSlotsJson), e.EnforceBoonCaps);
 
     private static EventDetailDto MapToDetail(EventEntity e, List<EventSignupRow> signups) =>
         new(e.Id, e.GuildId, e.Title, e.Description, e.ScheduledAt, e.Timezone, e.Status,
-            DeserializeSlots(e.RoleSlotsJson),
+            DeserializeSlots(e.RoleSlotsJson), e.EnforceBoonCaps,
             signups.Select(s => new EventSignupDto(s.DiscordUserId, s.PlayerId, s.AccountName, s.SlotId, s.Status)).ToList());
 }
 
 public record EventListDto(
     Guid Id, long GuildId, string Title, string? Description,
     DateTimeOffset ScheduledAt, string Timezone, string Status,
-    bool Posted, int SignupCount, List<RoleSlot>? RoleSlots);
+    bool Posted, int SignupCount, List<RoleSlot>? RoleSlots, bool EnforceBoonCaps);
 
 public record EventDetailDto(
     Guid Id, long GuildId, string Title, string? Description,
     DateTimeOffset ScheduledAt, string Timezone, string Status,
-    List<RoleSlot>? RoleSlots, List<EventSignupDto> Signups);
+    List<RoleSlot>? RoleSlots, bool EnforceBoonCaps, List<EventSignupDto> Signups);
 
 public record EventSignupDto(long DiscordUserId, Guid? PlayerId, string? AccountName, string? SlotId, string Status);
 
 public record EventCreateDto(
     long GuildId, string Title, string? Description,
-    DateTimeOffset ScheduledAt, string? Timezone, List<RoleSlot>? RoleSlots);
+    DateTimeOffset ScheduledAt, string? Timezone, List<RoleSlot>? RoleSlots, bool EnforceBoonCaps);

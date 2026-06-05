@@ -16,9 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Recurring event templates (Phase 2)** at `/admin/events/templates` — define an event once (name, description, day-of-week, time-of-day, IANA timezone, role slots) and spawn the next occurrence's event with one click via the per-template **"Post [date]"** button. DST-aware (e.g. "Monday 19:00 America/Chicago" stays at 19:00 Chicago across DST shifts). Posting twice for the same occurrence refreshes the live event in place, so editing the template and re-clicking Post pushes the updates to Discord. No auto-poster — scheduling is manual for now. Migration 030.
 - **Display timezone picker** on the Events list — re-renders every scheduled time in the picked IANA zone. Defaults to the browser's local TZ; dropdown of common zones with the browser zone auto-inserted at the top.
 - **Entry timezone picker** on the Event form — controls how the entered date+time is interpreted on save. Editing an existing event defaults to its stored TZ and shows the time as the wall-clock you originally entered (no surprise shifts from cross-timezone editing).
+- **Squad Builder ↔ event signup integration (Phase 3)**:
+  - **"Seed players from an upcoming event"** picker at the top of the Squad Builder inputs. Selecting an event replaces the current selection with the event's accepted signups — linked Discord users become guildies, unlinked accepted signups increment the Pug DPS count (capped at 10 total). No automatic role pre-assignment yet; the randomizer still picks roles.
+  - **Cross-slot boon caps** on events / templates. Each role slot gets optional `role` (heal / boondps / dps) and `boon` (quick / alac) tags; a per-event **"Enforce raid boon caps"** toggle then caps squad-wide totals at 2 healers, 2 boon DPS, 2 Quickness providers, 2 Alacrity providers. Signups that violate a cap go to Reserve with a specific reason ("The squad already has 2 Quickness providers"). Discord buttons disable (⛔) when a cap is met, mirroring the server check.
+  - **"Use Standard Raid preset"** button on event + template forms — one click fills the standard 5-slot composition (Heal Quick / Heal Alac / Quick DPS / Alac DPS / DPS) with proper tags and flips the boon-caps toggle on.
+  - **"Save as template"** button on each event in `/admin/events` — opens the template form pre-filled from the event (title, description, role slots, boon-caps, TZ, day-of-week, time-of-day derived from the event's scheduled time in its own TZ). Migration 031.
 
 ### Deployment
-- Apply migrations 026 (`AddPerFeatureChannels`), 027 (`AddEvents`), 028 (`AddEventSignups`), 029 (`AddEventReminderPreferences`), 030 (`AddEventTemplates`) via `psql` against existing DBs.
+- Apply migrations 026 (`AddPerFeatureChannels`), 027 (`AddEvents`), 028 (`AddEventSignups`), 029 (`AddEventReminderPreferences`), 030 (`AddEventTemplates`), 031 (`AddBoonCaps`) via `psql` against existing DBs.
 
 ## [1.15.4] - 2026-05-27
 

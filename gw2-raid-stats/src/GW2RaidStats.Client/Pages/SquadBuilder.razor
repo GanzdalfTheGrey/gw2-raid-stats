@@ -43,6 +43,25 @@
                 <strong>Step @hint.Step:</strong> @hint.Text
             </MudAlert>
         }
+        @if (_recentEvents.Count > 0)
+        {
+            <MudPaper Class="pa-2 mb-3" Outlined="true" Style="background-color: var(--mud-palette-background-gray);">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+                    <MudIcon Icon="@Icons.Material.Filled.Event" Size="Size.Small" Color="Color.Secondary" />
+                    <MudText Typo="Typo.body2">Seed players from an upcoming event:</MudText>
+                    <MudSelect T="Guid?" Value="@_seedEventId"
+                               ValueChanged="@(v => _ = OnSeedEventSelectedAsync(v))"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               Style="min-width: 320px;" Placeholder="Pick an event">
+                        <MudSelectItem T="Guid?" Value="@((Guid?)null)">— choose —</MudSelectItem>
+                        @foreach (var e in _recentEvents)
+                        {
+                            <MudSelectItem T="Guid?" Value="@((Guid?)e.Id)">@e.Title — @e.ScheduledAt.LocalDateTime.ToString("ddd MMM d, h:mm tt")</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudStack>
+            </MudPaper>
+        }
         <MudGrid>
             <MudItem xs="12" md="6">
                 @if (_loadingPlayers)
@@ -402,6 +421,10 @@
     private HashSet<Guid> _selectedPlayerIds = new();
     private int _pugCount = 0;
 
+    // Seed-from-event support — populated alongside players in OnInitializedAsync.
+    private List<RecentEventDto> _recentEvents = new();
+    private Guid? _seedEventId;
+
     private List<BossOption> _allBosses = new();
     private List<int> _selectedBossOrder = new();
 
@@ -433,7 +456,50 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await Task.WhenAll(LoadPlayersAsync(), LoadMechanicsAsync());
+        await Task.WhenAll(LoadPlayersAsync(), LoadMechanicsAsync(), LoadRecentEventsAsync());
+    }
+
+    private async Task LoadRecentEventsAsync()
+    {
+        try
+        {
+            _recentEvents = await Http.GetFromJsonAsync<List<RecentEventDto>>("api/admin/events?range=upcoming") ?? new();
+        }
+        catch
+        {
+            _recentEvents = new();
+        }
+    }
+
+    // Replaces the current selection with the picked event's accepted signups. Linked
+    // signups become guildies in _selectedPlayerIds; unlinked signups increment _pugCount
+    // (we can't add them as a specific Player). Capped at 10 total to match the squad size.
+    private async Task OnSeedEventSelectedAsync(Guid? eventId)
+    {
+        _seedEventId = eventId;
+        if (eventId == null) return;
+        try
+        {
+            var ev = await Http.GetFromJsonAsync<SeedEventResp>($"api/admin/events/{eventId}");
+            if (ev == null)
+            {
+                Snackbar.Add("Event not found", Severity.Error);
+                return;
+            }
+            var accepted = ev.Signups.Where(s => s.Status == "Accepted").ToList();
+            var linked = accepted.Where(s => s.PlayerId.HasValue).Select(s => s.PlayerId!.Value).Distinct().Take(10).ToList();
+            var pugs = accepted.Count(s => !s.PlayerId.HasValue);
+            _selectedPlayerIds = linked.ToHashSet();
+            _pugCount = Math.Min(pugs, 10 - _selectedPlayerIds.Count);
+            Snackbar.Add(
+                $"Seeded {_selectedPlayerIds.Count} guildie(s) + {_pugCount} pug(s) from '{ev.Title}'",
+                Severity.Success);
+            StateHasChanged();
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Failed to seed from event", Severity.Error);
+        }
     }
 
     // --- Walkthrough hint ---
@@ -1148,6 +1214,11 @@
 
     public record PlayerOption(Guid Id, string AccountName);
     public record BossOption(int TriggerId, string Name, int Wing, int EncounterOrder);
+
+    // Subset of EventListDto / EventDetailDto — System.Text.Json ignores fields we don't model.
+    public record RecentEventDto(Guid Id, string Title, DateTimeOffset ScheduledAt);
+    public record SeedEventResp(Guid Id, string Title, List<SeedSignupResp> Signups);
+    public record SeedSignupResp(long DiscordUserId, Guid? PlayerId, string? AccountName, string? SlotId, string Status);
 
     private class GridSubGroup
     {

@@ -16,6 +16,7 @@ public class EventEntity
     [Column("timezone"), NotNull] public string Timezone { get; set; } = "UTC";
     [Column("status"), NotNull] public string Status { get; set; } = "Scheduled";
     [Column("role_slots_json")] public string? RoleSlotsJson { get; set; }
+    [Column("enforce_boon_caps"), NotNull] public bool EnforceBoonCaps { get; set; }
     [Column("reminder_sent_at")] public DateTimeOffset? ReminderSentAt { get; set; }
     [Column("created_at"), NotNull] public DateTimeOffset CreatedAt { get; set; }
     [Column("updated_at"), NotNull] public DateTimeOffset UpdatedAt { get; set; }

@@ -18,6 +18,7 @@ public class EventTemplateEntity
 
     [Column("timezone"), NotNull] public string Timezone { get; set; } = "UTC";
     [Column("role_slots_json")] public string? RoleSlotsJson { get; set; }
+    [Column("enforce_boon_caps"), NotNull] public bool EnforceBoonCaps { get; set; }
     [Column("active"), NotNull] public bool Active { get; set; } = true;
     [Column("created_at"), NotNull] public DateTimeOffset CreatedAt { get; set; }
     [Column("updated_at"), NotNull] public DateTimeOffset UpdatedAt { get; set; }

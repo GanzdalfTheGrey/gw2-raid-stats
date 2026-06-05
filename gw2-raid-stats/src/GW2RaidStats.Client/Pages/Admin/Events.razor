@@ -170,6 +170,11 @@
                                    Href="@($"/admin/events/{ev.Id}/edit")">
                             Edit
                         </MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.SaveAs"
+                                   Href="@($"/admin/events/templates/new?fromEvent={ev.Id}")">
+                            Save as template
+                        </MudButton>
                         @if (ev.Status != "Cancelled")
                         {
                             <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Warning"

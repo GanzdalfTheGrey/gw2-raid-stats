@@ -84,9 +84,9 @@ public class EventInteractionHandler
                         await interaction.RespondAsync("That role slot no longer exists on this event.", ephemeral: true);
                         return;
                     }
-                    var result = await _signups.JoinSlotAsync(eventId, discordUserId, slotId, slot.Count, ct);
+                    var result = await _signups.JoinSlotAsync(eventId, discordUserId, slotId, slots!, ev.EnforceBoonCaps, ct);
                     ack = result.OverflowedToReserve
-                        ? $"**{slot.Label}** is full — you've been placed in Reserve."
+                        ? $"{result.OverflowReason ?? $"**{slot.Label}** is full"} — you've been placed in Reserve."
                         : $"Signed up for **{slot.Label}**.";
                     break;
                 case "accept":
