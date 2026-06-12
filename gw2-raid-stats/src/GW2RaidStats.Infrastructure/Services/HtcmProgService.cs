@@ -469,6 +469,11 @@ public class HtcmProgService
         var totalDurationMs = matchingPhases.Sum(ps => ps.DurationMs);
         if (totalDurationMs <= 0) return null;
 
+        // Distinct encounters reaching the phase group — for per-pull this is always 1,
+        // for session-wide it's the number of pulls. Used by the UI to display average
+        // duration per pull instead of the meaningless total time across all pulls.
+        var pullCount = matchingPhases.Select(p => p.EncounterId).Distinct().Count();
+
         var groupRows = pullPlayerStats.Where(r => MatchesAny(r.Stats.PhaseName, phaseNames)).ToList();
         var squadDamage = groupRows.Sum(r => r.Stats.Damage);
         var squadDps = (int)(squadDamage * 1000L / totalDurationMs);
@@ -489,15 +494,20 @@ public class HtcmProgService
             .OrderByDescending(p => p.Dps)
             .ToList();
 
-        return new HtcmPhaseGroupBurst(squadDps, totalDurationMs, playerBursts);
+        return new HtcmPhaseGroupBurst(squadDps, totalDurationMs, pullCount, playerBursts);
     }
 
     private static HtcmPlayerPhaseSlice ComputePlayerSlice(
         IEnumerable<PlayerPhaseRow> rows, string[] phaseNames)
     {
         var filtered = rows.Where(r => MatchesAny(r.Stats.PhaseName, phaseNames)).ToList();
+        // Average only across pulls where the player was actually debilitated (uptime > 0).
+        // Including 0% pulls would dilute the metric so a player who got hit once for 60%
+        // across five pulls would show 12% — hiding that they DO get hit when it happens.
+        // The post-filter average reads as "when you do get debilitated in this phase,
+        // what's typical".
         var debils = filtered
-            .Where(r => r.Stats.DebilitatedUptimePct.HasValue)
+            .Where(r => r.Stats.DebilitatedUptimePct is > 0m)
             .Select(r => r.Stats.DebilitatedUptimePct!.Value)
             .ToList();
         return new HtcmPlayerPhaseSlice(
@@ -810,7 +820,11 @@ public record HtcmRunBurstGroups(
     HtcmPhaseGroupBurst? Giants,
     HtcmPhaseGroupBurst? Saltspray);
 
-public record HtcmPhaseGroupBurst(int SquadDps, int DurationMs, List<HtcmPlayerBurst> Players);
+// DurationMs is the SUM of phase durations across the encounters covered by this
+// burst record. PullCount is the number of distinct encounters reaching the phase
+// group, so per-pull average duration = DurationMs / PullCount. For per-pull bursts
+// PullCount is always 1, so the displayed "average" equals the single pull's duration.
+public record HtcmPhaseGroupBurst(int SquadDps, int DurationMs, int PullCount, List<HtcmPlayerBurst> Players);
 
 public record HtcmPlayerBurst(string AccountName, int Dps);
 

@@ -5,16 +5,25 @@
 
 <style>
     /* Distinct background + table-row-style hover for the session insight expansion
-       panels (Session Burst Averages, Phase Insights, Player Mechanics) so they
-       don't blend into the surrounding card. */
+       panels. Uses an explicit grey RGBA overlay (theme-independent — visible against
+       both light and dark card backgrounds) and forces the inner header / content
+       elements to be transparent so the panel's own background shows through.
+       MudBlazor's default header/content backgrounds otherwise win on specificity. */
     .htcm-insight-panel {
-        background-color: var(--mud-palette-background-grey) !important;
+        background-color: rgba(128, 128, 128, 0.10) !important;
         transition: background-color 0.15s ease-in-out;
         margin-bottom: 6px;
         border-radius: 4px;
+        overflow: hidden;
     }
     .htcm-insight-panel:hover {
-        background-color: var(--mud-palette-action-default-hover) !important;
+        background-color: rgba(128, 128, 128, 0.20) !important;
+    }
+    .htcm-insight-panel .mud-expand-panel-header,
+    .htcm-insight-panel .mud-collapse-container,
+    .htcm-insight-panel .mud-expand-panel-content,
+    .htcm-insight-panel .mud-expand-panel-text {
+        background-color: transparent !important;
     }
     .htcm-insight-panel .mud-expand-panel-header {
         cursor: pointer;
@@ -317,7 +326,7 @@ else
                                     </thead>
                                     <tbody>
                                         <tr>
-                                            <td><em>Combined duration</em></td>
+                                            <td><em>Avg duration / pull</em></td>
                                             <td style="text-align: right;">@FormatBurstDuration(_sessionDetail.SessionBurstAverages.Timecaster)</td>
                                             <td style="text-align: right;">@FormatBurstDuration(_sessionDetail.SessionBurstAverages.Giants)</td>
                                             <td style="text-align: right;">@FormatBurstDuration(_sessionDetail.SessionBurstAverages.Saltspray)</td>
@@ -862,7 +871,14 @@ else
         => group == null ? "—" : $"{(group.SquadDps / 1000.0):F1}k";
 
     private static string FormatBurstDuration(HtcmPhaseGroupBurstDto? group)
-        => group == null ? "—" : FormatDuration(TimeSpan.FromMilliseconds(group.DurationMs));
+    {
+        if (group == null) return "—";
+        // Per-pull rows: PullCount = 1, so this displays the single pull's phase duration.
+        // Session-average rows: PullCount = number of pulls reaching the phase group,
+        // so this displays the average per-pull duration instead of the meaningless total.
+        var avgMs = group.PullCount > 0 ? group.DurationMs / group.PullCount : group.DurationMs;
+        return FormatDuration(TimeSpan.FromMilliseconds(avgMs));
+    }
 
     private static string FormatPlayerBurst(HtcmPhaseGroupBurstDto? group, string accountName)
     {
@@ -1066,7 +1082,7 @@ else
         HtcmPhaseGroupBurstDto? Giants,
         HtcmPhaseGroupBurstDto? Saltspray);
 
-    public record HtcmPhaseGroupBurstDto(int SquadDps, int DurationMs, List<HtcmPlayerBurstDto> Players);
+    public record HtcmPhaseGroupBurstDto(int SquadDps, int DurationMs, int PullCount, List<HtcmPlayerBurstDto> Players);
 
     public record HtcmPlayerBurstDto(string AccountName, int Dps);
 
