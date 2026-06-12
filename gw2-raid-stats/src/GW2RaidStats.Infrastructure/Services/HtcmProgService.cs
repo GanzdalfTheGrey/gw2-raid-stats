@@ -278,6 +278,12 @@ public class HtcmProgService
             .GroupBy(r => r.Stats.EncounterId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        // (encounter, phase) → duration lookup used by both the per-pull debilitated
+        // chips and the session-level player slice to convert EI's active-basis
+        // uptime % into a phase-relative %.
+        var phaseDurationByKey = phaseStats.ToDictionary(
+            ps => (ps.EncounterId, ps.PhaseName), ps => ps.DurationMs);
+
         // Get DPS data for the session
         var dpsData = await _db.PlayerEncounters
             .Where(pe => encounterIds.Contains(pe.EncounterId))
@@ -334,15 +340,25 @@ public class HtcmProgService
             var dps = dpsData.FirstOrDefault(d => d.EncounterId == encounter.Id);
 
             // Per-phase debilitated readout for the Phase Breakdown table. One entry per
-            // player with uptime > 0 in that phase, sorted by uptime descending.
+            // player with phase-relative uptime > 0 in that phase, sorted desc. Phase-
+            // relative scales EI's active-basis % down for players who spent part of
+            // the phase dead, so the number reflects what the burst actually lost to
+            // the debuff rather than overstating it for largely-dead players.
             var pullPlayerStatsForDebil = playerPhaseByEncounter.TryGetValue(encounter.Id, out var pps)
                 ? pps : new List<PlayerPhaseRow>();
             var playerDebilByPhase = pullPlayerStatsForDebil
-                .Where(r => r.Stats.DebilitatedUptimePct is > 0m)
-                .GroupBy(r => r.Stats.PhaseName)
+                .Select(r =>
+                {
+                    var rel = phaseDurationByKey.TryGetValue((r.Stats.EncounterId, r.Stats.PhaseName), out var phaseMs)
+                        ? ToPhaseRelativeDebilPct(r.Stats, phaseMs)
+                        : 0m;
+                    return (Row: r, RelPct: rel);
+                })
+                .Where(x => x.RelPct > 0m)
+                .GroupBy(x => x.Row.Stats.PhaseName)
                 .ToDictionary(g => g.Key, g => g
-                    .OrderByDescending(r => r.Stats.DebilitatedUptimePct!.Value)
-                    .Select(r => new HtcmPhaseDebilEntry(r.AccountName, r.Stats.DebilitatedUptimePct!.Value))
+                    .OrderByDescending(x => x.RelPct)
+                    .Select(x => new HtcmPhaseDebilEntry(x.Row.AccountName, x.RelPct))
                     .ToList());
 
             // Get phase stats for this encounter, excluding "Full Fight" (index 0)
@@ -404,9 +420,9 @@ public class HtcmProgService
             .GroupBy(r => r.AccountName)
             .Select(g => new HtcmPlayerPhaseSessionStat(
                 g.Key,
-                Timecaster: ComputePlayerSlice(g, TimecasterPhases),
-                Giants: ComputePlayerSlice(g, GiantsPhases),
-                Saltspray: ComputePlayerSlice(g, SaltsprayPhases)))
+                Timecaster: ComputePlayerSlice(g, TimecasterPhases, phaseDurationByKey),
+                Giants: ComputePlayerSlice(g, GiantsPhases, phaseDurationByKey),
+                Saltspray: ComputePlayerSlice(g, SaltsprayPhases, phaseDurationByKey)))
             .OrderBy(s => s.AccountName)
             .ToList();
 
@@ -511,22 +527,46 @@ public class HtcmProgService
     }
 
     private static HtcmPlayerPhaseSlice ComputePlayerSlice(
-        IEnumerable<PlayerPhaseRow> rows, string[] phaseNames)
+        IEnumerable<PlayerPhaseRow> rows,
+        string[] phaseNames,
+        Dictionary<(Guid EncounterId, string PhaseName), int> phaseDurationByKey)
     {
         var filtered = rows.Where(r => MatchesAny(r.Stats.PhaseName, phaseNames)).ToList();
-        // Average only across pulls where the player was actually debilitated (uptime > 0).
-        // Including 0% pulls would dilute the metric so a player who got hit once for 60%
-        // across five pulls would show 12% — hiding that they DO get hit when it happens.
-        // The post-filter average reads as "when you do get debilitated in this phase,
-        // what's typical".
-        var debils = filtered
-            .Where(r => r.Stats.DebilitatedUptimePct is > 0m)
-            .Select(r => r.Stats.DebilitatedUptimePct!.Value)
-            .ToList();
+        // Convert each row's EI active-basis uptime % to a phase-relative %, then
+        // average across pulls where the player was actually debilitated.
+        var debils = new List<decimal>();
+        foreach (var r in filtered)
+        {
+            if (!phaseDurationByKey.TryGetValue((r.Stats.EncounterId, r.Stats.PhaseName), out var phaseMs)) continue;
+            var rel = ToPhaseRelativeDebilPct(r.Stats, phaseMs);
+            if (rel > 0m) debils.Add(rel);
+        }
         return new HtcmPlayerPhaseSlice(
             Deaths: filtered.Sum(r => r.Stats.DeadCount),
             DeadAtPhaseStart: filtered.Count(r => r.Stats.DeadAtPhaseStart),
             DebilUptimeAvgPct: debils.Count == 0 ? null : debils.Average());
+    }
+
+    // EI's BuffUptimesActive gives uptime % relative to the player's ACTIVE time in
+    // the phase (dead + down time excluded). That overstates the metric when the
+    // player was dead for a chunk of the phase — a player dead 25/30s of Giants but
+    // debilitated for the 5s they were alive reads as 100% under EI's math, even
+    // though Giants only lost 5s of real-time burst to the debuff.
+    //
+    // Convert to a phase-relative %:
+    //   phase_relative_% = active_uptime_% × (phase_ms − dead_ms − down_ms) / phase_ms
+    //
+    // Players who survived the full phase get exactly the EI number (active = phase).
+    // Players who died chunks get a proportionally smaller number reflecting what the
+    // squad actually lost to debilitated during the burst window.
+    private static decimal ToPhaseRelativeDebilPct(
+        Database.Entities.PlayerEncounterPhaseStatEntity stats, int phaseDurationMs)
+    {
+        if (stats.DebilitatedUptimePct is not { } activePct || activePct <= 0m) return 0m;
+        if (phaseDurationMs <= 0) return 0m;
+        var activeMs = phaseDurationMs - stats.DeadDurationMs - stats.DownDurationMs;
+        if (activeMs <= 0) return 0m;
+        return activePct * activeMs / phaseDurationMs;
     }
 
     private record PlayerPhaseRow(Database.Entities.PlayerEncounterPhaseStatEntity Stats, string AccountName);
