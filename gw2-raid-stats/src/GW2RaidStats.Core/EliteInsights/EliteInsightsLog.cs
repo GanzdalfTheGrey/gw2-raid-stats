@@ -108,6 +108,18 @@ public class EIPlayer
     [JsonPropertyName("defenses")]
     public List<EIDefenseStats>? Defenses { get; set; }
 
+    // Timestamp pairs in ms (start, end). end = log end if the player stayed dead.
+    // Used to derive "dead at phase start" by intersecting these intervals with each
+    // phase's start timestamp. Not currently consumed outside the HTCM phase importer.
+    [JsonPropertyName("deadCombatTimes")]
+    public List<List<int>>? DeadCombatTimes { get; set; }
+
+    [JsonPropertyName("downCombatTimes")]
+    public List<List<int>>? DownCombatTimes { get; set; }
+
+    [JsonPropertyName("dcCombatTimes")]
+    public List<List<int>>? DcCombatTimes { get; set; }
+
     [JsonPropertyName("support")]
     public List<EISupportStats>? Support { get; set; }
 

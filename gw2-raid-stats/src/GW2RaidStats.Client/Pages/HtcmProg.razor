@@ -235,6 +235,44 @@ else
                                                     }
                                                 </tbody>
                                             </MudSimpleTable>
+
+                                            @if (HasBurstData(context.BurstGroups))
+                                            {
+                                                <MudText Typo="Typo.caption" Class="mt-3 mb-2"><strong>Burst Comparison</strong></MudText>
+                                                <MudSimpleTable Dense="true" Style="background-color: transparent;">
+                                                    <thead>
+                                                        <tr>
+                                                            <th></th>
+                                                            <th style="text-align: right;">Timecaster</th>
+                                                            <th style="text-align: right;">Giants</th>
+                                                            <th style="text-align: right;">Saltspray</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        <tr>
+                                                            <td><em>Duration</em></td>
+                                                            <td style="text-align: right;">@FormatBurstDuration(context.BurstGroups?.Timecaster)</td>
+                                                            <td style="text-align: right;">@FormatBurstDuration(context.BurstGroups?.Giants)</td>
+                                                            <td style="text-align: right;">@FormatBurstDuration(context.BurstGroups?.Saltspray)</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td><strong>Squad DPS</strong></td>
+                                                            <td style="text-align: right;">@FormatBurstDps(context.BurstGroups?.Timecaster)</td>
+                                                            <td style="text-align: right;">@FormatBurstDps(context.BurstGroups?.Giants)</td>
+                                                            <td style="text-align: right;">@FormatBurstDps(context.BurstGroups?.Saltspray)</td>
+                                                        </tr>
+                                                        @foreach (var account in UnionBurstPlayers(context.BurstGroups))
+                                                        {
+                                                            <tr>
+                                                                <td style="padding-left: 1.5em;">@account</td>
+                                                                <td style="text-align: right;">@FormatPlayerBurst(context.BurstGroups?.Timecaster, account)</td>
+                                                                <td style="text-align: right;">@FormatPlayerBurst(context.BurstGroups?.Giants, account)</td>
+                                                                <td style="text-align: right;">@FormatPlayerBurst(context.BurstGroups?.Saltspray, account)</td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </MudSimpleTable>
+                                            }
                                         </MudPaper>
                                     </td>
                                 </MudTr>
@@ -242,6 +280,53 @@ else
                         </ChildRowContent>
                     </MudTable>
                     </div>
+
+                    <!-- Phase Insights — per-player deaths & debilitated per burst phase group -->
+                    @if (_sessionDetail.PlayerPhaseStats is { Count: > 0 })
+                    {
+                        <MudExpansionPanels Class="mt-4">
+                            <MudExpansionPanel Text="Phase Insights — Deaths & Debilitated (Timecaster / Giants / Saltspray)">
+                                <MudSimpleTable Dense="true" Hover="true" Style="overflow-x: auto;">
+                                    <thead>
+                                        <tr>
+                                            <th rowspan="2">Player</th>
+                                            <th colspan="3" style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Timecaster</th>
+                                            <th colspan="3" style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Giants</th>
+                                            <th colspan="3" style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Saltspray</th>
+                                        </tr>
+                                        <tr>
+                                            <th style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Deaths</th>
+                                            <th style="text-align:center;">Dead at start</th>
+                                            <th style="text-align:center;">Debil %</th>
+                                            <th style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Deaths</th>
+                                            <th style="text-align:center;">Dead at start</th>
+                                            <th style="text-align:center;">Debil %</th>
+                                            <th style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Deaths</th>
+                                            <th style="text-align:center;">Dead at start</th>
+                                            <th style="text-align:center;">Debil %</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var p in _sessionDetail.PlayerPhaseStats)
+                                        {
+                                            <tr>
+                                                <td>@p.AccountName</td>
+                                                <td style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">@FormatCount(p.Timecaster.Deaths)</td>
+                                                <td style="text-align:center;">@FormatCount(p.Timecaster.DeadAtPhaseStart)</td>
+                                                <td style="text-align:center;">@FormatDebilPct(p.Timecaster.DebilUptimeAvgPct)</td>
+                                                <td style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">@FormatCount(p.Giants.Deaths)</td>
+                                                <td style="text-align:center;">@FormatCount(p.Giants.DeadAtPhaseStart)</td>
+                                                <td style="text-align:center;">@FormatDebilPct(p.Giants.DebilUptimeAvgPct)</td>
+                                                <td style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">@FormatCount(p.Saltspray.Deaths)</td>
+                                                <td style="text-align:center;">@FormatCount(p.Saltspray.DeadAtPhaseStart)</td>
+                                                <td style="text-align:center;">@FormatDebilPct(p.Saltspray.DebilUptimeAvgPct)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </MudSimpleTable>
+                            </MudExpansionPanel>
+                        </MudExpansionPanels>
+                    }
 
                     <!-- Player Mechanics -->
                     @if (_sessionDetail.PlayerMechanics.Count > 0)
@@ -708,6 +793,43 @@ else
         return $"{duration.Seconds}s";
     }
 
+    private static bool HasBurstData(HtcmRunBurstGroupsDto? groups)
+        => groups != null && (groups.Timecaster != null || groups.Giants != null || groups.Saltspray != null);
+
+    private static string FormatBurstDps(HtcmPhaseGroupBurstDto? group)
+        => group == null ? "—" : $"{(group.SquadDps / 1000.0):F1}k";
+
+    private static string FormatBurstDuration(HtcmPhaseGroupBurstDto? group)
+        => group == null ? "—" : FormatDuration(TimeSpan.FromMilliseconds(group.DurationMs));
+
+    private static string FormatPlayerBurst(HtcmPhaseGroupBurstDto? group, string accountName)
+    {
+        if (group == null) return "—";
+        var entry = group.Players.FirstOrDefault(p => p.AccountName == accountName);
+        return entry == null ? "—" : $"{(entry.Dps / 1000.0):F1}k";
+    }
+
+    // Union of player names appearing in any of the three groups so the burst table
+    // has one row per player even when a player only contributed to a subset of phases.
+    private static IEnumerable<string> UnionBurstPlayers(HtcmRunBurstGroupsDto? groups)
+    {
+        if (groups == null) yield break;
+        var seen = new HashSet<string>();
+        foreach (var group in new[] { groups.Timecaster, groups.Giants, groups.Saltspray })
+        {
+            if (group == null) continue;
+            foreach (var p in group.Players)
+            {
+                if (seen.Add(p.AccountName)) yield return p.AccountName;
+            }
+        }
+    }
+
+    private static string FormatCount(int value) => value == 0 ? "—" : value.ToString();
+
+    private static string FormatDebilPct(decimal? value)
+        => value is null or 0 ? "—" : $"{value.Value:0.#}%";
+
     private static string FormatAccountName(string accountName)
     {
         // Remove leading dot if present and truncate if too long
@@ -853,7 +975,8 @@ else
         int TotalDeaths,
         bool HasKill,
         List<HtcmPullDto> Pulls,
-        List<HtcmPlayerMechanicsDto> PlayerMechanics
+        List<HtcmPlayerMechanicsDto> PlayerMechanics,
+        List<HtcmPlayerPhaseSessionStatDto>? PlayerPhaseStats = null
     );
 
     public record HtcmPullDto(
@@ -871,8 +994,26 @@ else
         string? LogUrl,
         List<HtcmPhaseStatsDto> PhaseStats,
         string? FirstDeathPlayer,
-        TimeSpan? FirstDeathTime
+        TimeSpan? FirstDeathTime,
+        HtcmRunBurstGroupsDto? BurstGroups = null
     );
+
+    public record HtcmRunBurstGroupsDto(
+        HtcmPhaseGroupBurstDto? Timecaster,
+        HtcmPhaseGroupBurstDto? Giants,
+        HtcmPhaseGroupBurstDto? Saltspray);
+
+    public record HtcmPhaseGroupBurstDto(int SquadDps, int DurationMs, List<HtcmPlayerBurstDto> Players);
+
+    public record HtcmPlayerBurstDto(string AccountName, int Dps);
+
+    public record HtcmPlayerPhaseSessionStatDto(
+        string AccountName,
+        HtcmPlayerPhaseSliceDto Timecaster,
+        HtcmPlayerPhaseSliceDto Giants,
+        HtcmPlayerPhaseSliceDto Saltspray);
+
+    public record HtcmPlayerPhaseSliceDto(int Deaths, int DeadAtPhaseStart, decimal? DebilUptimeAvgPct);
 
     public record HtcmPhaseStatsDto(
         int PhaseIndex,

@@ -58,6 +58,7 @@ public class HtcmProgService
         { "Heart 3 Breakbar 1", 760 },
         { "Heart 3 Breakbar 2", 761 },
         { "Heart 3 Breakbar 3", 762 },
+        { "Void Saltspray Dragon", 780 },
         { "Soo-Won 1", 800 },
         { "Void Amalgamate", 850 },
         { "Void Amalgamate Breakbar 1", 851 },
@@ -131,6 +132,7 @@ public class HtcmProgService
         ("soo-won",   800),
         ("soo won",   800),
         ("soowon",    800),
+        ("saltspray", 780),
         ("heart 3",   760),
         ("zhaitan",   700),
         ("void giant", 650),
@@ -143,6 +145,17 @@ public class HtcmProgService
         ("jormag",    200),
         ("heart 1",   110),
     };
+
+    // The three burst-comparison phase groups consumed by Phase-3 HTCM insights. EI
+    // emits these as individual phases; "Giants" rolls Giant 1 + Giant 2 into one
+    // burst column because the squad bursts them back-to-back with a small breakbar
+    // in between. Comparisons are case-insensitive against EncounterPhaseStat.PhaseName.
+    private static readonly string[] TimecasterPhases = { "Void Time Caster" };
+    private static readonly string[] GiantsPhases = { "Void Giant 1", "Void Giant 2" };
+    private static readonly string[] SaltsprayPhases = { "Void Saltspray Dragon" };
+
+    private static bool MatchesAny(string phaseName, string[] candidates) =>
+        candidates.Any(c => string.Equals(c, phaseName, StringComparison.OrdinalIgnoreCase));
 
     // Key mechanics to track for HTCM
     // Note: These are the short names from Elite Insights mechanics data
@@ -241,6 +254,20 @@ public class HtcmProgService
             .Where(ps => encounterIds.Contains(ps.EncounterId))
             .ToListAsync(ct);
 
+        // Per-player per-phase stats (migration 032). Empty when no HTCM pull in this
+        // session has been imported with the new code yet, in which case the burst /
+        // deaths / debilitated slices in the response are simply empty.
+        var playerPhaseRaw = await _db.PlayerEncounterPhaseStats
+            .Join(_db.Players, ps => ps.PlayerId, p => p.Id, (ps, p) => new { Stats = ps, p.AccountName })
+            .Where(x => encounterIds.Contains(x.Stats.EncounterId))
+            .ToListAsync(ct);
+        var playerPhaseStatsAll = playerPhaseRaw
+            .Select(x => new PlayerPhaseRow(x.Stats, x.AccountName))
+            .ToList();
+        var playerPhaseByEncounter = playerPhaseStatsAll
+            .GroupBy(r => r.Stats.EncounterId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         // Get DPS data for the session
         var dpsData = await _db.PlayerEncounters
             .Where(pe => encounterIds.Contains(pe.EncounterId))
@@ -317,6 +344,18 @@ public class HtcmProgService
                 firstDeathTime = TimeSpan.FromMilliseconds(firstDeath.m.EventTimeMs);
             }
 
+            // Burst groups (Timecaster / Giants / Saltspray) — null when no player-phase
+            // rows exist for this encounter (pre-migration-032 import).
+            HtcmRunBurstGroups? burstGroups = null;
+            if (playerPhaseByEncounter.TryGetValue(encounter.Id, out var pullPlayerStats))
+            {
+                var pullPhaseStatEntities = phaseStats.Where(ps => ps.EncounterId == encounter.Id).ToList();
+                burstGroups = new HtcmRunBurstGroups(
+                    Timecaster: ComputeGroupBurst(TimecasterPhases, pullPlayerStats, pullPhaseStatEntities),
+                    Giants: ComputeGroupBurst(GiantsPhases, pullPlayerStats, pullPhaseStatEntities),
+                    Saltspray: ComputeGroupBurst(SaltsprayPhases, pullPlayerStats, pullPhaseStatEntities));
+            }
+
             pulls.Add(new HtcmPull(
                 encounter.Id,
                 i + 1,
@@ -332,9 +371,21 @@ public class HtcmProgService
                 encounter.LogUrl,
                 encounterPhaseStats,
                 firstDeathPlayer,
-                firstDeathTime
+                firstDeathTime,
+                burstGroups
             ));
         }
+
+        // Per-session per-player slice across the three burst phase groups.
+        var playerPhaseSessionStats = playerPhaseStatsAll
+            .GroupBy(r => r.AccountName)
+            .Select(g => new HtcmPlayerPhaseSessionStat(
+                g.Key,
+                Timecaster: ComputePlayerSlice(g, TimecasterPhases),
+                Giants: ComputePlayerSlice(g, GiantsPhases),
+                Saltspray: ComputePlayerSlice(g, SaltsprayPhases)))
+            .OrderBy(s => s.AccountName)
+            .ToList();
 
         // Build player mechanic breakdown
         var playerMechanics = mechanicCounts
@@ -371,9 +422,52 @@ public class HtcmProgService
             pulls.Sum(p => p.Deaths),
             pulls.Any(p => p.Success),
             pulls,
-            playerMechanics
+            playerMechanics,
+            playerPhaseSessionStats
         );
     }
+
+    // Combined damage / combined duration across the phase-group's underlying phases
+    // (e.g. Giants = Giant 1 + Giant 2). Returns null when no matching phase reached.
+    private static HtcmPhaseGroupBurst? ComputeGroupBurst(
+        string[] phaseNames,
+        IReadOnlyList<PlayerPhaseRow> pullPlayerStats,
+        IReadOnlyList<Database.Entities.EncounterPhaseStatEntity> pullPhaseStats)
+    {
+        var matchingPhases = pullPhaseStats.Where(ps => MatchesAny(ps.PhaseName, phaseNames)).ToList();
+        if (matchingPhases.Count == 0) return null;
+
+        var totalDurationMs = matchingPhases.Sum(ps => ps.DurationMs);
+        if (totalDurationMs <= 0) return null;
+
+        var groupRows = pullPlayerStats.Where(r => MatchesAny(r.Stats.PhaseName, phaseNames)).ToList();
+        var squadDamage = groupRows.Sum(r => r.Stats.Damage);
+        var squadDps = (int)(squadDamage * 1000L / totalDurationMs);
+
+        var playerBursts = groupRows
+            .GroupBy(r => r.AccountName)
+            .Select(g => new HtcmPlayerBurst(g.Key, (int)(g.Sum(r => r.Stats.Damage) * 1000L / totalDurationMs)))
+            .OrderByDescending(p => p.Dps)
+            .ToList();
+
+        return new HtcmPhaseGroupBurst(squadDps, totalDurationMs, playerBursts);
+    }
+
+    private static HtcmPlayerPhaseSlice ComputePlayerSlice(
+        IEnumerable<PlayerPhaseRow> rows, string[] phaseNames)
+    {
+        var filtered = rows.Where(r => MatchesAny(r.Stats.PhaseName, phaseNames)).ToList();
+        var debils = filtered
+            .Where(r => r.Stats.DebilitatedUptimePct.HasValue)
+            .Select(r => r.Stats.DebilitatedUptimePct!.Value)
+            .ToList();
+        return new HtcmPlayerPhaseSlice(
+            Deaths: filtered.Sum(r => r.Stats.DeadCount),
+            DeadAtPhaseStart: filtered.Count(r => r.Stats.DeadAtPhaseStart),
+            DebilUptimeAvgPct: debils.Count == 0 ? null : debils.Average());
+    }
+
+    private record PlayerPhaseRow(Database.Entities.PlayerEncounterPhaseStatEntity Stats, string AccountName);
 
     /// <summary>
     /// Get progression data for all sessions (for charts)
@@ -645,7 +739,8 @@ public record HtcmSessionDetail(
     int TotalDeaths,
     bool HasKill,
     List<HtcmPull> Pulls,
-    List<HtcmPlayerMechanics> PlayerMechanics
+    List<HtcmPlayerMechanics> PlayerMechanics,
+    List<HtcmPlayerPhaseSessionStat>? PlayerPhaseStats = null
 );
 
 public record HtcmPull(
@@ -663,8 +758,33 @@ public record HtcmPull(
     string? LogUrl,
     List<HtcmPhaseStats> PhaseStats,
     string? FirstDeathPlayer,
-    TimeSpan? FirstDeathTime
+    TimeSpan? FirstDeathTime,
+    HtcmRunBurstGroups? BurstGroups = null
 );
+
+// Per-run burst per phase-group (Timecaster / Giants / Saltspray). Squad totals plus
+// each player's contribution within the group. Null inside a group means the phase
+// wasn't reached in this pull.
+public record HtcmRunBurstGroups(
+    HtcmPhaseGroupBurst? Timecaster,
+    HtcmPhaseGroupBurst? Giants,
+    HtcmPhaseGroupBurst? Saltspray);
+
+public record HtcmPhaseGroupBurst(int SquadDps, int DurationMs, List<HtcmPlayerBurst> Players);
+
+public record HtcmPlayerBurst(string AccountName, int Dps);
+
+// Per-session per-player slice across the three burst phase-groups. Deaths counts
+// EI's DeadCount events that occurred during the group; DeadAtPhaseStart counts
+// how many pulls in the group's phases the player walked in already dead. Debil
+// uptime is the simple average across pulls where the phase was reached.
+public record HtcmPlayerPhaseSessionStat(
+    string AccountName,
+    HtcmPlayerPhaseSlice Timecaster,
+    HtcmPlayerPhaseSlice Giants,
+    HtcmPlayerPhaseSlice Saltspray);
+
+public record HtcmPlayerPhaseSlice(int Deaths, int DeadAtPhaseStart, decimal? DebilUptimeAvgPct);
 
 public record HtcmPhaseStats(
     int PhaseIndex,

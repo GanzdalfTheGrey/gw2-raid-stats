@@ -312,7 +312,117 @@ public class LogImportService
             }
         }
 
+        // HTCM only: per-player per-phase stats (burst, deaths, debilitated uptime).
+        // Bounded storage — ~12 phases × 10 players per pull. Other encounters keep
+        // their single-row PlayerEncounter stats; per-phase granularity adds up too
+        // fast across hundreds of fights to be worthwhile elsewhere.
+        if (log.TriggerId == HtcmTriggerId && log.Phases != null && log.Phases.Count > 0)
+        {
+            await ImportHtcmPhaseStatsAsync(log, encounter.Id, ct);
+        }
+
         return encounter.Id;
+    }
+
+    // HTCM trigger ID. Matches WingMapping + HtcmProgService for grep-ability.
+    private const int HtcmTriggerId = 43488;
+
+    // Buff ID for the Debilitated stacking debuff in HTCM. Sourced via the player's
+    // buffUptimesActive entry; only the uptime field is consumed (% of phase time
+    // the buff was up). Count + max-stacks tracking is a follow-up if uptime % proves
+    // too coarse — would need parsing of buffsActiveStats with the presence field.
+    private const long DebilitatedBuffId = 67972;
+
+    private async Task ImportHtcmPhaseStatsAsync(EliteInsightsLog log, Guid encounterId, CancellationToken ct)
+    {
+        var playerIdsByAccount = await BulkLoadPlayerIdsAsync(log, ct);
+        if (playerIdsByAccount.Count == 0) return;
+
+        foreach (var row in BuildHtcmPhaseStatRows(encounterId, log, playerIdsByAccount))
+        {
+            await _db.InsertAsync(row, token: ct);
+        }
+    }
+
+    private async Task<Dictionary<string, Guid>> BulkLoadPlayerIdsAsync(EliteInsightsLog log, CancellationToken ct)
+    {
+        var accountNames = log.Players
+            .Select(p => p.Account)
+            .Where(a => !string.IsNullOrEmpty(a))
+            .Distinct()
+            .ToList();
+        if (accountNames.Count == 0) return new Dictionary<string, Guid>();
+
+        return (await _db.Players
+            .Where(p => accountNames.Contains(p.AccountName))
+            .ToListAsync(ct))
+            .ToDictionary(p => p.AccountName, p => p.Id);
+    }
+
+    /// <summary>
+    /// Builds per-player per-phase rows from an HTCM log. Shared between the importer
+    /// (first-time write) and RescanService (backfill for historical encounters).
+    /// Caller is responsible for ensuring the encounter is HTCM and persisting the rows.
+    /// </summary>
+    public static IEnumerable<PlayerEncounterPhaseStatEntity> BuildHtcmPhaseStatRows(
+        Guid encounterId, EliteInsightsLog log, Dictionary<string, Guid> playerIdsByAccount)
+    {
+        if (log.Phases == null || log.Phases.Count == 0) yield break;
+
+        foreach (var eiPlayer in log.Players)
+        {
+            if (string.IsNullOrEmpty(eiPlayer.Account)) continue;
+            if (!playerIdsByAccount.TryGetValue(eiPlayer.Account, out var playerId)) continue;
+
+            var debilBuff = eiPlayer.BuffUptimesActive?
+                .FirstOrDefault(b => b.Id == DebilitatedBuffId);
+
+            for (int phaseIndex = 0; phaseIndex < log.Phases.Count; phaseIndex++)
+            {
+                var phase = log.Phases[phaseIndex];
+                if (phase.End <= phase.Start) continue;
+
+                var dpsStats = eiPlayer.DpsAll != null && phaseIndex < eiPlayer.DpsAll.Count
+                    ? eiPlayer.DpsAll[phaseIndex] : null;
+                var defense = eiPlayer.Defenses != null && phaseIndex < eiPlayer.Defenses.Count
+                    ? eiPlayer.Defenses[phaseIndex] : null;
+                var debilPct = debilBuff?.BuffData != null && phaseIndex < debilBuff.BuffData.Count
+                    ? debilBuff.BuffData[phaseIndex].Uptime : (decimal?)null;
+
+                yield return new PlayerEncounterPhaseStatEntity
+                {
+                    Id = Guid.NewGuid(),
+                    EncounterId = encounterId,
+                    PlayerId = playerId,
+                    PhaseIndex = phaseIndex,
+                    PhaseName = phase.Name,
+                    Dps = dpsStats?.Dps ?? 0,
+                    Damage = dpsStats?.Damage ?? 0,
+                    DeadCount = defense?.DeadCount ?? 0,
+                    DownCount = defense?.DownCount ?? 0,
+                    DeadDurationMs = (int)((defense?.DeadDuration ?? 0m) * 1000m),
+                    DownDurationMs = (int)((defense?.DownDuration ?? 0m) * 1000m),
+                    DeadAtPhaseStart = WasDeadAtMs(eiPlayer.DeadCombatTimes, phase.Start),
+                    DebilitatedUptimePct = debilPct,
+                    CreatedAt = DateTimeOffset.UtcNow
+                };
+            }
+        }
+    }
+
+    // EI's deadCombatTimes is a list of [startMs, endMs] pairs (endMs = -1 means
+    // the player stayed dead through to fight end). True if any pair brackets `timeMs`.
+    public static bool WasDeadAtMs(List<List<int>>? deadCombatTimes, int timeMs)
+    {
+        if (deadCombatTimes == null) return false;
+        foreach (var pair in deadCombatTimes)
+        {
+            if (pair.Count < 2) continue;
+            var start = pair[0];
+            var end = pair[1];
+            if (start <= timeMs && (end == -1 || end > timeMs)) return true;
+        }
+        return false;
     }
 
     private async Task<PlayerEntity> GetOrCreatePlayerAsync(string accountName, DateTimeOffset encounterTime, CancellationToken ct)

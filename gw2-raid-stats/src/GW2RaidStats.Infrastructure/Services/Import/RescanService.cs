@@ -113,7 +113,42 @@ public class RescanService
         // Update player encounter fields
         anyUpdated |= await UpdatePlayerEncounterFieldsAsync(encounterId, log, ct);
 
+        // Backfill HTCM per-player per-phase stats (migration 032). Skipped when the
+        // encounter already has rows so a rescan on a fresh import is a cheap no-op.
+        anyUpdated |= await BackfillHtcmPhaseStatsAsync(encounterId, log, ct);
+
         return anyUpdated;
+    }
+
+    private async Task<bool> BackfillHtcmPhaseStatsAsync(Guid encounterId, EliteInsightsLog log, CancellationToken ct)
+    {
+        if (log.TriggerId != 43488) return false;
+        if (log.Phases == null || log.Phases.Count == 0) return false;
+
+        var existing = await _db.PlayerEncounterPhaseStats
+            .Where(p => p.EncounterId == encounterId)
+            .AnyAsync(ct);
+        if (existing) return false;
+
+        var accountNames = log.Players
+            .Select(p => p.Account)
+            .Where(a => !string.IsNullOrEmpty(a))
+            .Distinct()
+            .ToList();
+        if (accountNames.Count == 0) return false;
+
+        var playerIdsByAccount = (await _db.Players
+            .Where(p => accountNames.Contains(p.AccountName))
+            .ToListAsync(ct))
+            .ToDictionary(p => p.AccountName, p => p.Id);
+
+        var anyWrote = false;
+        foreach (var row in LogImportService.BuildHtcmPhaseStatRows(encounterId, log, playerIdsByAccount))
+        {
+            await _db.InsertAsync(row, token: ct);
+            anyWrote = true;
+        }
+        return anyWrote;
     }
 
     private async Task<bool> UpdateEncounterFieldsAsync(Guid encounterId, EliteInsightsLog log, CancellationToken ct)

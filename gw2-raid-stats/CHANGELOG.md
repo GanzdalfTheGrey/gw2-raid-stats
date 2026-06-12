@@ -5,6 +5,12 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **HTCM prog page — per-player phase insights and burst comparison.** A new `Phase Insights` panel under each session breaks each guildie's deaths, dead-at-phase-start count, and average Debilitated uptime % across the three burst-comparison phase groups: **Void Time Caster**, **Giants** (Void Giant 1 + Void Giant 2 combined), and **Void Saltspray Dragon**. Each expanded pull also gets a **Burst Comparison** table — duration, squad DPS, and per-player DPS across the same three groups so it's obvious when the squad bursts unevenly. Migration 032 adds the underlying `player_encounter_phase_stats` table (HTCM-only, ~120 rows per pull). EI's per-phase Defenses + BuffUptimesActive + deadCombatTimes (newly parsed) drive the metrics; Debilitated buff ID 67972. Backfill historical HTCM pulls via **Admin → Manage Logs → Rescan**.
+- **Saltspray** is now in the HTCM canonical phase order at progression 780 (between Heart 3 Breakbar 3 and Soo-Won 1), so pulls reaching it correctly outrank pulls that died at Zhaitan.
+
 ## [1.16.0] - 2026-06-05
 
 ### Added
