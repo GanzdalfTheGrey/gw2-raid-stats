@@ -147,17 +147,19 @@ public class HtcmProgService
     };
 
     // The three burst-comparison phase groups consumed by Phase-3 HTCM insights.
-    // Matching is by PREFIX (case-insensitive) so the breakbar sub-phases EI emits
-    // alongside each damage phase roll into the same burst metric. That way "Giants"
-    // captures Void Giant 1, Void Giant 1 Breakbar 1/2, Void Giant 2, and Void Giant 2
-    // Breakbar 1/2 as one continuous burst window — which matches how the squad
-    // actually plays through that sequence.
+    // Matching is by case-insensitive prefix so variant names (e.g. plural "Void Giants",
+    // CM suffix tags) still group correctly. Breakbar sub-phases are EXCLUDED from
+    // the match — in EI's accounting they run concurrently with the parent damage
+    // phase, so including them would double-count damage and duration.
     private static readonly string[] TimecasterPhases = { "Void Time Caster" };
     private static readonly string[] GiantsPhases = { "Void Giant" };
     private static readonly string[] SaltsprayPhases = { "Void Saltspray" };
 
-    private static bool MatchesAny(string phaseName, string[] prefixes) =>
-        prefixes.Any(p => phaseName.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+    private static bool MatchesAny(string phaseName, string[] prefixes)
+    {
+        if (phaseName.IndexOf("Breakbar", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+        return prefixes.Any(p => phaseName.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+    }
 
     // Key mechanics to track for HTCM
     // Note: These are the short names from Elite Insights mechanics data
@@ -444,6 +446,12 @@ public class HtcmProgService
 
     // Combined damage / combined duration across the phase-group's underlying phases
     // (e.g. Giants = Giant 1 + Giant 2). Returns null when no matching phase reached.
+    //
+    // Per-player DPS uses a per-player denominator (sum of phase durations across only
+    // the phases that player has a row in) rather than the squad total. Matters for
+    // session averages: a player who skipped some pulls shouldn't get their DPS
+    // diluted by the duration of pulls they weren't in. Per-pull values are unchanged
+    // because every player has rows for every phase of an encounter they were in.
     private static HtcmPhaseGroupBurst? ComputeGroupBurst(
         string[] phaseNames,
         IReadOnlyList<PlayerPhaseRow> pullPlayerStats,
@@ -459,9 +467,19 @@ public class HtcmProgService
         var squadDamage = groupRows.Sum(r => r.Stats.Damage);
         var squadDps = (int)(squadDamage * 1000L / totalDurationMs);
 
+        var phaseDurationByKey = matchingPhases.ToDictionary(
+            p => (p.EncounterId, p.PhaseName), p => p.DurationMs);
+
         var playerBursts = groupRows
             .GroupBy(r => r.AccountName)
-            .Select(g => new HtcmPlayerBurst(g.Key, (int)(g.Sum(r => r.Stats.Damage) * 1000L / totalDurationMs)))
+            .Select(g =>
+            {
+                long damage = g.Sum(r => r.Stats.Damage);
+                long playerDurationMs = g.Sum(r =>
+                    phaseDurationByKey.TryGetValue((r.Stats.EncounterId, r.Stats.PhaseName), out var d) ? d : 0L);
+                int dps = playerDurationMs > 0 ? (int)(damage * 1000L / playerDurationMs) : 0;
+                return new HtcmPlayerBurst(g.Key, dps);
+            })
             .OrderByDescending(p => p.Dps)
             .ToList();
 
