@@ -152,17 +152,35 @@ public class HtcmProgService
         ("heart 1",   110),
     };
 
-    // Burst-comparison phase groups. Exact (case-insensitive) name match on the
-    // MAIN damage phase EI emits for each. Concurrent breakbar sub-phases (e.g.
-    // "Void Giant N Breakbar 1", "Void Saltspray Dragon Breakbar 1") share the
-    // same time window as their parent damage phase and would inflate the
-    // damage/duration totals if included, so they're skipped by simply not
-    // appearing in this allow-list. Multiple entries per group cover known EI
-    // naming variants — "Giants" is the modern combined-phase name; "Void Giant
-    // 1/2/3" are individual phases emitted by older EI versions.
+    // Burst-comparison phase groups (used by squad/per-player DPS calc and the
+    // session burst average). Exact main-damage-phase match only — concurrent
+    // breakbar sub-phases would double-count damage and duration if included.
+    // "Giants" is the modern combined-phase name; "Void Giant 1/2/3" cover older
+    // EI versions that emit each giant individually.
     private static readonly string[] TimecasterPhases = { "Void Time Caster" };
     private static readonly string[] GiantsPhases = { "Giants", "Void Giant 1", "Void Giant 2", "Void Giant 3" };
     private static readonly string[] SaltsprayPhases = { "Void Saltspray Dragon" };
+
+    // Debilitated-aggregate phase groups (used by ComputePlayerSlice for the Phase
+    // Insights session column). Widened to include the breakbar sub-phases for
+    // Giants and Saltspray because EI records buff uptime independently on each
+    // concurrent phase, so a player might only show debilitated on the breakbar
+    // entries — missing them would leave the Giants column blank for that player.
+    // Timecaster's breakbars are sequential (Purification 2 sits between them and
+    // the damage phase) so they're left out.
+    private static readonly string[] TimecasterDebilPhases = TimecasterPhases;
+    private static readonly string[] GiantsDebilPhases =
+    {
+        "Giants", "Void Giant 1", "Void Giant 2", "Void Giant 3",
+        "Void Giant 1 Breakbar 1", "Void Giant 1 Breakbar 2",
+        "Void Giant 2 Breakbar 1", "Void Giant 2 Breakbar 2",
+        "Void Giant 3 Breakbar 1", "Void Giant 3 Breakbar 2",
+    };
+    private static readonly string[] SaltsprayDebilPhases =
+    {
+        "Void Saltspray Dragon",
+        "Void Saltspray Dragon Breakbar 1", "Void Saltspray Dragon Breakbar 2",
+    };
 
     private static bool MatchesAny(string phaseName, string[] candidates) =>
         candidates.Any(c => string.Equals(c, phaseName, StringComparison.OrdinalIgnoreCase));
@@ -420,9 +438,9 @@ public class HtcmProgService
             .GroupBy(r => r.AccountName)
             .Select(g => new HtcmPlayerPhaseSessionStat(
                 g.Key,
-                Timecaster: ComputePlayerSlice(g, TimecasterPhases, phaseDurationByKey),
-                Giants: ComputePlayerSlice(g, GiantsPhases, phaseDurationByKey),
-                Saltspray: ComputePlayerSlice(g, SaltsprayPhases, phaseDurationByKey)))
+                Timecaster: ComputePlayerSlice(g, TimecasterPhases, TimecasterDebilPhases, phaseDurationByKey),
+                Giants: ComputePlayerSlice(g, GiantsPhases, GiantsDebilPhases, phaseDurationByKey),
+                Saltspray: ComputePlayerSlice(g, SaltsprayPhases, SaltsprayDebilPhases, phaseDurationByKey)))
             .OrderBy(s => s.AccountName)
             .ToList();
 
@@ -528,22 +546,32 @@ public class HtcmProgService
 
     private static HtcmPlayerPhaseSlice ComputePlayerSlice(
         IEnumerable<PlayerPhaseRow> rows,
-        string[] phaseNames,
+        string[] mainPhaseNames,
+        string[] debilPhaseNames,
         Dictionary<(Guid EncounterId, string PhaseName), int> phaseDurationByKey)
     {
-        var filtered = rows.Where(r => MatchesAny(r.Stats.PhaseName, phaseNames)).ToList();
-        // Convert each row's EI active-basis uptime % to a phase-relative %, then
-        // average across pulls where the player was actually debilitated.
+        var rowList = rows.ToList();
+        var mainFiltered = rowList.Where(r => MatchesAny(r.Stats.PhaseName, mainPhaseNames)).ToList();
+        // Death stats stay on the strict main-phase list so a death during a Giants
+        // breakbar doesn't double-count against both the main and breakbar entries.
+        var deaths = mainFiltered.Sum(r => r.Stats.DeadCount);
+        var deadAtStart = mainFiltered.Count(r => r.Stats.DeadAtPhaseStart);
+
+        // Debilitated aggregate uses the widened list so breakbar entries (which
+        // EI records separately even though they overlap with the main damage
+        // phase) get included. Average only across pulls where the player was
+        // actually debilitated (rel > 0).
+        var debilFiltered = rowList.Where(r => MatchesAny(r.Stats.PhaseName, debilPhaseNames)).ToList();
         var debils = new List<decimal>();
-        foreach (var r in filtered)
+        foreach (var r in debilFiltered)
         {
             if (!phaseDurationByKey.TryGetValue((r.Stats.EncounterId, r.Stats.PhaseName), out var phaseMs)) continue;
             var rel = ToPhaseRelativeDebilPct(r.Stats, phaseMs);
             if (rel > 0m) debils.Add(rel);
         }
         return new HtcmPlayerPhaseSlice(
-            Deaths: filtered.Sum(r => r.Stats.DeadCount),
-            DeadAtPhaseStart: filtered.Count(r => r.Stats.DeadAtPhaseStart),
+            Deaths: deaths,
+            DeadAtPhaseStart: deadAtStart,
             DebilUptimeAvgPct: debils.Count == 0 ? null : debils.Average());
     }
 
