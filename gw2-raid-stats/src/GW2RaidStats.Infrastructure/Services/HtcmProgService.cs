@@ -148,18 +148,19 @@ public class HtcmProgService
 
     // The three burst-comparison phase groups consumed by Phase-3 HTCM insights.
     // Matching is by case-insensitive prefix so variant names (e.g. plural "Void Giants",
-    // CM suffix tags) still group correctly. Breakbar sub-phases are EXCLUDED from
-    // the match — in EI's accounting they run concurrently with the parent damage
-    // phase, so including them would double-count damage and duration.
+    // CM suffix tags) still group correctly. NOTE: breakbar sub-phases would ideally
+    // be excluded (they run concurrently with the parent damage phase in EI's
+    // accounting, so combining them double-counts), but a previous attempt to filter
+    // names containing "Breakbar" caused Giants to disappear entirely — implying the
+    // parent damage phase isn't emitted as its own row in some EI versions. Pending
+    // verification of the actual phase names in real HTCM logs, the match here is
+    // intentionally permissive.
     private static readonly string[] TimecasterPhases = { "Void Time Caster" };
     private static readonly string[] GiantsPhases = { "Void Giant" };
     private static readonly string[] SaltsprayPhases = { "Void Saltspray" };
 
-    private static bool MatchesAny(string phaseName, string[] prefixes)
-    {
-        if (phaseName.IndexOf("Breakbar", StringComparison.OrdinalIgnoreCase) >= 0) return false;
-        return prefixes.Any(p => phaseName.StartsWith(p, StringComparison.OrdinalIgnoreCase));
-    }
+    private static bool MatchesAny(string phaseName, string[] prefixes) =>
+        prefixes.Any(p => phaseName.StartsWith(p, StringComparison.OrdinalIgnoreCase));
 
     // Key mechanics to track for HTCM
     // Note: These are the short names from Elite Insights mechanics data
