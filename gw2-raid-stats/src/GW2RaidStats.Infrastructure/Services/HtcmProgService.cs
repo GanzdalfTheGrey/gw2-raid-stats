@@ -51,6 +51,11 @@ public class HtcmProgService
         { "Void Giant 2", 660 },
         { "Void Giant 2 Breakbar 1", 661 },
         { "Void Giant 2 Breakbar 2", 662 },
+        { "Void Giant 3", 665 },
+        { "Void Giant 3 Breakbar 1", 666 },
+        // Modern EI combines all three giants into a single "Giants" damage phase
+        // while still emitting per-giant breakbar sub-phases.
+        { "Giants", 670 },
         { "Zhaitan", 700 },
 
         // Phase 4: Soo-Won phases
@@ -135,6 +140,7 @@ public class HtcmProgService
         ("saltspray", 780),
         ("heart 3",   760),
         ("zhaitan",   700),
+        ("giants",    670),
         ("void giant", 650),
         ("mordremoth", 600),
         ("mordy",     600),
@@ -146,21 +152,20 @@ public class HtcmProgService
         ("heart 1",   110),
     };
 
-    // The three burst-comparison phase groups consumed by Phase-3 HTCM insights.
-    // Matching is by case-insensitive prefix so variant names (e.g. plural "Void Giants",
-    // CM suffix tags) still group correctly. NOTE: breakbar sub-phases would ideally
-    // be excluded (they run concurrently with the parent damage phase in EI's
-    // accounting, so combining them double-counts), but a previous attempt to filter
-    // names containing "Breakbar" caused Giants to disappear entirely — implying the
-    // parent damage phase isn't emitted as its own row in some EI versions. Pending
-    // verification of the actual phase names in real HTCM logs, the match here is
-    // intentionally permissive.
+    // Burst-comparison phase groups. Exact (case-insensitive) name match on the
+    // MAIN damage phase EI emits for each. Concurrent breakbar sub-phases (e.g.
+    // "Void Giant N Breakbar 1", "Void Saltspray Dragon Breakbar 1") share the
+    // same time window as their parent damage phase and would inflate the
+    // damage/duration totals if included, so they're skipped by simply not
+    // appearing in this allow-list. Multiple entries per group cover known EI
+    // naming variants — "Giants" is the modern combined-phase name; "Void Giant
+    // 1/2/3" are individual phases emitted by older EI versions.
     private static readonly string[] TimecasterPhases = { "Void Time Caster" };
-    private static readonly string[] GiantsPhases = { "Void Giant" };
-    private static readonly string[] SaltsprayPhases = { "Void Saltspray" };
+    private static readonly string[] GiantsPhases = { "Giants", "Void Giant 1", "Void Giant 2", "Void Giant 3" };
+    private static readonly string[] SaltsprayPhases = { "Void Saltspray Dragon" };
 
-    private static bool MatchesAny(string phaseName, string[] prefixes) =>
-        prefixes.Any(p => phaseName.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+    private static bool MatchesAny(string phaseName, string[] candidates) =>
+        candidates.Any(c => string.Equals(c, phaseName, StringComparison.OrdinalIgnoreCase));
 
     // Key mechanics to track for HTCM
     // Note: These are the short names from Elite Insights mechanics data
