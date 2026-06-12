@@ -333,6 +333,18 @@ public class HtcmProgService
             var encounter = encounters[i];
             var dps = dpsData.FirstOrDefault(d => d.EncounterId == encounter.Id);
 
+            // Per-phase debilitated readout for the Phase Breakdown table. One entry per
+            // player with uptime > 0 in that phase, sorted by uptime descending.
+            var pullPlayerStatsForDebil = playerPhaseByEncounter.TryGetValue(encounter.Id, out var pps)
+                ? pps : new List<PlayerPhaseRow>();
+            var playerDebilByPhase = pullPlayerStatsForDebil
+                .Where(r => r.Stats.DebilitatedUptimePct is > 0m)
+                .GroupBy(r => r.Stats.PhaseName)
+                .ToDictionary(g => g.Key, g => g
+                    .OrderByDescending(r => r.Stats.DebilitatedUptimePct!.Value)
+                    .Select(r => new HtcmPhaseDebilEntry(r.AccountName, r.Stats.DebilitatedUptimePct!.Value))
+                    .ToList());
+
             // Get phase stats for this encounter, excluding "Full Fight" (index 0)
             var encounterPhaseStats = phaseStats
                 .Where(ps => ps.EncounterId == encounter.Id && ps.PhaseIndex > 0)
@@ -341,7 +353,8 @@ public class HtcmProgService
                     ps.PhaseIndex,
                     ps.PhaseName,
                     ps.SquadDps,
-                    TimeSpan.FromMilliseconds(ps.DurationMs)
+                    TimeSpan.FromMilliseconds(ps.DurationMs),
+                    playerDebilByPhase.TryGetValue(ps.PhaseName, out var debil) ? debil : null
                 ))
                 .ToList();
 
@@ -844,8 +857,14 @@ public record HtcmPhaseStats(
     int PhaseIndex,
     string PhaseName,
     int SquadDps,
-    TimeSpan Duration
+    TimeSpan Duration,
+    List<HtcmPhaseDebilEntry>? PlayerDebil = null
 );
+
+// Per-phase debilitated readout used in the Phase Breakdown table to explain low
+// burst — only players with uptime > 0 in that phase are emitted, sorted by
+// uptime descending so the heaviest hitters surface first.
+public record HtcmPhaseDebilEntry(string AccountName, decimal UptimePct);
 
 public record HtcmPlayerMechanics(
     string AccountName,

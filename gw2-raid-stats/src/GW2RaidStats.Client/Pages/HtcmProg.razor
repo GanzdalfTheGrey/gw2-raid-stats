@@ -236,12 +236,13 @@ else
                                     <td colspan="9" style="padding: 0;">
                                         <MudPaper Class="pa-2 ma-2" Elevation="0" Style="background-color: var(--mud-palette-background-grey);">
                                             <MudText Typo="Typo.caption" Class="mb-2"><strong>Phase Breakdown</strong></MudText>
-                                            <MudSimpleTable Dense="true" Hover="true" Style="background-color: transparent;">
+                                            <MudSimpleTable Dense="true" Hover="false" Style="background-color: transparent;">
                                                 <thead>
                                                     <tr>
                                                         <th>Phase</th>
                                                         <th style="text-align: right;">Duration</th>
                                                         <th style="text-align: right;">Squad DPS</th>
+                                                        <th>Debilitated</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -257,6 +258,23 @@ else
                                                                                        Value="@GetDpsBarValue(phase.SquadDps)"
                                                                                        Style="width: 60px; height: 8px; border-radius: 2px;" />
                                                                 </MudStack>
+                                                            </td>
+                                                            <td>
+                                                                @if (phase.PlayerDebil is { Count: > 0 })
+                                                                {
+                                                                    <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                                                                        @foreach (var entry in phase.PlayerDebil)
+                                                                        {
+                                                                            <MudChip T="string" Size="Size.Small" Color="@GetDebilColor(entry.UptimePct)" Variant="Variant.Filled">
+                                                                                @($"{entry.AccountName} {entry.UptimePct:0}%")
+                                                                            </MudChip>
+                                                                        }
+                                                                    </MudStack>
+                                                                }
+                                                                else
+                                                                {
+                                                                    <span>—</span>
+                                                                }
                                                             </td>
                                                         </tr>
                                                     }
@@ -908,6 +926,15 @@ else
     private static string FormatDebilPct(decimal? value)
         => value is null or 0 ? "—" : $"{value.Value:0.#}%";
 
+    // Severity bands for the per-phase debilitated chips in the Phase Breakdown table:
+    // red ≥ 50%, amber ≥ 25%, otherwise the default grey chip.
+    private static Color GetDebilColor(decimal uptimePct)
+    {
+        if (uptimePct >= 50m) return Color.Error;
+        if (uptimePct >= 25m) return Color.Warning;
+        return Color.Default;
+    }
+
     private static string FormatAccountName(string accountName)
     {
         // Remove leading dot if present and truncate if too long
@@ -1098,8 +1125,11 @@ else
         int PhaseIndex,
         string PhaseName,
         int SquadDps,
-        TimeSpan Duration
+        TimeSpan Duration,
+        List<HtcmPhaseDebilEntryDto>? PlayerDebil = null
     );
+
+    public record HtcmPhaseDebilEntryDto(string AccountName, decimal UptimePct);
 
     public record HtcmPlayerMechanicsDto(
         string AccountName,
