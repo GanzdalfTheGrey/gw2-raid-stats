@@ -386,8 +386,18 @@ public class LogImportService
                     ? eiPlayer.DpsAll[phaseIndex] : null;
                 var defense = eiPlayer.Defenses != null && phaseIndex < eiPlayer.Defenses.Count
                     ? eiPlayer.Defenses[phaseIndex] : null;
-                var debilPct = debilBuff?.BuffData != null && phaseIndex < debilBuff.BuffData.Count
-                    ? debilBuff.BuffData[phaseIndex].Uptime : (decimal?)null;
+                // Debilitated is a stacking buff. EI emits two separate values per
+                // phase: Uptime (avg stack count 0-5) and Presence (actual % uptime
+                // 0-100 at any stack count). The HTML report's "Uptime" column for
+                // this buff is Presence, and "Avg Active" is Uptime. Capture both.
+                decimal? debilUptimePct = null;
+                decimal? debilAvgStacks = null;
+                if (debilBuff?.BuffData != null && phaseIndex < debilBuff.BuffData.Count)
+                {
+                    var bd = debilBuff.BuffData[phaseIndex];
+                    if (bd.Presence > 0m) debilUptimePct = bd.Presence;
+                    if (bd.Uptime > 0m) debilAvgStacks = bd.Uptime;
+                }
 
                 yield return new PlayerEncounterPhaseStatEntity
                 {
@@ -403,7 +413,8 @@ public class LogImportService
                     DeadDurationMs = (int)((defense?.DeadDuration ?? 0m) * 1000m),
                     DownDurationMs = (int)((defense?.DownDuration ?? 0m) * 1000m),
                     DeadAtPhaseStart = WasDeadAtMs(eiPlayer.DeadCombatTimes, phase.Start),
-                    DebilitatedUptimePct = debilPct,
+                    DebilitatedUptimePct = debilUptimePct,
+                    DebilitatedAvgStacks = debilAvgStacks,
                     CreatedAt = DateTimeOffset.UtcNow
                 };
             }

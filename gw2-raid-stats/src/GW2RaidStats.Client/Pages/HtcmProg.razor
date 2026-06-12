@@ -266,7 +266,7 @@ else
                                                                         @foreach (var entry in phase.PlayerDebil)
                                                                         {
                                                                             <MudChip T="string" Size="Size.Small" Color="@GetDebilColor(entry.UptimePct)" Variant="Variant.Filled">
-                                                                                @($"{entry.AccountName} {entry.UptimePct:0}%")
+                                                                                @($"{entry.AccountName} ") @FormatDebilPctWithStacks(entry.UptimePct, entry.AvgStacks)
                                                                             </MudChip>
                                                                         }
                                                                     </MudStack>
@@ -402,13 +402,13 @@ else
                                                 <td>@p.AccountName</td>
                                                 <td style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">@FormatCount(p.Timecaster.Deaths)</td>
                                                 <td style="text-align:center;">@FormatCount(p.Timecaster.DeadAtPhaseStart)</td>
-                                                <td style="text-align:center;">@FormatDebilPct(p.Timecaster.DebilUptimeAvgPct)</td>
+                                                <td style="text-align:center;">@FormatDebilPctWithStacks(p.Timecaster.DebilUptimeAvgPct, p.Timecaster.DebilAvgStacks)</td>
                                                 <td style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">@FormatCount(p.Giants.Deaths)</td>
                                                 <td style="text-align:center;">@FormatCount(p.Giants.DeadAtPhaseStart)</td>
-                                                <td style="text-align:center;">@FormatDebilPct(p.Giants.DebilUptimeAvgPct)</td>
+                                                <td style="text-align:center;">@FormatDebilPctWithStacks(p.Giants.DebilUptimeAvgPct, p.Giants.DebilAvgStacks)</td>
                                                 <td style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">@FormatCount(p.Saltspray.Deaths)</td>
                                                 <td style="text-align:center;">@FormatCount(p.Saltspray.DeadAtPhaseStart)</td>
-                                                <td style="text-align:center;">@FormatDebilPct(p.Saltspray.DebilUptimeAvgPct)</td>
+                                                <td style="text-align:center;">@FormatDebilPctWithStacks(p.Saltspray.DebilUptimeAvgPct, p.Saltspray.DebilAvgStacks)</td>
                                             </tr>
                                         }
                                     </tbody>
@@ -926,6 +926,15 @@ else
     private static string FormatDebilPct(decimal? value)
         => value is null or 0 ? "—" : $"{value.Value:0.#}%";
 
+    // Compact "% (stacks)" format used in the Phase Insights cell and per-pull chips.
+    // Falls back to just "%" when stacks are unknown, "—" when uptime is null/0.
+    private static string FormatDebilPctWithStacks(decimal? pct, decimal? stacks)
+    {
+        if (pct is null or 0) return "—";
+        if (stacks is null or 0) return $"{pct.Value:0.#}%";
+        return $"{pct.Value:0.#}% ({stacks.Value:0.##})";
+    }
+
     // Severity bands for the per-phase debilitated chips in the Phase Breakdown table:
     // red ≥ 50%, amber ≥ 25%, otherwise the default grey chip.
     private static Color GetDebilColor(decimal uptimePct)
@@ -1119,7 +1128,7 @@ else
         HtcmPlayerPhaseSliceDto Giants,
         HtcmPlayerPhaseSliceDto Saltspray);
 
-    public record HtcmPlayerPhaseSliceDto(int Deaths, int DeadAtPhaseStart, decimal? DebilUptimeAvgPct);
+    public record HtcmPlayerPhaseSliceDto(int Deaths, int DeadAtPhaseStart, decimal? DebilUptimeAvgPct, decimal? DebilAvgStacks);
 
     public record HtcmPhaseStatsDto(
         int PhaseIndex,
@@ -1129,7 +1138,7 @@ else
         List<HtcmPhaseDebilEntryDto>? PlayerDebil = null
     );
 
-    public record HtcmPhaseDebilEntryDto(string AccountName, decimal UptimePct);
+    public record HtcmPhaseDebilEntryDto(string AccountName, decimal UptimePct, decimal? AvgStacks);
 
     public record HtcmPlayerMechanicsDto(
         string AccountName,

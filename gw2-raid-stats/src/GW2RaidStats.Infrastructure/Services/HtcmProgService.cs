@@ -361,7 +361,8 @@ public class HtcmProgService
             // player with phase-relative uptime > 0 in that phase, sorted desc. Phase-
             // relative scales EI's active-basis % down for players who spent part of
             // the phase dead, so the number reflects what the burst actually lost to
-            // the debuff rather than overstating it for largely-dead players.
+            // the debuff rather than overstating it for largely-dead players. AvgStacks
+            // pulls EI's per-phase average stack count alongside the % uptime.
             var pullPlayerStatsForDebil = playerPhaseByEncounter.TryGetValue(encounter.Id, out var pps)
                 ? pps : new List<PlayerPhaseRow>();
             var playerDebilByPhase = pullPlayerStatsForDebil
@@ -376,7 +377,7 @@ public class HtcmProgService
                 .GroupBy(x => x.Row.Stats.PhaseName)
                 .ToDictionary(g => g.Key, g => g
                     .OrderByDescending(x => x.RelPct)
-                    .Select(x => new HtcmPhaseDebilEntry(x.Row.AccountName, x.RelPct))
+                    .Select(x => new HtcmPhaseDebilEntry(x.Row.AccountName, x.RelPct, x.Row.Stats.DebilitatedAvgStacks))
                     .ToList());
 
             // Get phase stats for this encounter, excluding "Full Fight" (index 0)
@@ -559,46 +560,43 @@ public class HtcmProgService
 
         // Debilitated aggregate uses the widened list so breakbar entries (which
         // EI records separately even though they overlap with the main damage
-        // phase) get included. Average only across pulls where the player was
-        // actually debilitated (rel > 0).
+        // phase) get included. Average only across rows where the player was
+        // actually debilitated (rel > 0 or stacks > 0).
         var debilFiltered = rowList.Where(r => MatchesAny(r.Stats.PhaseName, debilPhaseNames)).ToList();
         var debils = new List<decimal>();
+        var stacksList = new List<decimal>();
         foreach (var r in debilFiltered)
         {
             if (!phaseDurationByKey.TryGetValue((r.Stats.EncounterId, r.Stats.PhaseName), out var phaseMs)) continue;
             var rel = ToPhaseRelativeDebilPct(r.Stats, phaseMs);
             if (rel > 0m) debils.Add(rel);
+            if (r.Stats.DebilitatedAvgStacks is > 0m) stacksList.Add(r.Stats.DebilitatedAvgStacks.Value);
         }
         return new HtcmPlayerPhaseSlice(
             Deaths: deaths,
             DeadAtPhaseStart: deadAtStart,
-            DebilUptimeAvgPct: debils.Count == 0 ? null : debils.Average());
+            DebilUptimeAvgPct: debils.Count == 0 ? null : debils.Average(),
+            DebilAvgStacks: stacksList.Count == 0 ? null : stacksList.Average());
     }
 
-    // EI's BuffUptimesActive gives uptime relative to the player's ACTIVE time in
-    // the phase (dead + down time excluded). That overstates the metric when the
-    // player was dead for a chunk of the phase — a player dead 25/30s of Giants but
-    // debilitated for the 5s they were alive reads as ~1.0 (i.e. 100% of their
-    // active time) under EI's math, even though Giants only lost 5s of real-time
-    // burst to the debuff.
+    // DebilitatedUptimePct comes from EI's BuffUptimesActive.Presence field — true
+    // uptime % (0-100) of phase ACTIVE time (dead + down excluded). Scale to a
+    // phase-relative % so players who spent part of the phase dead are devalued
+    // proportionally rather than reading as 100% when they were debilitated for the
+    // 5s they were alive in a 30s phase.
     //
-    // EI emits the value as a fraction (0..1) for stacking debuffs like Debilitated
-    // — multiplying by 100 here converts to percent. The phase-relative scaling
-    // then proportionally reduces the number for players who weren't really there:
+    //   phase_relative_% = active_uptime_% × (phase_ms − dead_ms − down_ms) / phase_ms
     //
-    //   phase_relative_% = active_uptime_fraction × 100 × (phase_ms − dead_ms − down_ms) / phase_ms
-    //
-    // Players who survived the full phase get exactly the percent-converted EI
-    // number. Players who died chunks get proportionally less, reflecting what the
-    // squad actually lost to debilitated during the burst window.
+    // Players alive the full phase get exactly the EI number. Players dead chunks
+    // of the phase get proportionally less, reflecting what the squad really lost.
     private static decimal ToPhaseRelativeDebilPct(
         Database.Entities.PlayerEncounterPhaseStatEntity stats, int phaseDurationMs)
     {
-        if (stats.DebilitatedUptimePct is not { } activeFraction || activeFraction <= 0m) return 0m;
+        if (stats.DebilitatedUptimePct is not { } activeUptimePct || activeUptimePct <= 0m) return 0m;
         if (phaseDurationMs <= 0) return 0m;
         var activeMs = phaseDurationMs - stats.DeadDurationMs - stats.DownDurationMs;
         if (activeMs <= 0) return 0m;
-        return activeFraction * 100m * activeMs / phaseDurationMs;
+        return activeUptimePct * activeMs / phaseDurationMs;
     }
 
     private record PlayerPhaseRow(Database.Entities.PlayerEncounterPhaseStatEntity Stats, string AccountName);
@@ -923,7 +921,7 @@ public record HtcmPlayerPhaseSessionStat(
     HtcmPlayerPhaseSlice Giants,
     HtcmPlayerPhaseSlice Saltspray);
 
-public record HtcmPlayerPhaseSlice(int Deaths, int DeadAtPhaseStart, decimal? DebilUptimeAvgPct);
+public record HtcmPlayerPhaseSlice(int Deaths, int DeadAtPhaseStart, decimal? DebilUptimeAvgPct, decimal? DebilAvgStacks);
 
 public record HtcmPhaseStats(
     int PhaseIndex,
@@ -935,8 +933,10 @@ public record HtcmPhaseStats(
 
 // Per-phase debilitated readout used in the Phase Breakdown table to explain low
 // burst — only players with uptime > 0 in that phase are emitted, sorted by
-// uptime descending so the heaviest hitters surface first.
-public record HtcmPhaseDebilEntry(string AccountName, decimal UptimePct);
+// uptime descending so the heaviest hitters surface first. AvgStacks is the
+// EI BuffUptimesActive.Uptime field (average stack count over the phase active
+// time, 0-5 for Debilitated).
+public record HtcmPhaseDebilEntry(string AccountName, decimal UptimePct, decimal? AvgStacks);
 
 public record HtcmPlayerMechanics(
     string AccountName,

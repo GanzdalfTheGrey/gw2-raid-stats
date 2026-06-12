@@ -310,8 +310,18 @@ public class EIBuffUptime
 
 public class EIBuffUptimeData
 {
+    // For duration buffs (boons): % uptime 0-100. For STACKING buffs (Might,
+    // Debilitated, etc.) this is the average stack count over the phase's active
+    // duration — NOT a percentage. Use Presence below for the true uptime % on
+    // stacking buffs.
     [JsonPropertyName("uptime")]
     public decimal Uptime { get; set; }
+
+    // For stacking buffs: % of phase active time the buff was up at any stack
+    // count (0-100). For duration buffs Presence equals Uptime. Used to read
+    // Debilitated's actual uptime % since Uptime alone gives average stacks.
+    [JsonPropertyName("presence")]
+    public decimal Presence { get; set; }
 }
 
 public class EIPhase
