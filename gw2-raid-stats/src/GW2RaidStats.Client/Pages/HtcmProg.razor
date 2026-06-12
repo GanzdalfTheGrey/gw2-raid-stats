@@ -3,6 +3,24 @@
 
 <PageTitle>GW2 Raid Stats - HTCM Progression</PageTitle>
 
+<style>
+    /* Distinct background + table-row-style hover for the session insight expansion
+       panels (Session Burst Averages, Phase Insights, Player Mechanics) so they
+       don't blend into the surrounding card. */
+    .htcm-insight-panel {
+        background-color: var(--mud-palette-background-grey) !important;
+        transition: background-color 0.15s ease-in-out;
+        margin-bottom: 6px;
+        border-radius: 4px;
+    }
+    .htcm-insight-panel:hover {
+        background-color: var(--mud-palette-action-default-hover) !important;
+    }
+    .htcm-insight-panel .mud-expand-panel-header {
+        cursor: pointer;
+    }
+</style>
+
 <MudText Typo="Typo.h4" Class="mb-4">Harvest Temple CM Progression</MudText>
 
 @if (_loading)
@@ -287,7 +305,7 @@ else
                     @if (_sessionDetail.SessionBurstAverages != null && HasBurstData(_sessionDetail.SessionBurstAverages))
                     {
                         <MudExpansionPanels Class="mt-4">
-                            <MudExpansionPanel Text="Session Burst Averages — Timecaster / Giants / Saltspray">
+                            <MudExpansionPanel Class="htcm-insight-panel" Text="Session Burst Averages — Timecaster / Giants / Saltspray">
                                 <MudSimpleTable Dense="true" Style="background-color: transparent; overflow-x: auto;">
                                     <thead>
                                         <tr>
@@ -329,7 +347,7 @@ else
                     @if (_sessionDetail.PlayerPhaseStats is { Count: > 0 })
                     {
                         <MudExpansionPanels Class="mt-4">
-                            <MudExpansionPanel Text="Phase Insights — Deaths & Debilitated (Timecaster / Giants / Saltspray)">
+                            <MudExpansionPanel Class="htcm-insight-panel" Text="Phase Insights — Deaths & Debilitated (Timecaster / Giants / Saltspray)">
                                 <MudSimpleTable Dense="true" Hover="true" Style="overflow-x: auto;">
                                     <thead>
                                         <tr>
@@ -376,7 +394,7 @@ else
                     @if (_sessionDetail.PlayerMechanics.Count > 0)
                     {
                         <MudExpansionPanels Class="mt-4">
-                            <MudExpansionPanel Text="Player Mechanics Breakdown">
+                            <MudExpansionPanel Class="htcm-insight-panel" Text="Player Mechanics Breakdown">
                                 <MudTable Items="@_sessionDetail.PlayerMechanics" Dense="true" Hover="true">
                                     <HeaderContent>
                                         <MudTh>Player</MudTh>
