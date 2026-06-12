@@ -146,16 +146,18 @@ public class HtcmProgService
         ("heart 1",   110),
     };
 
-    // The three burst-comparison phase groups consumed by Phase-3 HTCM insights. EI
-    // emits these as individual phases; "Giants" rolls Giant 1 + Giant 2 into one
-    // burst column because the squad bursts them back-to-back with a small breakbar
-    // in between. Comparisons are case-insensitive against EncounterPhaseStat.PhaseName.
+    // The three burst-comparison phase groups consumed by Phase-3 HTCM insights.
+    // Matching is by PREFIX (case-insensitive) so the breakbar sub-phases EI emits
+    // alongside each damage phase roll into the same burst metric. That way "Giants"
+    // captures Void Giant 1, Void Giant 1 Breakbar 1/2, Void Giant 2, and Void Giant 2
+    // Breakbar 1/2 as one continuous burst window — which matches how the squad
+    // actually plays through that sequence.
     private static readonly string[] TimecasterPhases = { "Void Time Caster" };
-    private static readonly string[] GiantsPhases = { "Void Giant 1", "Void Giant 2" };
-    private static readonly string[] SaltsprayPhases = { "Void Saltspray Dragon" };
+    private static readonly string[] GiantsPhases = { "Void Giant" };
+    private static readonly string[] SaltsprayPhases = { "Void Saltspray" };
 
-    private static bool MatchesAny(string phaseName, string[] candidates) =>
-        candidates.Any(c => string.Equals(c, phaseName, StringComparison.OrdinalIgnoreCase));
+    private static bool MatchesAny(string phaseName, string[] prefixes) =>
+        prefixes.Any(p => phaseName.StartsWith(p, StringComparison.OrdinalIgnoreCase));
 
     // Key mechanics to track for HTCM
     // Note: These are the short names from Elite Insights mechanics data
@@ -387,6 +389,18 @@ public class HtcmProgService
             .OrderBy(s => s.AccountName)
             .ToList();
 
+        // Session-wide burst averages — same computation as the per-pull bursts but
+        // aggregated across every pull in the session. Lets the user spot whether a
+        // given pull was a high or low outlier relative to typical session performance.
+        HtcmRunBurstGroups? sessionBurstAverages = null;
+        if (playerPhaseStatsAll.Count > 0)
+        {
+            sessionBurstAverages = new HtcmRunBurstGroups(
+                Timecaster: ComputeGroupBurst(TimecasterPhases, playerPhaseStatsAll, phaseStats),
+                Giants: ComputeGroupBurst(GiantsPhases, playerPhaseStatsAll, phaseStats),
+                Saltspray: ComputeGroupBurst(SaltsprayPhases, playerPhaseStatsAll, phaseStats));
+        }
+
         // Build player mechanic breakdown
         var playerMechanics = mechanicCounts
             .GroupBy(m => m.AccountName)
@@ -423,7 +437,8 @@ public class HtcmProgService
             pulls.Any(p => p.Success),
             pulls,
             playerMechanics,
-            playerPhaseSessionStats
+            playerPhaseSessionStats,
+            sessionBurstAverages
         );
     }
 
@@ -740,7 +755,8 @@ public record HtcmSessionDetail(
     bool HasKill,
     List<HtcmPull> Pulls,
     List<HtcmPlayerMechanics> PlayerMechanics,
-    List<HtcmPlayerPhaseSessionStat>? PlayerPhaseStats = null
+    List<HtcmPlayerPhaseSessionStat>? PlayerPhaseStats = null,
+    HtcmRunBurstGroups? SessionBurstAverages = null
 );
 
 public record HtcmPull(

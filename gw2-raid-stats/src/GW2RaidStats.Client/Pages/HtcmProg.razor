@@ -281,6 +281,50 @@ else
                     </MudTable>
                     </div>
 
+                    <!-- Session Burst Averages — same table shape as a single pull's
+                         burst comparison but aggregated across every pull in the session,
+                         so the per-pull numbers can be eyeballed against typical performance. -->
+                    @if (_sessionDetail.SessionBurstAverages != null && HasBurstData(_sessionDetail.SessionBurstAverages))
+                    {
+                        <MudExpansionPanels Class="mt-4">
+                            <MudExpansionPanel Text="Session Burst Averages — Timecaster / Giants / Saltspray">
+                                <MudSimpleTable Dense="true" Style="background-color: transparent; overflow-x: auto;">
+                                    <thead>
+                                        <tr>
+                                            <th></th>
+                                            <th style="text-align: right;">Timecaster</th>
+                                            <th style="text-align: right;">Giants</th>
+                                            <th style="text-align: right;">Saltspray</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><em>Combined duration</em></td>
+                                            <td style="text-align: right;">@FormatBurstDuration(_sessionDetail.SessionBurstAverages.Timecaster)</td>
+                                            <td style="text-align: right;">@FormatBurstDuration(_sessionDetail.SessionBurstAverages.Giants)</td>
+                                            <td style="text-align: right;">@FormatBurstDuration(_sessionDetail.SessionBurstAverages.Saltspray)</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Squad DPS (avg)</strong></td>
+                                            <td style="text-align: right;">@FormatBurstDps(_sessionDetail.SessionBurstAverages.Timecaster)</td>
+                                            <td style="text-align: right;">@FormatBurstDps(_sessionDetail.SessionBurstAverages.Giants)</td>
+                                            <td style="text-align: right;">@FormatBurstDps(_sessionDetail.SessionBurstAverages.Saltspray)</td>
+                                        </tr>
+                                        @foreach (var account in UnionBurstPlayers(_sessionDetail.SessionBurstAverages))
+                                        {
+                                            <tr>
+                                                <td style="padding-left: 1.5em;">@account</td>
+                                                <td style="text-align: right;">@FormatPlayerBurst(_sessionDetail.SessionBurstAverages.Timecaster, account)</td>
+                                                <td style="text-align: right;">@FormatPlayerBurst(_sessionDetail.SessionBurstAverages.Giants, account)</td>
+                                                <td style="text-align: right;">@FormatPlayerBurst(_sessionDetail.SessionBurstAverages.Saltspray, account)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </MudSimpleTable>
+                            </MudExpansionPanel>
+                        </MudExpansionPanels>
+                    }
+
                     <!-- Phase Insights — per-player deaths & debilitated per burst phase group -->
                     @if (_sessionDetail.PlayerPhaseStats is { Count: > 0 })
                     {
@@ -976,7 +1020,8 @@ else
         bool HasKill,
         List<HtcmPullDto> Pulls,
         List<HtcmPlayerMechanicsDto> PlayerMechanics,
-        List<HtcmPlayerPhaseSessionStatDto>? PlayerPhaseStats = null
+        List<HtcmPlayerPhaseSessionStatDto>? PlayerPhaseStats = null,
+        HtcmRunBurstGroupsDto? SessionBurstAverages = null
     );
 
     public record HtcmPullDto(
