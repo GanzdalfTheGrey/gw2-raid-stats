@@ -162,10 +162,13 @@ public class HtcmProgService
     private static readonly string[] SaltsprayPhases = { "Void Saltspray Dragon" };
 
     // Debilitated-aggregate phase groups (used by ComputePlayerSlice for the Phase
-    // Insights session column). Widened to include the breakbar sub-phases for
-    // Giants and Saltspray because EI records buff uptime independently on each
-    // concurrent phase, so a player might only show debilitated on the breakbar
-    // entries — missing them would leave the Giants column blank for that player.
+    // Insights session column). Widened to include breakbar sub-phases for Giants
+    // and Saltspray because EI records buff uptime independently on each phase,
+    // with the main phase's "active duration" EXCLUDING sub-phase time. So when
+    // the buff is only applied during a breakbar, the main phase reads 0% and the
+    // breakbar reads 100% — both correct in their own frames, but neither tells
+    // you "% of the burst window the player was debilitated". Combining them via
+    // sum(presence × active_duration) / main_window_duration recovers that number.
     // Timecaster's breakbars are sequential (Purification 2 sits between them and
     // the damage phase) so they're left out.
     private static readonly string[] TimecasterDebilPhases = TimecasterPhases;
@@ -181,6 +184,29 @@ public class HtcmProgService
         "Void Saltspray Dragon",
         "Void Saltspray Dragon Breakbar 1", "Void Saltspray Dragon Breakbar 2",
     };
+
+    // Sub-phase ↔ main-phase mapping for combined-segment uptime computation.
+    // Used by ComputePlayerSlice to know which sub-phases sit inside which main
+    // phase so it can subtract sub durations from the main's active window
+    // (the way EI computes presence for the main phase).
+    private static readonly Dictionary<string, string[]> SubPhasesByMain = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Giants"] = new[] {
+            "Void Giant 1 Breakbar 1", "Void Giant 1 Breakbar 2",
+            "Void Giant 2 Breakbar 1", "Void Giant 2 Breakbar 2",
+            "Void Giant 3 Breakbar 1", "Void Giant 3 Breakbar 2",
+        },
+        ["Void Giant 1"] = new[] { "Void Giant 1 Breakbar 1", "Void Giant 1 Breakbar 2" },
+        ["Void Giant 2"] = new[] { "Void Giant 2 Breakbar 1", "Void Giant 2 Breakbar 2" },
+        ["Void Giant 3"] = new[] { "Void Giant 3 Breakbar 1", "Void Giant 3 Breakbar 2" },
+        ["Void Saltspray Dragon"] = new[] {
+            "Void Saltspray Dragon Breakbar 1", "Void Saltspray Dragon Breakbar 2",
+        },
+    };
+
+    private static bool IsSubPhaseOf(string subName, string mainName) =>
+        SubPhasesByMain.TryGetValue(mainName, out var subs) &&
+        subs.Any(s => string.Equals(s, subName, StringComparison.OrdinalIgnoreCase));
 
     private static bool MatchesAny(string phaseName, string[] candidates) =>
         candidates.Any(c => string.Equals(c, phaseName, StringComparison.OrdinalIgnoreCase));
@@ -558,25 +584,83 @@ public class HtcmProgService
         var deaths = mainFiltered.Sum(r => r.Stats.DeadCount);
         var deadAtStart = mainFiltered.Count(r => r.Stats.DeadAtPhaseStart);
 
-        // Debilitated aggregate uses the widened list so breakbar entries (which
-        // EI records separately even though they overlap with the main damage
-        // phase) get included. Average only across rows where the player was
-        // actually debilitated (rel > 0 or stacks > 0).
-        var debilFiltered = rowList.Where(r => MatchesAny(r.Stats.PhaseName, debilPhaseNames)).ToList();
-        var debils = new List<decimal>();
-        var stacksList = new List<decimal>();
-        foreach (var r in debilFiltered)
+        // For each pull, compute the combined segment uptime + avg stacks by
+        // summing buff_time across the main phase and its sub-phases. EI's
+        // presence on the main phase is computed against the main duration MINUS
+        // sub-phase durations, so we mirror that here: main_active_window =
+        // main_duration − sum(sub_durations) − dead − down. Each row's contribution
+        // is presence × that row's active window, divided in the end by the total
+        // main-phase window. Per-pull values are then averaged across pulls where
+        // the player picked up the buff at all.
+        var pullUptimes = new List<decimal>();
+        var pullStacks = new List<decimal>();
+        var rowsByEncounter = rowList
+            .Where(r => MatchesAny(r.Stats.PhaseName, debilPhaseNames))
+            .GroupBy(r => r.Stats.EncounterId);
+
+        foreach (var encGroup in rowsByEncounter)
         {
-            if (!phaseDurationByKey.TryGetValue((r.Stats.EncounterId, r.Stats.PhaseName), out var phaseMs)) continue;
-            var rel = ToPhaseRelativeDebilPct(r.Stats, phaseMs);
-            if (rel > 0m) debils.Add(rel);
-            if (r.Stats.DebilitatedAvgStacks is > 0m) stacksList.Add(r.Stats.DebilitatedAvgStacks.Value);
+            var encounterRows = encGroup.ToList();
+            var encMainRows = encounterRows.Where(r => MatchesAny(r.Stats.PhaseName, mainPhaseNames)).ToList();
+            if (encMainRows.Count == 0) continue;
+
+            long totalBuffMs = 0;
+            long mainWindowMs = 0;
+            decimal totalStackWeightedMs = 0;
+            long totalStackWeight = 0;
+
+            foreach (var main in encMainRows)
+            {
+                if (!phaseDurationByKey.TryGetValue((main.Stats.EncounterId, main.Stats.PhaseName), out var mainDur)) continue;
+                mainWindowMs += mainDur;
+
+                // Sub-phases of this specific main row, in this same encounter.
+                var subsOfThisMain = encounterRows
+                    .Where(s => IsSubPhaseOf(s.Stats.PhaseName, main.Stats.PhaseName))
+                    .ToList();
+                var subDurSum = subsOfThisMain.Sum(s =>
+                    phaseDurationByKey.TryGetValue((s.Stats.EncounterId, s.Stats.PhaseName), out var d) ? d : 0);
+
+                // Main's active window for buff purposes excludes sub time + dead + down.
+                var mainActive = mainDur - subDurSum - main.Stats.DeadDurationMs - main.Stats.DownDurationMs;
+                if (mainActive > 0)
+                {
+                    if (main.Stats.DebilitatedUptimePct is decimal mPct && mPct > 0)
+                        totalBuffMs += (long)(mPct * mainActive / 100m);
+                    if (main.Stats.DebilitatedAvgStacks is decimal mStacks && mStacks > 0)
+                    {
+                        totalStackWeightedMs += mStacks * mainActive;
+                        totalStackWeight += mainActive;
+                    }
+                }
+
+                // Sub-phases each contribute presence × their own active window.
+                foreach (var sub in subsOfThisMain)
+                {
+                    if (!phaseDurationByKey.TryGetValue((sub.Stats.EncounterId, sub.Stats.PhaseName), out var subDur)) continue;
+                    var subActive = subDur - sub.Stats.DeadDurationMs - sub.Stats.DownDurationMs;
+                    if (subActive <= 0) continue;
+                    if (sub.Stats.DebilitatedUptimePct is decimal sPct && sPct > 0)
+                        totalBuffMs += (long)(sPct * subActive / 100m);
+                    if (sub.Stats.DebilitatedAvgStacks is decimal sStacks && sStacks > 0)
+                    {
+                        totalStackWeightedMs += sStacks * subActive;
+                        totalStackWeight += subActive;
+                    }
+                }
+            }
+
+            if (mainWindowMs > 0 && totalBuffMs > 0)
+                pullUptimes.Add((decimal)totalBuffMs / mainWindowMs * 100m);
+            if (totalStackWeight > 0)
+                pullStacks.Add(totalStackWeightedMs / totalStackWeight);
         }
+
         return new HtcmPlayerPhaseSlice(
             Deaths: deaths,
             DeadAtPhaseStart: deadAtStart,
-            DebilUptimeAvgPct: debils.Count == 0 ? null : debils.Average(),
-            DebilAvgStacks: stacksList.Count == 0 ? null : stacksList.Average());
+            DebilUptimeAvgPct: pullUptimes.Count == 0 ? null : pullUptimes.Average(),
+            DebilAvgStacks: pullStacks.Count == 0 ? null : pullStacks.Average());
     }
 
     // DebilitatedUptimePct comes from EI's BuffUptimesActive.Presence field — true
