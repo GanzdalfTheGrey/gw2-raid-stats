@@ -18,11 +18,16 @@ public static class EventEmbedBuilder
         List<EventSignupRow> signups)
     {
         var cancelled = ev.Status == "Cancelled";
+        var closed = ev.Status == "Closed";
+        // Either state disables every button and treats the roster as a frozen record.
+        var locked = cancelled || closed;
 
-        var title = cancelled ? $"❌ CANCELLED — {ev.Title}" : ev.Title;
+        var title = cancelled ? $"❌ CANCELLED — {ev.Title}"
+                  : closed ? $"🔒 CLOSED — {ev.Title}"
+                  : ev.Title;
         var embed = new EmbedBuilder()
             .WithTitle(title)
-            .WithColor(cancelled ? Color.Red : Color.Purple)
+            .WithColor(cancelled ? Color.Red : closed ? Color.DarkGrey : Color.Purple)
             .WithCurrentTimestamp();
 
         if (!string.IsNullOrEmpty(ev.Description))
@@ -59,17 +64,21 @@ public static class EventEmbedBuilder
         }
 
         var acceptedCount = signups.Count(s => s.Status == "Accepted");
-        embed.WithFooter($"{acceptedCount} signed up · {reserves.Count} reserve · click a slot to sign up, Drop out to remove yourself");
+        var footer = closed
+            ? $"{acceptedCount} signed up · {reserves.Count} reserve · signups locked when the session started"
+            : $"{acceptedCount} signed up · {reserves.Count} reserve · click a slot to sign up, Drop out to remove yourself";
+        embed.WithFooter(footer);
 
-        var components = BuildComponents(ev, roleSlots, signups, cancelled);
+        var components = BuildComponents(ev, roleSlots, signups, locked);
         return (embed.Build(), components);
     }
 
+    // `locked` covers both Cancelled and Closed — every button is disabled in either.
     private static MessageComponent BuildComponents(
         EventEntity ev,
         List<RoleSlot>? roleSlots,
         List<EventSignupRow> signups,
-        bool cancelled)
+        bool locked)
     {
         var builder = new ComponentBuilder();
         var placed = 0;
@@ -93,7 +102,7 @@ public static class EventEmbedBuilder
                     customId: $"event:{ev.Id}:slot:{slot.Id}",
                     style: ButtonStyle.Primary,
                     row: placed / 5,
-                    disabled: cancelled || isFull || capReached);
+                    disabled: locked || isFull || capReached);
                 placed++;
             }
         }
@@ -104,11 +113,11 @@ public static class EventEmbedBuilder
                 customId: $"event:{ev.Id}:accept",
                 style: ButtonStyle.Success,
                 row: placed / 5,
-                disabled: cancelled);
+                disabled: locked);
             placed++;
         }
 
-        builder.WithButton("Reserve", $"event:{ev.Id}:reserve", ButtonStyle.Secondary, row: placed / 5, disabled: cancelled);
+        builder.WithButton("Reserve", $"event:{ev.Id}:reserve", ButtonStyle.Secondary, row: placed / 5, disabled: locked);
         placed++;
 
         // Drop only renders when the event has at least one signup — keeps brand-new
@@ -117,7 +126,7 @@ public static class EventEmbedBuilder
         // "You weren't signed up" in that case.
         if (signups.Count > 0)
         {
-            builder.WithButton("Drop out", $"event:{ev.Id}:drop", ButtonStyle.Danger, row: placed / 5, disabled: cancelled);
+            builder.WithButton("Drop out", $"event:{ev.Id}:drop", ButtonStyle.Danger, row: placed / 5, disabled: locked);
         }
 
         return builder.Build();

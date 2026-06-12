@@ -141,12 +141,13 @@
 
     private RenderFragment RenderEvent(EventDto ev, bool isPast) => __builder =>
     {
-        var statusColor = ev.Status == "Cancelled"
-            ? Color.Error
-            : (ev.Posted ? Color.Success : Color.Default);
-        var statusLabel = ev.Status == "Cancelled"
-            ? "Cancelled"
-            : (ev.Posted ? "Posted" : "Draft");
+        // Closed = auto-transitioned when scheduled_at passes (signups locked, attendance frozen).
+        var statusColor = ev.Status == "Cancelled" ? Color.Error
+                        : ev.Status == "Closed" ? Color.Default
+                        : (ev.Posted ? Color.Success : Color.Default);
+        var statusLabel = ev.Status == "Cancelled" ? "Cancelled"
+                        : ev.Status == "Closed" ? "Closed"
+                        : (ev.Posted ? "Posted" : "Draft");
 
         <MudPaper Class="pa-4 mb-3" Elevation="1">
             <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="mb-2">

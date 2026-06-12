@@ -1,5 +1,7 @@
+using System.Text.Json;
 using Discord.WebSocket;
 using GW2RaidStats.Infrastructure.Database;
+using GW2RaidStats.Infrastructure.Database.Entities;
 using LinqToDB;
 using LinqToDB.Async;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,13 +11,16 @@ using Microsoft.Extensions.Logging;
 namespace GW2RaidStats.DiscordBot.Notifications;
 
 /// <summary>
-/// Background poller (parallel to NotificationProcessor) that DMs accepted-signup
-/// users a fixed 30 minutes before each event starts. Per-user lead-time and
-/// per-event lead-time overrides are deferred to Phase 2.
+/// Background poller (parallel to NotificationProcessor) for the event lifecycle.
+/// Each 60-second tick does two things:
+///   1. Reminder DMs: 30 minutes before each event starts, DM every accepted-signup
+///      user whose event_reminder_preferences.enabled is on. Idempotency via
+///      events.reminder_sent_at.
+///   2. Auto-close: once scheduled_at passes, transition status Scheduled → Closed,
+///      and queue an event_post notification so the live Discord embed re-renders
+///      with disabled buttons (signups locked, attendance frozen).
 ///
-/// Each event fires reminders exactly once: reminder_sent_at on the events row is the
-/// idempotency marker. Cancelled events are skipped. Subscribers come from the
-/// event_reminder_preferences table (one row per Discord user, opt-in only).
+/// Cancelled events are skipped by both paths.
 /// </summary>
 public class EventReminderProcessor : BackgroundService
 {
@@ -55,7 +60,52 @@ public class EventReminderProcessor : BackgroundService
                 _logger.LogError(ex, "Error processing event reminders");
             }
 
+            try
+            {
+                await ProcessClosingAsync(stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing event auto-close");
+            }
+
             await Task.Delay(_pollInterval, stoppingToken);
+        }
+    }
+
+    // Transitions any Scheduled events whose start time has arrived (or passed) to
+    // Closed, then queues an event_post notification so the bot re-renders the embed
+    // with disabled buttons. Lag is at most _pollInterval (~60s) past scheduled_at.
+    private async Task ProcessClosingAsync(CancellationToken ct)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RaidStatsDb>();
+
+        var now = DateTimeOffset.UtcNow;
+
+        var dueEvents = await db.Events
+            .Where(e => e.Status == "Scheduled" && e.ScheduledAt <= now)
+            .ToListAsync(ct);
+
+        if (dueEvents.Count == 0) return;
+
+        foreach (var ev in dueEvents)
+        {
+            ev.Status = "Closed";
+            ev.UpdatedAt = now;
+            await db.UpdateAsync(ev, token: ct);
+
+            await db.InsertAsync(new NotificationQueueEntity
+            {
+                Id = Guid.NewGuid(),
+                NotificationType = "event_post",
+                Payload = JsonSerializer.Serialize(new { EventId = ev.Id }),
+                CreatedAt = now
+            }, token: ct);
+
+            _logger.LogInformation(
+                "Auto-closed event {Id} ({Title}); scheduled at {Scheduled}",
+                ev.Id, ev.Title, ev.ScheduledAt);
         }
     }
 

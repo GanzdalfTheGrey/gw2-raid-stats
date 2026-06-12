@@ -61,6 +61,11 @@ public class EventInteractionHandler
             await interaction.RespondAsync("This event has been cancelled.", ephemeral: true);
             return;
         }
+        if (ev.Status == "Closed")
+        {
+            await interaction.RespondAsync("Signups for this event are closed — the session has started.", ephemeral: true);
+            return;
+        }
 
         var discordUserId = interaction.User.Id;
         string ack;
