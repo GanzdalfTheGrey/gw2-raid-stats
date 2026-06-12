@@ -547,26 +547,30 @@ public class HtcmProgService
             DebilUptimeAvgPct: debils.Count == 0 ? null : debils.Average());
     }
 
-    // EI's BuffUptimesActive gives uptime % relative to the player's ACTIVE time in
+    // EI's BuffUptimesActive gives uptime relative to the player's ACTIVE time in
     // the phase (dead + down time excluded). That overstates the metric when the
     // player was dead for a chunk of the phase — a player dead 25/30s of Giants but
-    // debilitated for the 5s they were alive reads as 100% under EI's math, even
-    // though Giants only lost 5s of real-time burst to the debuff.
+    // debilitated for the 5s they were alive reads as ~1.0 (i.e. 100% of their
+    // active time) under EI's math, even though Giants only lost 5s of real-time
+    // burst to the debuff.
     //
-    // Convert to a phase-relative %:
-    //   phase_relative_% = active_uptime_% × (phase_ms − dead_ms − down_ms) / phase_ms
+    // EI emits the value as a fraction (0..1) for stacking debuffs like Debilitated
+    // — multiplying by 100 here converts to percent. The phase-relative scaling
+    // then proportionally reduces the number for players who weren't really there:
     //
-    // Players who survived the full phase get exactly the EI number (active = phase).
-    // Players who died chunks get a proportionally smaller number reflecting what the
+    //   phase_relative_% = active_uptime_fraction × 100 × (phase_ms − dead_ms − down_ms) / phase_ms
+    //
+    // Players who survived the full phase get exactly the percent-converted EI
+    // number. Players who died chunks get proportionally less, reflecting what the
     // squad actually lost to debilitated during the burst window.
     private static decimal ToPhaseRelativeDebilPct(
         Database.Entities.PlayerEncounterPhaseStatEntity stats, int phaseDurationMs)
     {
-        if (stats.DebilitatedUptimePct is not { } activePct || activePct <= 0m) return 0m;
+        if (stats.DebilitatedUptimePct is not { } activeFraction || activeFraction <= 0m) return 0m;
         if (phaseDurationMs <= 0) return 0m;
         var activeMs = phaseDurationMs - stats.DeadDurationMs - stats.DownDurationMs;
         if (activeMs <= 0) return 0m;
-        return activePct * activeMs / phaseDurationMs;
+        return activeFraction * 100m * activeMs / phaseDurationMs;
     }
 
     private record PlayerPhaseRow(Database.Entities.PlayerEncounterPhaseStatEntity Stats, string AccountName);
