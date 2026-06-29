@@ -171,7 +171,7 @@
                                      OnClick="@(() => ToggleBoss(boss.TriggerId))"
                                      Color="@(isSelected ? Color.Primary : Color.Default)"
                                      Variant="@(isSelected ? Variant.Filled : Variant.Outlined)">
-                                W@(boss.Wing) @boss.Name
+                                @WingMapping.WingShortLabel(boss.TriggerId) @boss.Name
                                 @if (isSelected)
                                 {
                                     <span style="margin-left: 6px; opacity: 0.8;">#@(_selectedBossOrder.IndexOf(boss.TriggerId) + 1)</span>
@@ -370,10 +370,25 @@
                         if (bossData == null) continue;
                         <MudPaper Class="pa-3" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
                             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
-                                <MudText Typo="Typo.subtitle1"><strong>W@(bossData.Wing) — @bossData.BossName</strong></MudText>
+                                <MudText Typo="Typo.subtitle1"><strong>@WingMapping.WingShortLabel(triggerId) — @bossData.BossName</strong></MudText>
                                 @if (bossData.IsResetSegment)
                                 {
                                     <MudChip T="string" Size="Size.Small" Color="Color.Info">Reset segment</MudChip>
+                                }
+                                <MudSpacer />
+                                @* Manual cut line: re-randomize from this boss onward so roles can fully
+                                   switch (e.g. a different comp for a strike). Not shown on the first boss
+                                   (that's the base squad) or once a cut already covers this point. *@
+                                @if (_grid.Count > 0
+                                     && _selectedBossOrder.IndexOf(triggerId) >= 1
+                                     && CanResetFromBoss(triggerId))
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning"
+                                               StartIcon="@Icons.Material.Filled.ContentCut"
+                                               Disabled="@_building"
+                                               OnClick="@(() => ResetFromAsync(triggerId, null))">
+                                        Cut roles here
+                                    </MudButton>
                                 }
                             </MudStack>
                             @if (bossData.Mechanics.Count == 0)
@@ -583,8 +598,10 @@
 
     private void RollRandomBosses()
     {
-        // Pool of candidate bosses; empty wing set means all wings.
+        // Pool of candidate bosses; empty wing set means all wings. Strikes (StrikeWing
+        // sentinel) are excluded from random rolls — add them manually via the chips.
         var pool = _allBosses
+            .Where(b => b.Wing != WingMapping.StrikeWing)
             .Where(b => _randomWings.Count == 0 || _randomWings.Contains(b.Wing))
             .ToList();
 
@@ -972,7 +989,10 @@
         return !_resetSegments.Any(r => _selectedBossOrder.IndexOf(r.FromBossTriggerId) <= _selectedBossOrder.IndexOf(triggerId));
     }
 
-    private async Task ResetFromAsync(int triggerId, Guid forceCoverableMechanicId)
+    // forceCoverableMechanicId is set when accepting a mechanic-conflict reset (pre-pin capable
+    // players to compatible roles). It's null for a manual cut line — the tail is simply
+    // re-randomized from scratch with no locks, so base roles can fully reshuffle at the cut.
+    private async Task ResetFromAsync(int triggerId, Guid? forceCoverableMechanicId)
     {
         var idx = _selectedBossOrder.IndexOf(triggerId);
         if (idx < 0) return;

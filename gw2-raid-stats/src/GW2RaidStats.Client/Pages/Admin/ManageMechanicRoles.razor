@@ -28,7 +28,7 @@
                 <MudSelect T="BossOption" @bind-Value="_newBoss" Label="Boss" Variant="Variant.Outlined" Margin="Margin.Dense">
                     @foreach (var boss in _bossOptions)
                     {
-                        <MudSelectItem Value="@boss">W@(boss.Wing) — @boss.Name</MudSelectItem>
+                        <MudSelectItem Value="@boss">@WingMapping.WingShortLabel(boss.TriggerId) — @boss.Name</MudSelectItem>
                     }
                 </MudSelect>
             </MudItem>
@@ -198,7 +198,7 @@
         GroupName = "Boss",
         Indentation = false,
         Expandable = false,
-        Selector = m => $"W{(WingMapping.GetWing(m.TriggerId) ?? 0)} — {m.BossName}"
+        Selector = m => $"{WingMapping.WingShortLabel(m.TriggerId)} — {m.BossName}"
     };
 
     private IEnumerable<MechanicRoleDto> SortedCatalog =>

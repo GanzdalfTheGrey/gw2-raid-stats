@@ -201,6 +201,24 @@ public static class WingMapping
         _ => 999     // Unknown encounters sort last
     };
 
+    /// <summary>
+    /// Sentinel wing value for non-raid (strike) bosses in <see cref="AllBosses"/>.
+    /// Strikes have no wing; this keeps them selectable in the boss pickers without
+    /// claiming a real wing number. Use <see cref="WingShortLabel"/> for display.
+    /// </summary>
+    public const int StrikeWing = 0;
+
+    /// <summary>
+    /// Short instance label for a boss chip: "W1".."W8" for raid wings, "Strike" for
+    /// non-raid encounters (those without a wing, e.g. Guardian's Glade). Every trigger ID
+    /// passed here comes from <see cref="AllBosses"/>, so non-raid simply means strike.
+    /// </summary>
+    public static string WingShortLabel(int triggerId)
+    {
+        var wing = GetWing(triggerId);
+        return wing.HasValue ? $"W{wing}" : "Strike";
+    }
+
     public static string GetWingName(int wing) => wing switch
     {
         1 => "Spirit Vale",
@@ -259,6 +277,10 @@ public static class WingMapping
         new BossInfo(26725, "Greer", 8, 1),
         new BossInfo(26774, "Decima", 8, 2),
         new BossInfo(26712, "Ura", 8, 3),
+
+        // Strikes (no wing — StrikeWing sentinel). "Kela" is the in-game name; Elite Insights
+        // reports it as "Guardian's Glade" (renamed in EI v3.18.1.0).
+        new BossInfo(27124, "Guardian's Glade", StrikeWing, 1),
     };
 }
 
