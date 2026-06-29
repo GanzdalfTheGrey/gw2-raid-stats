@@ -397,24 +397,50 @@
                             }
                             @foreach (var mech in bossData.Mechanics)
                             {
-                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-1">
+                                var captureTrigger = triggerId;
+                                var captureMech = mech;
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap" Class="mb-1">
                                     <MudChip T="string" Size="Size.Small" Style="min-width: 140px;">@mech.Name</MudChip>
-                                    @{
-                                        var assignedNames = mech.AssignedPlayers
-                                            .Select(p => p.AccountName)
-                                            .Where(n => !string.IsNullOrEmpty(n))
-                                            .ToList();
-                                        var emptyCount = mech.MinCount - assignedNames.Count;
-                                    }
-                                    @if (assignedNames.Count > 0)
+                                    @* One editable slot per Min count — click to pick any squad member. *@
+                                    @for (int i = 0; i < mech.MinCount; i++)
                                     {
-                                        <MudText>@string.Join(", ", assignedNames)</MudText>
-                                    }
-                                    @if (emptyCount > 0)
-                                    {
-                                        <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined">
-                                            @emptyCount unfilled
-                                        </MudChip>
+                                        var slotIndex = i;
+                                        var assignee = i < mech.AssignedPlayers.Count ? mech.AssignedPlayers[i] : null;
+                                        var hasPlayer = assignee?.PlayerId.HasValue == true;
+                                        <MudMenu ActivationEvent="@MouseEvent.LeftClick" AnchorOrigin="Origin.BottomLeft" Dense="true">
+                                            <ActivatorContent>
+                                                <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                                                           Color="@(hasPlayer ? Color.Default : Color.Error)">
+                                                    @if (hasPlayer)
+                                                    {
+                                                        @assignee!.AccountName
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>— assign —</span>
+                                                    }
+                                                </MudButton>
+                                            </ActivatorContent>
+                                            <ChildContent>
+                                                @foreach (var pick in AvailableForMechanic(captureMech, slotIndex))
+                                                {
+                                                    var capturePick = pick;
+                                                    <MudMenuItem OnClick="@(() => AssignMechanicSlot(captureTrigger, captureMech, slotIndex, capturePick.PlayerId))">
+                                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                                            <MudChip T="string" Size="Size.Small" Color="@StatusColor(capturePick.Status)">@StatusLabel(capturePick.Status)</MudChip>
+                                                            <MudText>@capturePick.AccountName</MudText>
+                                                        </MudStack>
+                                                    </MudMenuItem>
+                                                }
+                                                @if (hasPlayer)
+                                                {
+                                                    <MudDivider />
+                                                    <MudMenuItem OnClick="@(() => ClearMechanicSlot(captureTrigger, captureMech, slotIndex))">
+                                                        <MudText Color="Color.Error">Clear</MudText>
+                                                    </MudMenuItem>
+                                                }
+                                            </ChildContent>
+                                        </MudMenu>
                                     }
                                 </MudStack>
                             }
@@ -458,6 +484,13 @@
 
     // Capability data — keyed by player id, used for the per-slot picker UI
     private Dictionary<Guid, Dictionary<int, RoleCapabilityStatus>> _genericCaps = new();
+    private Dictionary<Guid, Dictionary<Guid, RoleCapabilityStatus>> _mechanicCaps = new();
+
+    // Manual mechanic assignments. Key = (boss triggerId, mechanic role id); value = the
+    // assignees, one entry per Min slot (null = intentionally empty). A present key overrides
+    // the randomizer's auto-assignment for that mechanic. Cleared on (re-)randomize and, for
+    // the affected bosses, on a cut/reset.
+    private Dictionary<(int TriggerId, Guid MechanicId), List<Guid?>> _mechanicOverrides = new();
 
     // Mutable squad grid (state of truth after manual edits)
     private List<GridSubGroup> _grid = new();
@@ -554,11 +587,14 @@
                 .ToList() ?? new();
             _genericCaps = matrix?.Rows
                 .ToDictionary(r => r.PlayerId, r => r.GenericByRole) ?? new();
+            _mechanicCaps = matrix?.Rows
+                .ToDictionary(r => r.PlayerId, r => r.MechanicById) ?? new();
         }
         catch
         {
             _allPlayers = new();
             _genericCaps = new();
+            _mechanicCaps = new();
         }
         finally
         {
@@ -790,6 +826,7 @@
                 _pugDpsCount = result.Assignment.PugDpsCount;
                 _grid = BuildGrid(result.Assignment, locks);
                 _resetSegments.Clear();
+                _mechanicOverrides.Clear();
                 Snackbar.Add(respectLocks ? "Re-rolled unlocked slots" : "Squad randomized", Severity.Success);
             }
             else
@@ -857,6 +894,7 @@
         _baseConflicts = new();
         _warnings = new();
         _resetSegments.Clear();
+        _mechanicOverrides.Clear();
         _pugDpsCount = 0;
     }
 
@@ -1029,6 +1067,13 @@
                 result.Conflicts,
                 diff));
 
+            // The tail was re-randomized — drop any manual mechanic overrides on those bosses
+            // so they reflect the fresh assignment rather than the pre-cut squad.
+            foreach (var key in _mechanicOverrides.Keys.Where(k => tail.Contains(k.TriggerId)).ToList())
+            {
+                _mechanicOverrides.Remove(key);
+            }
+
             Snackbar.Add($"Reset segment created from {bossName}", Severity.Success);
         }
         finally
@@ -1093,7 +1138,21 @@
 
         var segmentConflicts = _resetSegments.SelectMany(r => r.Conflicts).ToList();
 
-        return baseRemaining.Concat(segmentConflicts).ToList();
+        // A conflict is resolved if the mechanic has since been manually assigned enough people.
+        return baseRemaining.Concat(segmentConflicts)
+            .Where(c => !IsConflictManuallyResolved(c))
+            .ToList();
+    }
+
+    private bool IsConflictManuallyResolved(SquadConflictDto c)
+    {
+        if (!_mechanicOverrides.TryGetValue((c.BossTriggerId, c.MechanicRoleId), out var ov))
+        {
+            return false;
+        }
+        var squad = CurrentSquadPlayerIds().ToHashSet();
+        var filled = ov.Count(p => p.HasValue && squad.Contains(p!.Value));
+        return filled >= c.Required;
     }
 
     // --- Mechanics resolution ---
@@ -1125,7 +1184,104 @@
             var bossOpt = _allBosses.FirstOrDefault(b => b.TriggerId == triggerId);
             return new BossMechanicsView(bossOpt?.Name ?? "?", bossOpt?.Wing ?? 99, new(), isSegment);
         }
-        return new BossMechanicsView(bossEntry.BossName, bossEntry.Wing, bossEntry.Mechanics, isSegment);
+        var mechs = bossEntry.Mechanics.Select(m => ApplyMechanicOverride(triggerId, m)).ToList();
+        return new BossMechanicsView(bossEntry.BossName, bossEntry.Wing, mechs, isSegment);
+    }
+
+    // --- Manual mechanic assignment ---
+
+    private record MechPick(Guid PlayerId, string AccountName, RoleCapabilityStatus? Status);
+
+    private string NameOf(Guid playerId) =>
+        _allPlayers.FirstOrDefault(p => p.Id == playerId)?.AccountName ?? "?";
+
+    private RoleCapabilityStatus? MechStatus(Guid playerId, Guid mechanicId) =>
+        _mechanicCaps.TryGetValue(playerId, out var m) && m.TryGetValue(mechanicId, out var s)
+            ? s : null;
+
+    private List<Guid> CurrentSquadPlayerIds() =>
+        _grid.SelectMany(s => s.Slots)
+            .Where(s => s.PlayerId.HasValue)
+            .Select(s => s.PlayerId!.Value)
+            .Distinct()
+            .ToList();
+
+    // Applies any manual override for this mechanic, returning a view with exactly MinCount
+    // slots. Assignees no longer in the squad (removed via a base-role edit) are dropped to empty.
+    private MechanicAssignmentDto ApplyMechanicOverride(int triggerId, MechanicAssignmentDto m)
+    {
+        if (!_mechanicOverrides.TryGetValue((triggerId, m.MechanicRoleId), out var ov))
+        {
+            return m;
+        }
+        var squad = CurrentSquadPlayerIds().ToHashSet();
+        var slots = new List<MechanicSlotDto>(m.MinCount);
+        for (int i = 0; i < m.MinCount; i++)
+        {
+            var pid = i < ov.Count ? ov[i] : null;
+            slots.Add(pid.HasValue && squad.Contains(pid.Value)
+                ? new MechanicSlotDto(pid, NameOf(pid.Value), MechStatus(pid.Value, m.MechanicRoleId))
+                : new MechanicSlotDto(null, null, null));
+        }
+        return m with { AssignedPlayers = slots };
+    }
+
+    // Squad members selectable for a mechanic slot — any of the 10, minus whoever already
+    // fills this mechanic's other slots. Best capability for the mechanic sorts first.
+    private List<MechPick> AvailableForMechanic(MechanicAssignmentDto mech, int slotIndex)
+    {
+        var takenHere = mech.AssignedPlayers
+            .Where((p, i) => i != slotIndex && p.PlayerId.HasValue)
+            .Select(p => p.PlayerId!.Value)
+            .ToHashSet();
+
+        return CurrentSquadPlayerIds()
+            .Where(pid => !takenHere.Contains(pid))
+            .Select(pid => new MechPick(pid, NameOf(pid), MechStatus(pid, mech.MechanicRoleId)))
+            .OrderBy(p => StatusRank(p.Status))
+            .ThenBy(p => p.AccountName)
+            .ToList();
+    }
+
+    private static int StatusRank(RoleCapabilityStatus? s) => s switch
+    {
+        RoleCapabilityStatus.Can => 0,
+        RoleCapabilityStatus.Maybe => 1,
+        RoleCapabilityStatus.WantToLearn => 2,
+        RoleCapabilityStatus.Cant => 3,
+        _ => 4
+    };
+
+    private List<Guid?> GetOrSeedOverride(int triggerId, MechanicAssignmentDto mech)
+    {
+        var key = (triggerId, mech.MechanicRoleId);
+        if (!_mechanicOverrides.TryGetValue(key, out var list))
+        {
+            // Seed from the currently-shown assignment (auto, or a prior override) so editing
+            // one slot doesn't wipe the others.
+            list = mech.AssignedPlayers.Select(p => p.PlayerId).ToList();
+            while (list.Count < mech.MinCount) list.Add(null);
+            if (list.Count > mech.MinCount) list = list.Take(mech.MinCount).ToList();
+            _mechanicOverrides[key] = list;
+        }
+        return list;
+    }
+
+    private void AssignMechanicSlot(int triggerId, MechanicAssignmentDto mech, int slotIndex, Guid playerId)
+    {
+        var list = GetOrSeedOverride(triggerId, mech);
+        // Move semantics within this mechanic: drop the player from any other slot first.
+        for (int i = 0; i < list.Count; i++)
+        {
+            if (list[i] == playerId) list[i] = null;
+        }
+        if (slotIndex < list.Count) list[slotIndex] = playerId;
+    }
+
+    private void ClearMechanicSlot(int triggerId, MechanicAssignmentDto mech, int slotIndex)
+    {
+        var list = GetOrSeedOverride(triggerId, mech);
+        if (slotIndex < list.Count) list[slotIndex] = null;
     }
 
     // --- Publish ---

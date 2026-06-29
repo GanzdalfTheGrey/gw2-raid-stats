@@ -5,6 +5,11 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Manual mechanic assignment in the Squad Builder.** Each mechanic role in the Mechanics list is now an editable picker (one slot per Min count) — click to assign any squad member, with their capability for that mechanic (Can / Maybe) shown as a hint, or **Clear** to empty a slot. Manual assignments flow through to the Discord post, and manually filling a mechanic clears its conflict banner. Overrides reset on (re-)randomize and, for the affected bosses, on a cut.
+
 ## [1.16.1] - 2026-06-29
 
 ### Added
