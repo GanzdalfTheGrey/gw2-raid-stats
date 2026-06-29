@@ -5,7 +5,7 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.17.0] - 2026-06-29
+## [1.16.1] - 2026-06-29
 
 ### Added
 - **Strike bosses in the Squad Builder & roles.** Guardian's Glade (Kela, trigger 27124) is now selectable in the Squad Builder boss picker and the admin Mechanic Roles catalog, so you can define mechanic roles for it and include it in a session. Strikes show a `Strike` instance label (instead of a wing number) and are excluded from random raid rolls — add them manually via the chips. Strike-specific comp needs (e.g. Kela's 3rd healer) are modelled as mechanic roles, the same way Kiter (Dhuum) or Pusher (Soulless Horror) are.
