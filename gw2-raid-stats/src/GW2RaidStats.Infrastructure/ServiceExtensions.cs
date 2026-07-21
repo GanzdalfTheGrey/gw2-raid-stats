@@ -56,6 +56,7 @@ public static class ServiceExtensions
         services.AddScoped<LogSearchService>();
         services.AddScoped<MechanicSearchService>();
         services.AddScoped<HtcmProgService>();
+        services.AddScoped<HtcmSessionSummaryService>();
         services.AddScoped<RecordNotificationService>();
         services.AddScoped<MechanicRoleCatalogService>();
         services.AddScoped<PlayerRolesService>();

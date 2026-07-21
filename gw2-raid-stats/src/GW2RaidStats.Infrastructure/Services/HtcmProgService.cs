@@ -12,10 +12,10 @@ public class HtcmProgService
     private readonly RaidStatsDb _db;
 
     // HTCM trigger ID
-    private const int HtcmTriggerId = 43488;
+    public const int HtcmTriggerId = 43488;
 
     // Minimum fight duration to count (30 seconds)
-    private const int MinDurationMs = 30000;
+    public const int MinDurationMs = 30000;
 
     // Canonical phase order for HTCM progression
     // This maps phase names to their canonical progression index
@@ -157,9 +157,17 @@ public class HtcmProgService
     // breakbar sub-phases would double-count damage and duration if included.
     // "Giants" is the modern combined-phase name; "Void Giant 1/2/3" cover older
     // EI versions that emit each giant individually.
-    private static readonly string[] TimecasterPhases = { "Void Time Caster" };
-    private static readonly string[] GiantsPhases = { "Giants", "Void Giant 1", "Void Giant 2", "Void Giant 3" };
-    private static readonly string[] SaltsprayPhases = { "Void Saltspray Dragon" };
+    public static readonly string[] TimecasterPhases = { "Void Time Caster" };
+    public static readonly string[] GiantsPhases = { "Giants", "Void Giant 1", "Void Giant 2", "Void Giant 3" };
+    public static readonly string[] SaltsprayPhases = { "Void Saltspray Dragon" };
+
+    // Main dragon damage phases, collapsed into a single group for the Discord session
+    // summary. Primordus is deliberately excluded: its arena heavily favours 1200-range
+    // builds, so including it would rank players by class rather than by performance.
+    public static readonly string[] CombinedDragonPhases =
+    {
+        "Jormag", "Kralkatorrik", "Mordremoth", "Zhaitan", "Soo-Won 1", "Soo-Won 2"
+    };
 
     // Debilitated-aggregate phase groups (used by ComputePlayerSlice for the Phase
     // Insights session column). Widened to include breakbar sub-phases for Giants
@@ -208,7 +216,7 @@ public class HtcmProgService
         SubPhasesByMain.TryGetValue(mainName, out var subs) &&
         subs.Any(s => string.Equals(s, subName, StringComparison.OrdinalIgnoreCase));
 
-    private static bool MatchesAny(string phaseName, string[] candidates) =>
+    public static bool MatchesAny(string phaseName, string[] candidates) =>
         candidates.Any(c => string.Equals(c, phaseName, StringComparison.OrdinalIgnoreCase));
 
     // Key mechanics to track for HTCM

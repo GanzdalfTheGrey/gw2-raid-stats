@@ -5,9 +5,15 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.17.0] - 2026-07-21
 
 ### Added
+- **Separate HTCM progression summary in Discord.** Posting a session summary now decides what to post from the night's logs: a night with HTCM CM attempts and no kill gets a dedicated **HTCM Progress** summary, a night with other bosses gets the regular session summary, and a mixed night gets both — from the same button. HTCM prog pulls are excluded from the regular summary (encounter list, MVPs and Wall of Shame) so twenty wipe lines don't drown it out; if the squad *killed* HTCM, it stays in the regular summary like any other boss.
+  - The HTCM summary is three embeds in one message: session header (pulls, best phase, best HP%, squad burst DPS, MVDPS, Wall of Shame), per-player **total damage** as `avg | top | max` for **Timecaster / Giants / Saltspray**, and a third with **combined dragons** (Jormag · Kralkatorrik · Mordremoth · Zhaitan · Soo-Won — Primordus deliberately excluded, its arena favours 1200-range builds), **orb pushes** (`this session | best-ever session`) and **boon rips** (`avg | top | max`). `avg`/`top` are tonight, `max` is best-ever across all sessions, and `*` marks a new best. Tables render as fixed-width code blocks rather than embed fields, which would otherwise blow past Discord's 25-field cap; a large roster splits across messages rather than truncating silently.
+  - **MVDPS** is a weighted sum of each player's share of the session leader in four categories — burst damage 40, dragon DPS 30, orb pushes 20, boon rips 10 — so it self-calibrates instead of relying on fixed conversion constants.
+  - **Debilitated into Giants** reuses the exact per-player slice shown in the HTCM prog page's Phase Insights panel, so the shame award and the page can't disagree. **Chomped by Primo** counts EI's `Jaws.H` (Primordus Jaws) events. Orb pushes count EI's `Orb Push` events with a new 1s ICD — EI emits one event per channel tick (~350ms), so raw counts measured time-on-orb rather than pushes.
+  - All tables are filtered to guild members (included players), matching leaderboard behaviour.
+  - **Requires a rescan**: sessions imported before migration 032 have no `player_encounter_phase_stats` rows, so their burst/dragon sections come out empty and "best-ever" figures are understated until **Admin → Manage Logs → Rescan** backfills them.
 - **Manual mechanic assignment in the Squad Builder.** Each mechanic role in the Mechanics list is now an editable picker (one slot per Min count) — click to assign any squad member, with their capability for that mechanic (Can / Maybe) shown as a hint, or **Clear** to empty a slot. Manual assignments flow through to the Discord post, and manually filling a mechanic clears its conflict banner. Overrides reset on (re-)randomize and, for the affected bosses, on a cut.
 
 ## [1.16.1] - 2026-06-29

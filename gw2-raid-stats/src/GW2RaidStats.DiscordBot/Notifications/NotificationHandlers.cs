@@ -25,7 +25,9 @@ public class SessionNotificationHandler : INotificationHandler
 
     public async Task SendAsync(IMessageChannel channel, string payload, bool wallOfShameEnabled, CancellationToken ct)
     {
-        var session = await _statsService.GetPreviousSessionAsync(ct);
+        // HTCM prog pulls are summarised separately, so they're excluded here — otherwise
+        // a prog night floods the Encounters field with 20 identical wipe lines.
+        var session = await _statsService.GetPreviousSessionAsync(ct, excludeHtcmProg: true);
         if (session == null)
         {
             _logger.LogWarning("No session data found for notification");
@@ -104,7 +106,7 @@ public class SessionNotificationHandler : INotificationHandler
         }
 
         // Add MVP section
-        var mvpStats = await _statsService.GetSessionMvpStatsAsync(ct);
+        var mvpStats = await _statsService.GetSessionMvpStatsAsync(ct, excludeHtcmProg: true);
         if (mvpStats != null)
         {
             var mvpLines = new List<string>();
@@ -141,7 +143,7 @@ public class SessionNotificationHandler : INotificationHandler
         // Add wall of shame if enabled
         if (wallOfShameEnabled)
         {
-            var shameStats = await _statsService.GetSessionShameStatsAsync(ct);
+            var shameStats = await _statsService.GetSessionShameStatsAsync(ct, excludeHtcmProg: true);
             if (shameStats != null)
             {
                 var shameLines = new List<string>();

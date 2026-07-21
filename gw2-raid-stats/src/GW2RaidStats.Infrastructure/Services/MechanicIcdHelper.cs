@@ -26,6 +26,13 @@ public static class MechanicIcdHelper
         // Soulless Horror
         ["yourAGolem"] = 500,        // Golem - can hit multiple times
 
+        // Harvest Temple CM
+        // EI emits one "Orb Push" event per channel tick (~350ms apart while a player
+        // is pushing), so raw counts measure time-on-orb rather than pushes. A 1s ICD
+        // collapses a continuous push into one occurrence; observed gaps between
+        // genuinely separate pushes are >1s.
+        ["Orb Push"] = 1000,
+
         // Add more mechanics as needed...
         // Format: ["MechanicShortName"] = IcdInMilliseconds,
     };

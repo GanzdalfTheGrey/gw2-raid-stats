@@ -148,6 +148,7 @@ public class NotificationProcessor : BackgroundService
             "record_broken" => _serviceProvider.GetService<RecordNotificationHandler>(),
             "milestone" => _serviceProvider.GetService<MilestoneNotificationHandler>(),
             "htcm_progress" => _serviceProvider.GetService<HtcmProgressNotificationHandler>(),
+            "htcm_session_summary" => _serviceProvider.GetService<HtcmSessionSummaryNotificationHandler>(),
             "top_5" => _serviceProvider.GetService<Top5NotificationHandler>(),
             "achievement_unlocked" => _serviceProvider.GetService<AchievementNotificationHandler>(),
             "squad_composition" => _serviceProvider.GetService<SquadCompositionNotificationHandler>(),

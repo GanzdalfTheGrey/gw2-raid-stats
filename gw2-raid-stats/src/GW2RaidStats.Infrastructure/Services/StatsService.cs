@@ -232,7 +232,55 @@ public class StatsService
     private static DateTime SessionDateKey(DateTimeOffset dt)
         => DateTime.SpecifyKind((dt.UtcDateTime + dt.Offset).Date, DateTimeKind.Unspecified);
 
-    public async Task<PreviousSession?> GetPreviousSessionAsync(CancellationToken ct = default)
+    /// <summary>
+    /// The session window (local calendar day) containing the most recent encounter,
+    /// or null when there are no encounters at all.
+    /// </summary>
+    public async Task<(DateTimeOffset Start, DateTimeOffset End)?> GetLatestSessionRangeAsync(CancellationToken ct = default)
+    {
+        var latestEncounter = await _db.Encounters
+            .OrderByDescending(e => e.EncounterTime)
+            .FirstOrDefaultAsync(ct);
+
+        if (latestEncounter == null) return null;
+
+        var encounterOffset = latestEncounter.EncounterTime.Offset;
+        var localDateTime = latestEncounter.EncounterTime.UtcDateTime + encounterOffset;
+        var sessionDate = DateTime.SpecifyKind(localDateTime.Date, DateTimeKind.Unspecified);
+        var sessionStart = new DateTimeOffset(sessionDate, encounterOffset);
+        return (sessionStart, sessionStart.AddDays(1));
+    }
+
+    /// <summary>
+    /// Ids of HTCM progression encounters within a session window — HTCM CM attempts on
+    /// a night that ended without a kill. These get their own Discord summary, so the
+    /// regular session summary excludes them rather than listing 20 wipes. Returns an
+    /// empty list when the squad did kill it, in which case HTCM belongs in the regular
+    /// summary like any other boss.
+    /// </summary>
+    public async Task<List<Guid>> GetHtcmProgEncounterIdsAsync(
+        DateTimeOffset sessionStart, DateTimeOffset sessionEnd, CancellationToken ct = default)
+    {
+        var htcmEncounters = await _db.Encounters
+            .Where(e => e.EncounterTime >= sessionStart
+                     && e.EncounterTime < sessionEnd
+                     && e.TriggerId == HtcmProgService.HtcmTriggerId
+                     && e.IsCM
+                     && e.DurationMs >= HtcmProgService.MinDurationMs)
+            .Select(e => new { e.Id, e.Success })
+            .ToListAsync(ct);
+
+        if (htcmEncounters.Count == 0 || htcmEncounters.Any(e => e.Success))
+            return new List<Guid>();
+
+        return htcmEncounters.Select(e => e.Id).ToList();
+    }
+
+    /// <param name="excludeHtcmProg">
+    /// When true, HTCM prog attempts are left out — the Discord session summary sets this
+    /// because those pulls are covered by the separate HTCM progress summary.
+    /// </param>
+    public async Task<PreviousSession?> GetPreviousSessionAsync(CancellationToken ct = default, bool excludeHtcmProg = false)
     {
         // Find the most recent encounter by encounter time (actual raid date, not upload date)
         var latestEncounter = await _db.Encounters
@@ -254,6 +302,12 @@ public class StatsService
             .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd)
             .OrderBy(e => e.EncounterTime)
             .ToListAsync(ct);
+
+        if (excludeHtcmProg)
+        {
+            var htcmProgIds = await GetHtcmProgEncounterIdsAsync(sessionStart, sessionEnd, ct);
+            sessionEncounters = sessionEncounters.Where(e => !htcmProgIds.Contains(e.Id)).ToList();
+        }
 
         if (sessionEncounters.Count == 0) return null;
 
@@ -567,7 +621,8 @@ public class StatsService
     /// Get "wall of shame" stats for the most recent session.
     /// "Most First Deaths" counts how many times a player was the first to die in an encounter.
     /// </summary>
-    public async Task<SessionShameStats?> GetSessionShameStatsAsync(CancellationToken ct = default)
+    /// <param name="excludeHtcmProg">See <see cref="GetPreviousSessionAsync"/>.</param>
+    public async Task<SessionShameStats?> GetSessionShameStatsAsync(CancellationToken ct = default, bool excludeHtcmProg = false)
     {
         // Find the most recent session date
         var latestEncounter = await _db.Encounters
@@ -588,6 +643,12 @@ public class StatsService
             .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd)
             .Select(e => e.Id)
             .ToListAsync(ct);
+
+        if (excludeHtcmProg)
+        {
+            var htcmProgIds = await GetHtcmProgEncounterIdsAsync(sessionStart, sessionEnd, ct);
+            sessionEncounterIds = sessionEncounterIds.Where(id => !htcmProgIds.Contains(id)).ToList();
+        }
 
         if (sessionEncounterIds.Count == 0) return null;
 
@@ -660,7 +721,8 @@ public class StatsService
         );
     }
 
-    public async Task<SessionMvpStats?> GetSessionMvpStatsAsync(CancellationToken ct = default)
+    /// <param name="excludeHtcmProg">See <see cref="GetPreviousSessionAsync"/>.</param>
+    public async Task<SessionMvpStats?> GetSessionMvpStatsAsync(CancellationToken ct = default, bool excludeHtcmProg = false)
     {
         // Find the most recent session date
         var latestEncounter = await _db.Encounters
@@ -681,6 +743,12 @@ public class StatsService
             .Where(e => e.EncounterTime >= sessionStart && e.EncounterTime < sessionEnd)
             .Select(e => new { e.Id, e.DurationMs })
             .ToListAsync(ct);
+
+        if (excludeHtcmProg)
+        {
+            var htcmProgIds = await GetHtcmProgEncounterIdsAsync(sessionStart, sessionEnd, ct);
+            sessionEncounters = sessionEncounters.Where(e => !htcmProgIds.Contains(e.Id)).ToList();
+        }
 
         if (sessionEncounters.Count == 0) return null;
 

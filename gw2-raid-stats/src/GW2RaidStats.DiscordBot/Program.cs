@@ -57,6 +57,7 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddScoped<RecordNotificationHandler>();
         services.AddScoped<MilestoneNotificationHandler>();
         services.AddScoped<HtcmProgressNotificationHandler>();
+        services.AddScoped<HtcmSessionSummaryNotificationHandler>();
         services.AddScoped<Top5NotificationHandler>();
         services.AddScoped<AchievementNotificationHandler>();
         services.AddScoped<SquadCompositionNotificationHandler>();
