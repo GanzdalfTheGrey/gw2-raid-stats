@@ -668,7 +668,12 @@ public class HtcmProgService
             Deaths: deaths,
             DeadAtPhaseStart: deadAtStart,
             DebilUptimeAvgPct: pullUptimes.Count == 0 ? null : pullUptimes.Average(),
-            DebilAvgStacks: pullStacks.Count == 0 ? null : pullStacks.Average());
+            DebilAvgStacks: pullStacks.Count == 0 ? null : pullStacks.Average(),
+            // The pulls that contributed to the average above — i.e. the ones where the
+            // player carried the debuff into this phase group at all. Emitted here rather
+            // than recomputed by callers so a pass/fail count can never disagree with the
+            // percentage it was derived from.
+            DebilPulls: pullUptimes.Count);
     }
 
     // DebilitatedUptimePct comes from EI's BuffUptimesActive.Presence field — true
@@ -1013,7 +1018,12 @@ public record HtcmPlayerPhaseSessionStat(
     HtcmPlayerPhaseSlice Giants,
     HtcmPlayerPhaseSlice Saltspray);
 
-public record HtcmPlayerPhaseSlice(int Deaths, int DeadAtPhaseStart, decimal? DebilUptimeAvgPct, decimal? DebilAvgStacks);
+public record HtcmPlayerPhaseSlice(
+    int Deaths,
+    int DeadAtPhaseStart,
+    decimal? DebilUptimeAvgPct,
+    decimal? DebilAvgStacks,
+    int DebilPulls = 0);
 
 public record HtcmPhaseStats(
     int PhaseIndex,

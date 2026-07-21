@@ -334,10 +334,10 @@ public class HtcmSessionSummaryService
         return BuildStatRows(perPull, sessionDate, sessionDateByEncounter, p => p.Damage);
     }
 
-    // Debilitated-into-Giants counts the pulls where the player carried the debuff into
-    // the Giants window at all — pass/fail per pull, not a weighted uptime. Uses the same
-    // phase set as the prog page's Phase Insights column (main phases plus the Giants
-    // breakbars, where EI records the buff separately).
+    // Debilitated-in-Giants counts the pulls where the player carried the debuff into the
+    // Giants window at all — pass/fail per pull, not a weighted uptime. Read straight off
+    // the slice the prog page renders, so the count and the page's percentage are always
+    // derived from the same pulls.
     private async Task<HtcmSummaryShame> BuildShameAsync(
         HtcmSessionDetail detail,
         HashSet<string> included,
@@ -345,18 +345,10 @@ public class HtcmSessionSummaryService
     {
         var sessionEncounterIds = detail.Pulls.Select(p => p.EncounterId).ToList();
 
-        var debilRows = await _db.PlayerEncounterPhaseStats
-            .InnerJoin(_db.Players, (ps, p) => ps.PlayerId == p.Id, (ps, p) => new { ps, p })
-            .Where(x => sessionEncounterIds.Contains(x.ps.EncounterId)
-                     && HtcmProgService.GiantsDebilPhases.Contains(x.ps.PhaseName)
-                     && x.ps.DebilitatedUptimePct > 0)
-            .Select(x => new { x.ps.EncounterId, x.p.AccountName })
-            .ToListAsync(ct);
-
-        var worstDebil = debilRows
-            .Where(r => included.Contains(r.AccountName))
-            .GroupBy(r => r.AccountName)
-            .Select(g => new { Account = g.Key, Pulls = g.Select(r => r.EncounterId).Distinct().Count() })
+        var worstDebil = (detail.PlayerPhaseStats ?? new List<HtcmPlayerPhaseSessionStat>())
+            .Where(s => included.Contains(s.AccountName))
+            .Where(s => s.Giants.DebilPulls > 0)
+            .Select(s => new { Account = s.AccountName, Pulls = s.Giants.DebilPulls })
             .OrderByDescending(x => x.Pulls)
             .FirstOrDefault();
         var chomps = await _db.MechanicEvents
