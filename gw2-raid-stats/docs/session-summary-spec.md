@@ -41,9 +41,16 @@ that phase group — a pull where they were dead the whole phase is left out rat
 dragging the average to zero. `*` in the rendered table marks a metric where tonight set
 the all-time max.
 
+Each burst column also carries its DPS in parentheses — `930k (39k)` — giving a read on
+how long that burst window ran. The DPS shown against Top and Max is that specific pull's
+DPS, not a separate DPS maximum.
+
 **Combined bosses — Jormag, Kralk, Morde, Zhaitan, Soo**
 
-- Report **Total Damage** *and* **DPS** as `Average | Top | Max`.
+- Report **Total Damage** *and* **DPS** as `Average | Top | Max`. Damage and DPS are
+  independent series here, so "best-ever DPS" is its own figure rather than the DPS of
+  whichever pull did the most damage. The rendered table shows `dmg avg | dmg top |
+  dps avg | dps max`.
 - This is collapsed into **one number** for the combined group — one value for Total Damage and one value for DPS (not per-boss).
 - **Primordus is deliberately excluded**: its arena heavily favours 1200-range builds, so
   including it would rank players by class rather than by performance.
@@ -69,12 +76,16 @@ the all-time max.
 
 **MVDPS** — awarded for the best metric across the categories above.
 
-Weighted in priority order:
+Weighted in priority order, summing to 100:
 
-1. Burst (Total Damage) — weight 40
-2. DPS — weight 30
-3. Orb pushes — weight 20
-4. Boon rips — weight 10
+1. Burst (Total Damage) — weight 37.5
+2. DPS — weight 37.5
+3. Orb pushes — weight 12.5
+4. Boon rips — weight 12.5
+
+The weights are fixed by three constraints — burst == dps, orbs == rips, and
+burst == 3 × orbs — which with a total of 100 give `2b + 2o = 100`, `b = 3o`, so
+`o = 12.5` and `b = 37.5`.
 
 Scoring is a **weighted sum of each player's share of the session leader** in each
 category: the category leader earns the full weight, a player at half the leader's value
@@ -85,10 +96,11 @@ damage-per-rip conversion constants. A category with no data contributes nothing
 
 ### Shame Awards
 
-- **Most Times Debilitated going into Giants** — pass/fail on any number (i.e., any occurrence counts).
-  Uses the same per-player Giants slice the HTCM prog page shows in its Phase Insights
-  panel (combined-segment uptime % + average stacks), so the award and the page always agree.
-- **Most Times Chomped by Primo** — if any. Counted from EI's `Jaws.H` (Primordus Jaws) mechanic.
+- **Debilitated** — pass/fail per pull: the count of pulls where the player carried
+  Debilitated into the Giants window at all, regardless of uptime or stack count. Uses the
+  same phase set as the prog page's Phase Insights column (Giants main phases plus their
+  breakbars, where EI records the buff separately).
+- **Chomped** — if any. Counted from EI's `Jaws.H` (Primordus Jaws) mechanic.
 
 Both are gated on the guild's Wall of Shame toggle.
 
@@ -99,9 +111,15 @@ Both are gated on the guild's Wall of Shame toggle.
 Discord allows 6000 characters summed across all embeds in one message, 4096 per
 description, 1024 per field value, and 25 fields per embed. Ten players across six metrics
 would exceed the field cap, so player tables are rendered as fixed-width code blocks inside
-embed descriptions. A full ten-player roster comes to roughly 3,000 characters across the
-three embeds; oversized rosters split across a second message, and per-table row caps
+embed descriptions. A full ten-player roster comes to roughly 3,600 characters across the
+four embeds; oversized rosters split across a second message, and per-table row caps
 report what was dropped rather than truncating silently.
+
+The summary is split across four embeds — header, burst, dragons, orbs & rips — because
+stacking differently-shaped code blocks in one description reads as mush; an embed
+boundary gives each table a visual break. Account-name discriminators (`.1234`) are
+stripped in the tables: they consumed column width and forced real names into mid-word
+truncation.
 
 ---
 

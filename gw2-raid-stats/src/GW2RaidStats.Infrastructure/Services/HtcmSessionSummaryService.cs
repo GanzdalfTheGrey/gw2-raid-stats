@@ -20,13 +20,15 @@ public class HtcmSessionSummaryService
     private const string OrbPushMechanic = "Orb Push";
     private const string PrimordusJawsMechanic = "Jaws.H";
 
-    // MVDPS category weights. Each player's value is normalised against the session
-    // leader in that category (leader = full weight), so the scale self-calibrates
-    // instead of relying on fixed damage-per-rip conversion constants.
-    private const double BurstWeight = 40;
-    private const double DpsWeight = 30;
-    private const double OrbWeight = 20;
-    private const double RipWeight = 10;
+    // MVDPS category weights, summing to 100. Each player's value is normalised against
+    // the session leader in that category (leader = full weight), so the scale
+    // self-calibrates instead of relying on fixed damage-per-rip conversion constants.
+    // Constraints: burst == dps, orbs == rips, burst == 3 × orbs. That gives
+    // 2b + 2o = 100 with b = 3o, so o = 12.5 and b = 37.5.
+    private const double BurstWeight = 37.5;
+    private const double DpsWeight = 37.5;
+    private const double OrbWeight = 12.5;
+    private const double RipWeight = 12.5;
 
     public HtcmSessionSummaryService(
         RaidStatsDb db,
@@ -70,14 +72,17 @@ public class HtcmSessionSummaryService
             .Distinct()
             .ToList();
 
-        // Per-player damage on every phase that feeds a burst group, all-time.
+        // Per-player damage on every phase that feeds a burst group, all-time. Deliberately
+        // NOT filtered to guild members: squad DPS means the whole squad, pugs included, so
+        // it lines up with the figure on the HTCM prog page. The per-player tables filter to
+        // included accounts further down.
         var phaseRows = await _db.PlayerEncounterPhaseStats
             .InnerJoin(_db.Players, (ps, p) => ps.PlayerId == p.Id, (ps, p) => new { ps, p })
             .Where(x => allEncounterIds.Contains(x.ps.EncounterId)
-                     && phaseNames.Contains(x.ps.PhaseName)
-                     && includedList.Contains(x.p.AccountName))
+                     && phaseNames.Contains(x.ps.PhaseName))
             .Select(x => new PhaseDamageRow(x.ps.EncounterId, x.p.AccountName, x.ps.PhaseName, x.ps.Damage))
             .ToListAsync(ct);
+        var guildPhaseRows = phaseRows.Where(r => included.Contains(r.AccountName)).ToList();
 
         // Phase durations, used as the DPS denominator.
         var phaseDurations = await _db.EncounterPhaseStats
@@ -91,14 +96,14 @@ public class HtcmSessionSummaryService
         var burstGroups = new List<HtcmSummaryBurstGroup>
         {
             BuildBurstGroup("Timecaster", HtcmProgService.TimecasterPhases, sessionDate,
-                phaseRows, durationByKey, sessionDateByEncounter, detail.SessionBurstAverages?.Timecaster),
+                phaseRows, guildPhaseRows, durationByKey, sessionDateByEncounter, detail.SessionBurstAverages?.Timecaster),
             BuildBurstGroup("Giants", HtcmProgService.GiantsPhases, sessionDate,
-                phaseRows, durationByKey, sessionDateByEncounter, detail.SessionBurstAverages?.Giants),
+                phaseRows, guildPhaseRows, durationByKey, sessionDateByEncounter, detail.SessionBurstAverages?.Giants),
             BuildBurstGroup("Saltspray", HtcmProgService.SaltsprayPhases, sessionDate,
-                phaseRows, durationByKey, sessionDateByEncounter, detail.SessionBurstAverages?.Saltspray),
+                phaseRows, guildPhaseRows, durationByKey, sessionDateByEncounter, detail.SessionBurstAverages?.Saltspray),
         };
 
-        var dragons = BuildDragonRows(sessionDate, phaseRows, durationByKey, sessionDateByEncounter);
+        var dragons = BuildDragonRows(sessionDate, guildPhaseRows, durationByKey, sessionDateByEncounter);
         var orbPushes = await BuildOrbPushesAsync(sessionDate, allEncounterIds, includedList, sessionDateByEncounter, ct);
         var boonRips = await BuildBoonRipsAsync(sessionDate, allEncounterIds, includedList, sessionDateByEncounter, ct);
         var shame = await BuildShameAsync(detail, included, ct);
@@ -110,10 +115,6 @@ public class HtcmSessionSummaryService
             PullCount: detail.PullCount,
             BestPhase: detail.BestPhase,
             BestBossHpRemaining: detail.BestBossHpRemaining,
-            TotalTime: detail.TotalTime,
-            AverageFightDurationSeconds: detail.AverageFightDuration,
-            TotalDeaths: detail.TotalDeaths,
-            TotalDowns: detail.TotalDowns,
             BurstGroups: burstGroups,
             Dragons: dragons,
             OrbPushes: orbPushes,
@@ -127,22 +128,52 @@ public class HtcmSessionSummaryService
         string name,
         string[] groupPhases,
         DateTime sessionDate,
-        List<PhaseDamageRow> phaseRows,
+        List<PhaseDamageRow> allPhaseRows,
+        List<PhaseDamageRow> guildPhaseRows,
         Dictionary<(Guid, string), int> durationByKey,
         Dictionary<Guid, DateTime> sessionDateByEncounter,
         HtcmPhaseGroupBurst? squadBurst)
     {
-        var perPull = AggregatePerPull(groupPhases, phaseRows, durationByKey);
-        var players = BuildStatRows(perPull, sessionDate, sessionDateByEncounter, p => p.Damage);
+        var perPull = AggregatePerPull(groupPhases, guildPhaseRows, durationByKey);
+        var players = BuildStatRows(perPull, sessionDate, sessionDateByEncounter, p => p.Damage, includeDps: true);
 
         return new HtcmSummaryBurstGroup(
             name,
             PullsReached: squadBurst?.PullCount ?? 0,
             AverageDurationMs: squadBurst is { PullCount: > 0 } b ? b.DurationMs / b.PullCount : 0,
             SquadDps: squadBurst?.SquadDps ?? 0,
+            SquadDpsAllTime: ComputeSquadDps(groupPhases, allPhaseRows, durationByKey, encounterFilter: null),
             Players: players);
     }
 
+    // Squad DPS = total squad damage across the group's phases / the summed phase
+    // durations. Same basis as HtcmProgService.ComputeGroupBurst, so the "tonight"
+    // figure from the prog page and the all-time figure here are comparable.
+    private static int ComputeSquadDps(
+        string[] groupPhases,
+        List<PhaseDamageRow> phaseRows,
+        Dictionary<(Guid, string), int> durationByKey,
+        HashSet<Guid>? encounterFilter)
+    {
+        var rows = phaseRows
+            .Where(r => HtcmProgService.MatchesAny(r.PhaseName, groupPhases))
+            .Where(r => encounterFilter == null || encounterFilter.Contains(r.EncounterId))
+            .ToList();
+        if (rows.Count == 0) return 0;
+
+        var damage = rows.Sum(r => r.Damage);
+        // Durations are per (encounter, phase), so de-duplicate across the players
+        // that share each phase before summing.
+        var durationMs = rows
+            .Select(r => (r.EncounterId, r.PhaseName))
+            .Distinct()
+            .Sum(key => durationByKey.TryGetValue(key, out var d) ? (long)d : 0L);
+
+        return durationMs > 0 ? (int)(damage * 1000L / durationMs) : 0;
+    }
+
+    // Dragons report damage and DPS as independent avg/top/max series — "best-ever DPS"
+    // is its own figure, not the DPS of whichever pull happened to do the most damage.
     private static List<HtcmSummaryDragonRow> BuildDragonRows(
         DateTime sessionDate,
         List<PhaseDamageRow> phaseRows,
@@ -151,13 +182,13 @@ public class HtcmSessionSummaryService
     {
         var perPull = AggregatePerPull(HtcmProgService.CombinedDragonPhases, phaseRows, durationByKey);
         var damage = BuildStatRows(perPull, sessionDate, sessionDateByEncounter, p => p.Damage);
-        var dps = BuildStatRows(perPull, sessionDate, sessionDateByEncounter, p => p.Dps);
-        var dpsByAccount = dps.ToDictionary(r => r.AccountName);
+        var dps = BuildStatRows(perPull, sessionDate, sessionDateByEncounter, p => p.Dps)
+            .ToDictionary(r => r.AccountName);
 
         return damage
             .Select(d =>
             {
-                var p = dpsByAccount[d.AccountName];
+                var p = dps[d.AccountName];
                 return new HtcmSummaryDragonRow(
                     d.AccountName,
                     DamageAvg: d.Avg, DamageTop: d.Top, DamageMax: d.Max,
@@ -191,24 +222,33 @@ public class HtcmSessionSummaryService
             .ToList();
     }
 
+    /// <param name="includeDps">
+    /// Populates the DPS figures alongside the damage ones so the burst tables can show
+    /// each as a parenthetical, giving a read on how long that burst window ran. DpsTop
+    /// and DpsMax are the DPS of the pull that produced the top / best-ever damage, not
+    /// separate DPS maxima.
+    /// </param>
     private static List<HtcmSummaryStatRow> BuildStatRows(
         List<PullValue> perPull,
         DateTime sessionDate,
         Dictionary<Guid, DateTime> sessionDateByEncounter,
-        Func<PullValue, double> selector)
+        Func<PullValue, double> selector,
+        bool includeDps = false)
     {
         return perPull
             .GroupBy(p => p.AccountName)
             .Select(g =>
             {
-                var tonight = g
+                var tonightPulls = g
                     .Where(p => sessionDateByEncounter.TryGetValue(p.EncounterId, out var d) && d == sessionDate)
-                    .Select(selector)
                     .ToList();
-                if (tonight.Count == 0) return null;
+                if (tonightPulls.Count == 0) return null;
 
-                var max = g.Max(selector);
-                var top = tonight.Max();
+                var tonight = tonightPulls.Select(selector).ToList();
+                var topPull = tonightPulls.OrderByDescending(selector).First();
+                var maxPull = g.OrderByDescending(selector).First();
+                var top = selector(topPull);
+                var max = selector(maxPull);
                 return new HtcmSummaryStatRow(
                     g.Key,
                     Avg: tonight.Average(),
@@ -216,7 +256,10 @@ public class HtcmSessionSummaryService
                     Max: max,
                     // Tonight's pulls are part of the all-time set, so matching the
                     // all-time max means tonight set it.
-                    IsNewBest: top >= max);
+                    IsNewBest: top >= max,
+                    DpsAvg: includeDps ? tonightPulls.Average(p => p.Dps) : null,
+                    DpsTop: includeDps ? topPull.Dps : null,
+                    DpsMax: includeDps ? maxPull.Dps : null);
             })
             .Where(r => r != null)
             .Select(r => r!)
@@ -291,20 +334,31 @@ public class HtcmSessionSummaryService
         return BuildStatRows(perPull, sessionDate, sessionDateByEncounter, p => p.Damage);
     }
 
-    // Debilitated-into-Giants reuses the exact slice the HTCM prog page displays, so
-    // the shame award and the Phase Insights table can never disagree.
+    // Debilitated-into-Giants counts the pulls where the player carried the debuff into
+    // the Giants window at all — pass/fail per pull, not a weighted uptime. Uses the same
+    // phase set as the prog page's Phase Insights column (main phases plus the Giants
+    // breakbars, where EI records the buff separately).
     private async Task<HtcmSummaryShame> BuildShameAsync(
         HtcmSessionDetail detail,
         HashSet<string> included,
         CancellationToken ct)
     {
-        var worstDebil = (detail.PlayerPhaseStats ?? new List<HtcmPlayerPhaseSessionStat>())
-            .Where(s => included.Contains(s.AccountName))
-            .Where(s => s.Giants.DebilUptimeAvgPct is > 0)
-            .OrderByDescending(s => s.Giants.DebilUptimeAvgPct)
-            .FirstOrDefault();
-
         var sessionEncounterIds = detail.Pulls.Select(p => p.EncounterId).ToList();
+
+        var debilRows = await _db.PlayerEncounterPhaseStats
+            .InnerJoin(_db.Players, (ps, p) => ps.PlayerId == p.Id, (ps, p) => new { ps, p })
+            .Where(x => sessionEncounterIds.Contains(x.ps.EncounterId)
+                     && HtcmProgService.GiantsDebilPhases.Contains(x.ps.PhaseName)
+                     && x.ps.DebilitatedUptimePct > 0)
+            .Select(x => new { x.ps.EncounterId, x.p.AccountName })
+            .ToListAsync(ct);
+
+        var worstDebil = debilRows
+            .Where(r => included.Contains(r.AccountName))
+            .GroupBy(r => r.AccountName)
+            .Select(g => new { Account = g.Key, Pulls = g.Select(r => r.EncounterId).Distinct().Count() })
+            .OrderByDescending(x => x.Pulls)
+            .FirstOrDefault();
         var chomps = await _db.MechanicEvents
             .InnerJoin(_db.Players, (m, p) => m.PlayerId == p.Id, (m, p) => new { m, p })
             .Where(x => sessionEncounterIds.Contains(x.m.EncounterId)
@@ -319,9 +373,8 @@ public class HtcmSessionSummaryService
             .FirstOrDefault();
 
         return new HtcmSummaryShame(
-            DebilitatedPlayer: worstDebil?.AccountName,
-            DebilitatedUptimePct: worstDebil?.Giants.DebilUptimeAvgPct,
-            DebilitatedAvgStacks: worstDebil?.Giants.DebilAvgStacks,
+            DebilitatedPlayer: worstDebil?.Account,
+            DebilitatedPulls: worstDebil?.Pulls ?? 0,
             ChompedPlayer: worstChomp?.Key,
             ChompCount: worstChomp?.Count() ?? 0);
     }
@@ -387,10 +440,6 @@ public record HtcmSessionSummary(
     int PullCount,
     string BestPhase,
     decimal BestBossHpRemaining,
-    TimeSpan TotalTime,
-    double AverageFightDurationSeconds,
-    int TotalDeaths,
-    int TotalDowns,
     List<HtcmSummaryBurstGroup> BurstGroups,
     List<HtcmSummaryDragonRow> Dragons,
     List<HtcmSummaryOrbRow> OrbPushes,
@@ -398,15 +447,25 @@ public record HtcmSessionSummary(
     HtcmSummaryMvdps? Mvdps,
     HtcmSummaryShame Shame);
 
+/// <summary>
+/// SquadDps is tonight's average across the group's phases; SquadDpsAllTime is the same
+/// figure across every session, for comparison. Both cover the whole squad, pugs included.
+/// </summary>
 public record HtcmSummaryBurstGroup(
     string Name,
     int PullsReached,
     int AverageDurationMs,
     int SquadDps,
+    int SquadDpsAllTime,
     List<HtcmSummaryStatRow> Players);
 
-/// <summary>Avg/Top are tonight; Max is best-ever. IsNewBest means tonight set the max.</summary>
-public record HtcmSummaryStatRow(string AccountName, double Avg, double Top, double Max, bool IsNewBest);
+/// <summary>
+/// Avg/Top are tonight; Max is best-ever. IsNewBest means tonight set the max. The Dps*
+/// figures accompany each damage column where the metric is damage-based, otherwise null.
+/// </summary>
+public record HtcmSummaryStatRow(
+    string AccountName, double Avg, double Top, double Max, bool IsNewBest,
+    double? DpsAvg = null, double? DpsTop = null, double? DpsMax = null);
 
 public record HtcmSummaryDragonRow(
     string AccountName,
@@ -430,7 +489,6 @@ public record HtcmSummaryMvdps(
 
 public record HtcmSummaryShame(
     string? DebilitatedPlayer,
-    decimal? DebilitatedUptimePct,
-    decimal? DebilitatedAvgStacks,
+    int DebilitatedPulls,
     string? ChompedPlayer,
     int ChompCount);

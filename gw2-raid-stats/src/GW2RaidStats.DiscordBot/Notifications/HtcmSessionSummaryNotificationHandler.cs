@@ -29,6 +29,10 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
 
     private const int NameWidth = 12;
 
+    // Marker is an asterisk rather than an emoji so it doesn't break the fixed-width
+    // alignment inside the code block.
+    private const string NewBestLegend = "`*` = new best-ever";
+
     public HtcmSessionSummaryNotificationHandler(
         HtcmSessionSummaryService summaryService,
         IOptions<DiscordBotSettings> settings,
@@ -55,11 +59,15 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             return;
         }
 
+        // One table per embed (burst gets its three, which share a layout). Embeds give
+        // each table its own visual break, which reads far better than stacking several
+        // differently-shaped code blocks inside one description.
         var embeds = new List<Embed>
         {
             BuildHeaderEmbed(summary, wallOfShameEnabled),
             BuildBurstEmbed(summary),
             BuildDragonsEmbed(summary),
+            BuildOrbsAndRipsEmbed(summary),
         };
 
         // Send as one message when it fits the shared 6000-char budget, otherwise split.
@@ -91,33 +99,31 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             .WithCurrentTimestamp()
             .AddField("Pulls", s.PullCount.ToString(), inline: true)
             .AddField("Best Phase", s.BestPhase, inline: true)
-            .AddField("Best HP", $"{s.BestBossHpRemaining:F1}%", inline: true)
-            .AddField("Fight Time", FormatDuration(s.TotalTime), inline: true)
-            .AddField("Avg Pull", FormatDuration(TimeSpan.FromSeconds(s.AverageFightDurationSeconds)), inline: true)
-            .AddField("Deaths / Downs", $"{s.TotalDeaths} / {s.TotalDowns}", inline: true);
+            .AddField("Best HP", $"{s.BestBossHpRemaining:F1}%", inline: true);
 
         if (!string.IsNullOrEmpty(_settings.AppUrl))
         {
             embed.WithUrl(_settings.AppUrl);
         }
 
-        var squadLine = string.Join("  ·  ", s.BurstGroups
+        var squadLines = s.BurstGroups
             .Where(g => g.SquadDps > 0)
-            .Select(g => $"{g.Name} {FormatShort(g.SquadDps)}"));
-        if (squadLine.Length > 0)
+            .Select(g => $"**{g.Name}** {FormatShort(g.SquadDps)} — all-time {FormatShort(g.SquadDpsAllTime)}")
+            .ToList();
+        if (squadLines.Count > 0)
         {
-            embed.AddField("⚔️ Squad Burst (avg DPS)", squadLine);
+            embed.AddField("⚔️ Squad Burst (avg DPS)", string.Join("\n", squadLines));
         }
 
         if (s.Mvdps != null)
         {
             var mvp = new StringBuilder();
-            mvp.AppendLine($"**{s.Mvdps.AccountName}** — {s.Mvdps.Score:F1} pts");
+            mvp.AppendLine($"**{FormatName(s.Mvdps.AccountName)}** — {s.Mvdps.Score:F1} pts");
             mvp.AppendLine($"burst {s.Mvdps.BurstPoints:F1} · dps {s.Mvdps.DpsPoints:F1} · " +
                            $"orbs {s.Mvdps.OrbPoints:F1} · rips {s.Mvdps.RipPoints:F1}");
             if (s.Mvdps.RunnerUp != null)
             {
-                mvp.Append($"runner-up: {s.Mvdps.RunnerUp} ({s.Mvdps.RunnerUpScore:F1})");
+                mvp.Append($"runner-up: {FormatName(s.Mvdps.RunnerUp)} ({s.Mvdps.RunnerUpScore:F1})");
             }
             embed.AddField("🏆 MVDPS", mvp.ToString());
         }
@@ -127,15 +133,13 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             var shameLines = new List<string>();
             if (s.Shame.DebilitatedPlayer != null)
             {
-                var stacks = s.Shame.DebilitatedAvgStacks is { } st
-                    ? $" ({st:F1} stacks avg)"
-                    : "";
-                shameLines.Add($"🥴 Debilitated into Giants: **{s.Shame.DebilitatedPlayer}**\n" +
-                               $"   {s.Shame.DebilitatedUptimePct:F0}% uptime{stacks}");
+                var pulls = s.Shame.DebilitatedPulls == 1 ? "pull" : "pulls";
+                shameLines.Add($"Debilitated: **{FormatName(s.Shame.DebilitatedPlayer)}** " +
+                               $"({s.Shame.DebilitatedPulls} {pulls})");
             }
             if (s.Shame.ChompedPlayer != null)
             {
-                shameLines.Add($"🦖 Chomped by Primo: **{s.Shame.ChompedPlayer}** ({s.Shame.ChompCount})");
+                shameLines.Add($"Chomped: **{FormatName(s.Shame.ChompedPlayer)}** ({s.Shame.ChompCount})");
             }
             if (shameLines.Count > 0)
             {
@@ -157,27 +161,30 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             var avgDuration = TimeSpan.FromMilliseconds(group.AverageDurationMs);
             body.AppendLine($"**{group.Name}** · {group.PullsReached} pulls · {avgDuration.TotalSeconds:F0}s avg");
             body.AppendLine(RenderTable(
-                new[] { "avg", "top", "max" },
+                new[] { "avg (dps)", "top (dps)", "max (dps)" },
                 group.Players.Take(MaxRows).Select(p => (
                     p.AccountName,
-                    new[] { FormatShort(p.Avg), FormatShort(p.Top), FormatShort(p.Max) },
+                    new[]
+                    {
+                        WithDps(p.Avg, p.DpsAvg),
+                        WithDps(p.Top, p.DpsTop),
+                        WithDps(p.Max, p.DpsMax)
+                    },
                     p.IsNewBest))));
             AppendOverflow(body, group.Players.Count);
         }
 
         if (body.Length == 0)
         {
-            body.AppendLine("_No per-phase data for this session — run a rescan to backfill._");
+            body.Append("_No per-phase data for this session — run a rescan to backfill._");
         }
         else
         {
-            // Marker is an asterisk rather than an emoji so it doesn't break the
-            // fixed-width alignment inside the code block.
-            body.Append("`*` = new best-ever");
+            body.Append(NewBestLegend);
         }
 
         return new EmbedBuilder()
-            .WithTitle("Burst — Total Damage (avg | top | max)")
+            .WithTitle("Burst — total damage, avg | top | max")
             .WithColor(Color.Purple)
             .WithDescription(body.ToString())
             .Build();
@@ -186,11 +193,10 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
     private static Embed BuildDragonsEmbed(HtcmSessionSummary s)
     {
         var body = new StringBuilder();
+        body.AppendLine("Jormag · Kralk · Morde · Zhaitan · Soo-Won _(Primordus excluded)_");
 
         if (s.Dragons.Count > 0)
         {
-            body.AppendLine("**Combined Dragons** — Jormag · Kralk · Morde · Zhaitan · Soo-Won");
-            body.AppendLine("_(Primordus excluded)_");
             body.AppendLine(RenderTable(
                 new[] { "dmg avg", "dmg top", "dps avg", "dps max" },
                 s.Dragons.Take(MaxRows).Select(d => (
@@ -202,13 +208,29 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
                     },
                     d.IsNewBest))));
             AppendOverflow(body, s.Dragons.Count);
+            body.Append(NewBestLegend);
         }
+        else
+        {
+            body.Append("_No dragon-phase data for this session._");
+        }
+
+        return new EmbedBuilder()
+            .WithTitle("Combined Dragons — damage & dps")
+            .WithColor(Color.Purple)
+            .WithDescription(body.ToString())
+            .Build();
+    }
+
+    private static Embed BuildOrbsAndRipsEmbed(HtcmSessionSummary s)
+    {
+        var body = new StringBuilder();
 
         if (s.OrbPushes.Count > 0)
         {
-            body.AppendLine("🔵 **Orb Pushes** (this session | best session)");
+            body.AppendLine("**Orb Pushes** — tonight | best session");
             body.AppendLine(RenderTable(
-                new[] { "this", "best" },
+                new[] { "tonight", "best" },
                 s.OrbPushes.Take(MaxRows).Select(o => (
                     o.AccountName,
                     new[] { o.SessionTotal.ToString(), o.BestSessionTotal.ToString() },
@@ -218,9 +240,9 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
 
         if (s.BoonRips.Count > 0)
         {
-            body.AppendLine("🌀 **Boon Rips** (avg | top | max)");
+            body.AppendLine("**Boon Rips** — avg | top | best");
             body.AppendLine(RenderTable(
-                new[] { "avg", "top", "max" },
+                new[] { "avg", "top", "best" },
                 s.BoonRips.Take(MaxRows).Select(r => (
                     r.AccountName,
                     new[] { $"{r.Avg:F0}", $"{r.Top:F0}", $"{r.Max:F0}" },
@@ -230,15 +252,27 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
 
         if (body.Length == 0)
         {
-            body.Append("_No dragon, orb or boon-rip data for this session._");
+            body.Append("_No orb-push or boon-rip data for this session._");
+        }
+        else
+        {
+            body.Append(NewBestLegend);
         }
 
         return new EmbedBuilder()
-            .WithTitle("Dragons, Orbs & Rips")
+            .WithTitle("Orbs & Rips")
             .WithColor(Color.Purple)
             .WithDescription(body.ToString())
             .Build();
     }
+
+    // Damage with its DPS in parentheses. DPS drops the decimal here purely to keep the
+    // three-column burst table inside a phone's code-block width.
+    private static string WithDps(double damage, double? dps) =>
+        dps is { } d ? $"{FormatShort(damage)} ({FormatDpsCompact(d)})" : FormatShort(damage);
+
+    private static string FormatDpsCompact(double dps) =>
+        dps >= 1_000 ? $"{dps / 1_000:F0}k" : $"{dps:F0}";
 
     private static void AppendOverflow(StringBuilder body, int totalRows)
     {
@@ -270,7 +304,7 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
 
         foreach (var row in rowList)
         {
-            sb.Append(Truncate(row.Name, NameWidth).PadRight(NameWidth));
+            sb.Append(FormatName(row.Name).PadRight(NameWidth));
             for (var i = 0; i < row.Values.Length; i++)
             {
                 sb.Append(' ').Append(row.Values[i].PadLeft(widths[i]));
@@ -283,8 +317,19 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         return sb.ToString();
     }
 
-    private static string Truncate(string value, int length) =>
-        value.Length <= length ? value : value[..length];
+    // GW2 account names carry a ".1234" discriminator that eats the column width and
+    // pushes real names into mid-word truncation. Drop it — the name alone identifies
+    // the player well enough in a guild-only table.
+    private static string FormatName(string accountName)
+    {
+        var name = accountName;
+        var dot = name.LastIndexOf('.');
+        if (dot > 0 && name[(dot + 1)..].All(char.IsDigit))
+        {
+            name = name[..dot];
+        }
+        return name.Length <= NameWidth ? name : name[..NameWidth];
+    }
 
     // 1.24M / 892k / 31.2k / 431 — at most 5 characters wide. Values under 100k keep a
     // decimal so DPS figures don't all collapse to the same rounded thousand.

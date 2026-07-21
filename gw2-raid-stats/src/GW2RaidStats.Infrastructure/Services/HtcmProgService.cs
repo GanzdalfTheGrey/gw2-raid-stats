@@ -180,7 +180,7 @@ public class HtcmProgService
     // Timecaster's breakbars are sequential (Purification 2 sits between them and
     // the damage phase) so they're left out.
     private static readonly string[] TimecasterDebilPhases = TimecasterPhases;
-    private static readonly string[] GiantsDebilPhases =
+    public static readonly string[] GiantsDebilPhases =
     {
         "Giants", "Void Giant 1", "Void Giant 2", "Void Giant 3",
         "Void Giant 1 Breakbar 1", "Void Giant 1 Breakbar 2",
