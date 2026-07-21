@@ -194,9 +194,10 @@ public class LogImportService
 
                 // Defense stats
                 Deaths = defense?.DeadCount ?? 0,
-                DeathDurationMs = (int)((defense?.DeadDuration ?? 0) * 1000),
+                // EI reports deadDuration/downDuration in milliseconds already — no scaling.
+                DeathDurationMs = (int)(defense?.DeadDuration ?? 0),
                 Downs = defense?.DownCount ?? 0,
-                DownDurationMs = (int)((defense?.DownDuration ?? 0) * 1000),
+                DownDurationMs = (int)(defense?.DownDuration ?? 0),
                 DamageTaken = defense?.DamageTaken ?? 0,
 
                 // Support stats
@@ -410,8 +411,12 @@ public class LogImportService
                     Damage = dpsStats?.Damage ?? 0,
                     DeadCount = defense?.DeadCount ?? 0,
                     DownCount = defense?.DownCount ?? 0,
-                    DeadDurationMs = (int)((defense?.DeadDuration ?? 0m) * 1000m),
-                    DownDurationMs = (int)((defense?.DownDuration ?? 0m) * 1000m),
+                    // EI's deadDuration/downDuration are already milliseconds. Scaling them
+                    // by 1000 made every phase's active window (phase − dead − down) go
+                    // negative, which silently zeroed the Debilitated uptime that the prog
+                    // page's phase breakdown and Phase Insights panel are computed from.
+                    DeadDurationMs = (int)(defense?.DeadDuration ?? 0m),
+                    DownDurationMs = (int)(defense?.DownDuration ?? 0m),
                     DeadAtPhaseStart = WasDeadAtMs(eiPlayer.DeadCombatTimes, phase.Start),
                     DebilitatedUptimePct = debilUptimePct,
                     DebilitatedAvgStacks = debilAvgStacks,
