@@ -27,9 +27,11 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
     // useful in a summary; anything dropped is reported rather than silently cut.
     private const int MaxRows = 12;
 
-    private const string NewBestMarker = "⭐";
+    private const int NameWidth = 12;
 
-    private const string NewBestLegend = "⭐ = new best-ever";
+    // Marker is an asterisk rather than an emoji so it doesn't break the fixed-width
+    // alignment inside the code block.
+    private const string NewBestLegend = "`*` = new best-ever";
 
     public HtcmSessionSummaryNotificationHandler(
         HtcmSessionSummaryService summaryService,
@@ -158,9 +160,17 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
 
             var avgDuration = TimeSpan.FromMilliseconds(group.AverageDurationMs);
             body.AppendLine($"**{group.Name}** · {group.PullsReached} pulls · {avgDuration.TotalSeconds:F0}s avg");
-            body.AppendLine(RenderLines(group.Players, p =>
-                $"{WithDps(p.Avg, p.DpsAvg)} avg · top {WithDps(p.Top, p.DpsTop)} · " +
-                $"best {WithDps(p.Max, p.DpsMax)}"));
+            body.AppendLine(RenderTable(
+                new[] { "avg (dps)", "top (dps)", "max (dps)" },
+                group.Players.Take(MaxRows).Select(p => (
+                    p.AccountName,
+                    new[]
+                    {
+                        WithDps(p.Avg, p.DpsAvg),
+                        WithDps(p.Top, p.DpsTop),
+                        WithDps(p.Max, p.DpsMax)
+                    },
+                    p.IsNewBest))));
             AppendOverflow(body, group.Players.Count);
         }
 
@@ -187,12 +197,16 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
 
         if (s.Dragons.Count > 0)
         {
-            body.AppendLine(RenderLines(
-                s.Dragons,
-                d => $"{FormatShort(d.DamageAvg)} avg · top {FormatShort(d.DamageTop)} · " +
-                     $"{FormatShort(d.DpsAvg)} dps · best {FormatShort(d.DpsMax)} dps",
-                d => d.AccountName,
-                d => d.IsNewBest));
+            body.AppendLine(RenderTable(
+                new[] { "dmg avg", "dmg top", "dps avg", "dps max" },
+                s.Dragons.Take(MaxRows).Select(d => (
+                    d.AccountName,
+                    new[]
+                    {
+                        FormatShort(d.DamageAvg), FormatShort(d.DamageTop),
+                        FormatShort(d.DpsAvg), FormatShort(d.DpsMax)
+                    },
+                    d.IsNewBest))));
             AppendOverflow(body, s.Dragons.Count);
             body.Append(NewBestLegend);
         }
@@ -214,20 +228,25 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
 
         if (s.OrbPushes.Count > 0)
         {
-            body.AppendLine("**Orb Pushes**");
-            body.AppendLine(RenderLines(
-                s.OrbPushes,
-                o => $"{o.SessionTotal} tonight · best session {o.BestSessionTotal}",
-                o => o.AccountName,
-                o => o.IsNewBest));
+            body.AppendLine("**Orb Pushes** — tonight | best session");
+            body.AppendLine(RenderTable(
+                new[] { "tonight", "best" },
+                s.OrbPushes.Take(MaxRows).Select(o => (
+                    o.AccountName,
+                    new[] { o.SessionTotal.ToString(), o.BestSessionTotal.ToString() },
+                    o.IsNewBest))));
             AppendOverflow(body, s.OrbPushes.Count);
         }
 
         if (s.BoonRips.Count > 0)
         {
-            body.AppendLine("**Boon Rips**");
-            body.AppendLine(RenderLines(s.BoonRips,
-                r => $"{r.Avg:F0} avg · top {r.Top:F0} · best {r.Max:F0}"));
+            body.AppendLine("**Boon Rips** — avg | top | best");
+            body.AppendLine(RenderTable(
+                new[] { "avg", "top", "best" },
+                s.BoonRips.Take(MaxRows).Select(r => (
+                    r.AccountName,
+                    new[] { $"{r.Avg:F0}", $"{r.Top:F0}", $"{r.Max:F0}" },
+                    r.IsNewBest))));
             AppendOverflow(body, s.BoonRips.Count);
         }
 
@@ -247,9 +266,13 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             .Build();
     }
 
-    // Damage with its DPS in parentheses, as a read on how long that burst window ran.
+    // Damage with its DPS in parentheses. DPS drops the decimal here purely to keep the
+    // three-column burst table inside a phone's code-block width.
     private static string WithDps(double damage, double? dps) =>
-        dps is { } d ? $"{FormatShort(damage)} ({FormatShort(d)})" : FormatShort(damage);
+        dps is { } d ? $"{FormatShort(damage)} ({FormatDpsCompact(d)})" : FormatShort(damage);
+
+    private static string FormatDpsCompact(double dps) =>
+        dps >= 1_000 ? $"{dps / 1_000:F0}k" : $"{dps:F0}";
 
     private static void AppendOverflow(StringBuilder body, int totalRows)
     {
@@ -259,39 +282,53 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         }
     }
 
-    // One ranked line per player, in Discord's normal proportional font. Fixed-width
-    // code blocks align neatly but render in a monospace face that's noticeably harder
-    // to read inside an embed, so the numbers are labelled inline instead of by column.
-    private static string RenderLines<T>(
-        IReadOnlyList<T> rows,
-        Func<T, string> values,
-        Func<T, string> accountName,
-        Func<T, bool> isNewBest)
+    // Fixed-width table in a code block. Columns are sized to the widest cell so the
+    // whole thing stays under ~48 chars and doesn't wrap on mobile.
+    private static string RenderTable(
+        string[] headers,
+        IEnumerable<(string Name, string[] Values, bool IsNewBest)> rows)
     {
-        // Rows arrive sorted by their headline metric, so position conveys rank without
-        // numbering — and without any inline-code markup, which would reintroduce the
-        // monospace face this format exists to avoid.
-        var lines = rows
-            .Take(MaxRows)
-            .Select(r =>
-                $"**{FormatName(accountName(r))}** — {values(r)}" +
-                (isNewBest(r) ? $" {NewBestMarker}" : ""));
+        var rowList = rows.ToList();
+        var widths = headers
+            .Select((h, i) => Math.Max(h.Length, rowList.Max(r => r.Values[i].Length)))
+            .ToArray();
 
-        return string.Join("\n", lines);
+        var sb = new StringBuilder();
+        sb.AppendLine("```");
+        sb.Append("Player".PadRight(NameWidth));
+        for (var i = 0; i < headers.Length; i++)
+        {
+            sb.Append(' ').Append(headers[i].PadLeft(widths[i]));
+        }
+        sb.AppendLine();
+
+        foreach (var row in rowList)
+        {
+            sb.Append(FormatName(row.Name).PadRight(NameWidth));
+            for (var i = 0; i < row.Values.Length; i++)
+            {
+                sb.Append(' ').Append(row.Values[i].PadLeft(widths[i]));
+            }
+            if (row.IsNewBest) sb.Append(" *");
+            sb.AppendLine();
+        }
+
+        sb.Append("```");
+        return sb.ToString();
     }
 
-    private static string RenderLines(
-        IReadOnlyList<HtcmSummaryStatRow> rows, Func<HtcmSummaryStatRow, string> values) =>
-        RenderLines(rows, values, r => r.AccountName, r => r.IsNewBest);
-
-    // GW2 account names carry a ".1234" discriminator that adds noise without
-    // distinguishing anyone in a guild-only list.
+    // GW2 account names carry a ".1234" discriminator that eats the column width and
+    // pushes real names into mid-word truncation. Drop it — the name alone identifies
+    // the player well enough in a guild-only table.
     private static string FormatName(string accountName)
     {
-        var dot = accountName.LastIndexOf('.');
-        return dot > 0 && accountName[(dot + 1)..].All(char.IsDigit)
-            ? accountName[..dot]
-            : accountName;
+        var name = accountName;
+        var dot = name.LastIndexOf('.');
+        if (dot > 0 && name[(dot + 1)..].All(char.IsDigit))
+        {
+            name = name[..dot];
+        }
+        return name.Length <= NameWidth ? name : name[..NameWidth];
     }
 
     // 1.24M / 892k / 31.2k / 431 — at most 5 characters wide. Values under 100k keep a
