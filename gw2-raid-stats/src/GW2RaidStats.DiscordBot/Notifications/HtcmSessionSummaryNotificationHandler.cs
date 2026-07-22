@@ -132,7 +132,7 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
                 return line.ToString();
             });
 
-            embed.AddField("🏆 MVDPS", string.Join("\n", podium));
+            embed.AddField("🏆 Most Valuable Proggers", string.Join("\n", podium));
         }
 
         if (wallOfShameEnabled)

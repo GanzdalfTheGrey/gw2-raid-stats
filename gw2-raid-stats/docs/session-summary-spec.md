@@ -69,7 +69,7 @@ DPS, not a separate DPS maximum.
 
 ### Individual Awards
 
-**MVDPS** — awarded for the best metric across the categories above.
+**Most Valuable Proggers** — awarded for the best metric across the categories above.
 
 Shown as a **top 3 podium**, each with their points broken down.
 
