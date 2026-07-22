@@ -96,39 +96,6 @@ public class AdminDiscordController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// TEMPORARY — testing aid. Posts the HTCM summary for the most recent night that had
-    /// HTCM CM attempts, ignoring the usual rules (no kill required, doesn't have to be the
-    /// latest session, and no regular summary is queued alongside). Remove once the HTCM
-    /// summary format is settled; the real trigger is post-session-summary.
-    /// </summary>
-    [HttpPost("post-htcm-summary")]
-    public async Task<IActionResult> PostHtcmSummary(CancellationToken ct)
-    {
-        var latestHtcm = await _db.Encounters
-            .Where(e => e.TriggerId == HtcmProgService.HtcmTriggerId
-                     && e.IsCM
-                     && e.DurationMs >= HtcmProgService.MinDurationMs)
-            .OrderByDescending(e => e.EncounterTime)
-            .Select(e => e.EncounterTime)
-            .FirstOrDefaultAsync(ct);
-
-        if (latestHtcm == default)
-        {
-            return Ok(new { success = false, message = "No HTCM attempts found" });
-        }
-
-        var sessionDate = latestHtcm.Date;
-        await QueueAsync("htcm_session_summary",
-            JsonSerializer.Serialize(new { SessionDate = sessionDate }), ct);
-
-        return Ok(new {
-            success = true,
-            sessionDate,
-            message = $"HTCM summary for {sessionDate:yyyy-MM-dd} queued for Discord"
-        });
-    }
-
     private async Task QueueAsync(string notificationType, string payload, CancellationToken ct)
     {
         await _db.InsertAsync(new NotificationQueueEntity
