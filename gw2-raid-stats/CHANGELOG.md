@@ -5,12 +5,21 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Most Valuable Proggers rescored.** Weights move off the old share-of-100 scale to absolute points: dragon DPS 100, burst damage 100, orb pushes 50, boon rips 10. Rips stay deliberately cheap — squad-wide they're vital, but past the first dedicated ripper the marginal rip is nearly worthless. Deductions scale to match: 5 per first death, 3 per Debilitated stack carried into Giants, 3 per Primo chomp.
+
+### Added
+- **Boon uptime as an MVP category.** Quickness and alacrity givers earn up to 30 points on top — 5 each for Timecaster, Giants and Saltspray, 15 across the combined dragons. Scored on the uptime the giver's **subgroup received**, not their own, so self-quickening while the group sits at 40% earns nothing. 95% uptime or better takes the full allocation; below that it ramps linearly. Givers are identified from the existing `PlayerEncounter.Role` (10% generation threshold), read per encounter so a mid-session build swap is scored on what was played. Pure DPS cap at 260 and boon givers at 290 — the gap is intentional, compensating supports for the DPS they give up.
+  - **Requires migration 034 + a rescan**: adds `quickness_uptime_pct` / `alacrity_uptime_pct` to `player_encounter_phase_stats` from EI's `buffUptimesActive` (IDs 1187 / 30328). Until **Admin → Manage Logs → Rescan** backfills them, the boon category scores 0 for everyone and the podium behaves as if the category didn't exist.
+
 ## [1.17.0] - 2026-07-21
 
 ### Added
 - **Separate HTCM progression summary in Discord.** Posting a session summary now decides what to post from the night's logs: a night with HTCM CM attempts and no kill gets a dedicated **HTCM Progress** summary, a night with other bosses gets the regular session summary, and a mixed night gets both — from the same button. HTCM prog pulls are excluded from the regular summary (encounter list, MVPs and Wall of Shame) so twenty wipe lines don't drown it out; if the squad *killed* HTCM, it stays in the regular summary like any other boss.
   - The HTCM summary is three embeds in one message: session header (pulls, best phase, best HP%, squad burst DPS, MVDPS, Wall of Shame), per-player **total damage** as `avg | top | max` for **Timecaster / Giants / Saltspray**, and a third with **combined dragons** (Jormag · Kralkatorrik · Mordremoth · Zhaitan · Soo-Won — Primordus deliberately excluded, its arena favours 1200-range builds), **orb pushes** (`this session | best-ever session`) and **boon rips** (`avg | top | max`). `avg`/`top` are tonight, `max` is best-ever across all sessions, and `*` marks a new best. Tables render as fixed-width code blocks rather than embed fields, which would otherwise blow past Discord's 25-field cap; a large roster splits across messages rather than truncating silently.
-  - **MVDPS** is a weighted sum of each player's share of the session leader in four categories — burst damage 40, dragon DPS 30, orb pushes 20, boon rips 10 — so it self-calibrates instead of relying on fixed conversion constants.
+  - **Most Valuable Proggers** is a top-3 podium scored as a weighted sum of each player's share of the session leader across burst damage, dragon DPS, orb pushes and boon rips, so it self-calibrates instead of relying on fixed conversion constants, minus flat penalties for first deaths, Debilitated stacks carried into Giants and Primo chomps. (Weights and penalty costs revised under Unreleased.)
   - **Debilitated into Giants** reuses the exact per-player slice shown in the HTCM prog page's Phase Insights panel, so the shame award and the page can't disagree. **Chomped by Primo** counts EI's `Jaws.H` (Primordus Jaws) events. Orb pushes count EI's `Orb Push` events with a new 1s ICD — EI emits one event per channel tick (~350ms), so raw counts measured time-on-orb rather than pushes.
   - All tables are filtered to guild members (included players), matching leaderboard behaviour.
   - **Requires a rescan**: sessions imported before migration 032 have no `player_encounter_phase_stats` rows, so their burst/dragon sections come out empty and "best-ever" figures are understated until **Admin → Manage Logs → Rescan** backfills them.

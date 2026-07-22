@@ -26,5 +26,12 @@ public class PlayerEncounterPhaseStatEntity
     // this buff). Sourced from EI's BuffUptimesActive.Uptime. EI HTML report
     // shows this in the "Avg Active" column for stacking buffs.
     [Column("debilitated_avg_stacks")] public decimal? DebilitatedAvgStacks { get; set; }
+
+    // % of phase active time the player *had* the boon (0-100), from EI's
+    // BuffUptimesActive.Presence. Recorded for every player, not just givers — the
+    // MVP boon category scores a giver on their subgroup's average received uptime.
+    [Column("quickness_uptime_pct")] public decimal? QuicknessUptimePct { get; set; }
+    [Column("alacrity_uptime_pct")] public decimal? AlacrityUptimePct { get; set; }
+
     [Column("created_at"), NotNull] public DateTimeOffset CreatedAt { get; set; }
 }

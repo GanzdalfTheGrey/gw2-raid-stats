@@ -20,22 +20,36 @@ public class HtcmSessionSummaryService
     private const string OrbPushMechanic = "Orb Push";
     private const string PrimordusJawsMechanic = "Jaws.H";
 
-    // MVDPS category weights, summing to 100. Each player's value is normalised against
-    // the session leader in that category (leader = full weight), so the scale
-    // self-calibrates instead of relying on fixed damage-per-rip conversion constants.
-    // Constraints: burst == dps, orbs == rips, burst == 3 × orbs. That gives
-    // 2b + 2o = 100 with b = 3o, so o = 12.5 and b = 37.5.
-    private const double BurstWeight = 37.5;
-    private const double DpsWeight = 37.5;
-    private const double OrbWeight = 12.5;
-    private const double RipWeight = 12.5;
+    // MVP category weights. Each player's value is normalised against the session leader
+    // in that category (leader = full weight), so the scale self-calibrates instead of
+    // relying on fixed damage-per-rip conversion constants. The weights are absolute
+    // points rather than shares of 100: a pure DPS tops out at 260, a boon giver at 290,
+    // because the boon category is a bonus on top for the DPS a support gives up.
+    //
+    // Boon rips sit deliberately low. They matter enormously squad-wide, but past the
+    // first dedicated ripper the marginal rip is nearly worthless, so rewarding them
+    // heavily would just crown whoever happened to bring the strip build.
+    private const double BurstWeight = 100;
+    private const double DpsWeight = 100;
+    private const double OrbWeight = 50;
+    private const double RipWeight = 10;
+
+    // Boon points apply only to players whose PlayerEncounter.Role marks them a quickness
+    // or alacrity giver, and are scored on the uptime their *subgroup received*, not their
+    // own — a scrapper self-quickening while the group sits at 40% has not done the job.
+    // 5 points per burst group (Timecaster, Giants, Saltspray) and 15 across the dragons,
+    // so 30 in total. Uptime at or above the full-credit threshold earns the whole
+    // allocation; below it the award ramps linearly.
+    private const double BoonPointsPerBurstGroup = 5;
+    private const double BoonPointsDragons = 15;
+    private const decimal BoonFullCreditUptimePct = 95m;
 
     // Penalties are absolute points off the weighted score, not shares — a first death
-    // costs the same 2 points whoever you are. Debilitated is charged per stack carried
+    // costs the same 5 points whoever you are. Debilitated is charged per stack carried
     // into Giants, summed across the pulls it happened on.
-    private const double PenaltyPerFirstDeath = 2;
-    private const double PenaltyPerDebilStack = 1;
-    private const double PenaltyPerChomp = 1;
+    private const double PenaltyPerFirstDeath = 5;
+    private const double PenaltyPerDebilStack = 3;
+    private const double PenaltyPerChomp = 3;
 
     // How many players the MVDPS podium lists.
     private const int MvdpsPodiumSize = 3;
@@ -136,8 +150,14 @@ public class HtcmSessionSummaryService
             s => s.AccountName,
             s => (double)(s.Giants.DebilAvgStacks ?? 0m) * s.Giants.DebilPulls);
 
+        // Boon points are a session award, so unlike the damage tables this only looks at
+        // tonight's pulls — there is no "best ever" comparison to make.
+        var boonUptime = await BuildBoonPointsAsync(
+            detail.Pulls.Select(p => p.EncounterId).ToList(), phaseNames, included, ct);
+
         var shame = BuildShame(playerSlices, firstDeaths, chomps);
-        var mvdps = ComputeMvdps(burstGroups, dragons, orbPushes, boonRips, firstDeaths, debilStacks, chomps);
+        var mvdps = ComputeMvdps(burstGroups, dragons, orbPushes, boonRips, boonUptime,
+            firstDeaths, debilStacks, chomps);
 
         return new HtcmSessionSummary(
             Date: sessionDate,
@@ -363,6 +383,140 @@ public class HtcmSessionSummaryService
         return BuildStatRows(perPull, sessionDate, sessionDateByEncounter, p => p.Damage);
     }
 
+    // Scores each boon giver on the uptime their subgroup *received* in the phases that
+    // matter, pull by pull, then averages across the pulls they were in — so a giver who
+    // sat out half the night isn't diluted by the pulls they missed.
+    //
+    // Only the giver's own boon counts: role dps_quick/heal_quick is judged on Quickness,
+    // dps_alac/heal_alac on Alacrity. Role is read per encounter rather than per session,
+    // so a mid-session build swap is scored on what they actually played.
+    private async Task<List<HtcmSummaryBoonRow>> BuildBoonPointsAsync(
+        List<Guid> sessionEncounterIds,
+        List<string> phaseNames,
+        HashSet<string> included,
+        CancellationToken ct)
+    {
+        var phaseRows = await _db.PlayerEncounterPhaseStats
+            .InnerJoin(_db.Players, (ps, p) => ps.PlayerId == p.Id, (ps, p) => new { ps, p })
+            .Where(x => sessionEncounterIds.Contains(x.ps.EncounterId)
+                     && phaseNames.Contains(x.ps.PhaseName))
+            .Select(x => new BoonPhaseRow(
+                x.ps.EncounterId, x.ps.PlayerId, x.p.AccountName, x.ps.PhaseName,
+                x.ps.QuicknessUptimePct, x.ps.AlacrityUptimePct))
+            .ToListAsync(ct);
+        if (phaseRows.Count == 0) return new List<HtcmSummaryBoonRow>();
+
+        // Subgroup and role are per (encounter, player); both are needed for every player
+        // in the pull, not just guild members, because a subgroup average includes pugs.
+        var roleRows = await _db.PlayerEncounters
+            .Where(pe => sessionEncounterIds.Contains(pe.EncounterId))
+            .Select(pe => new { pe.EncounterId, pe.PlayerId, pe.SquadGroup, pe.Role })
+            .ToListAsync(ct);
+        var rolesByKey = roleRows
+            .GroupBy(r => (r.EncounterId, r.PlayerId))
+            .ToDictionary(g => g.Key, g => (g.First().SquadGroup, g.First().Role));
+
+        var groups = new[]
+        {
+            (Phases: HtcmProgService.TimecasterPhases, Allocation: BoonPointsPerBurstGroup),
+            (Phases: HtcmProgService.GiantsPhases, Allocation: BoonPointsPerBurstGroup),
+            (Phases: HtcmProgService.SaltsprayPhases, Allocation: BoonPointsPerBurstGroup),
+            (Phases: HtcmProgService.CombinedDragonPhases, Allocation: BoonPointsDragons),
+        };
+
+        // Keyed per phase group so each group's allocation is averaged over the pulls the
+        // giver was in before the four are summed — otherwise a giver present for more
+        // pulls would accumulate more than the 30-point ceiling.
+        var awards = new Dictionary<(string Account, string Boon, int Group), List<(double Credit, double Uptime)>>();
+
+        for (int groupIndex = 0; groupIndex < groups.Length; groupIndex++)
+        {
+            var (phases, allocation) = groups[groupIndex];
+            var groupRows = phaseRows.Where(r => HtcmProgService.MatchesAny(r.PhaseName, phases)).ToList();
+
+            foreach (var pull in groupRows.GroupBy(r => r.EncounterId))
+            {
+                // Subgroup average of each boon across every player in it, over all the
+                // group's phases. A player with no recorded value for a boon is left out
+                // of that boon's average rather than counted as a zero.
+                double? SubgroupUptime(int? squadGroup, string boon)
+                {
+                    var members = pull.Where(r =>
+                    {
+                        // No subgroup on file (pre-migration rows, odd squads): fall back
+                        // to the whole squad rather than scoring the giver against itself.
+                        if (squadGroup == null) return true;
+                        return rolesByKey.TryGetValue((r.EncounterId, r.PlayerId), out var m)
+                            && m.SquadGroup == squadGroup;
+                    });
+
+                    var values = members
+                        .Select(r => boon == BoonQuickness ? r.Quickness : r.Alacrity)
+                        .Where(v => v != null)
+                        .Select(v => (double)v!.Value)
+                        .ToList();
+
+                    return values.Count > 0 ? values.Average() : null;
+                }
+
+                // One award per giver per pull. Groups spanning several phases (Giants,
+                // the dragons) have a row per phase, so collapse to the player first.
+                var givers = pull
+                    .Where(r => included.Contains(r.AccountName))
+                    .GroupBy(r => r.PlayerId)
+                    .Select(g => g.First());
+
+                foreach (var giver in givers)
+                {
+                    if (!rolesByKey.TryGetValue((giver.EncounterId, giver.PlayerId), out var meta)) continue;
+
+                    var boon = BoonForRole(meta.Role);
+                    if (boon == null) continue;
+
+                    var uptime = SubgroupUptime(meta.SquadGroup, boon);
+                    if (uptime == null) continue;
+
+                    // At or above the threshold the giver has done the job; below it the
+                    // award ramps linearly, so 47.5% uptime earns half the allocation.
+                    var credit = allocation * Math.Min(1.0, uptime.Value / (double)BoonFullCreditUptimePct);
+
+                    var key = (giver.AccountName, boon, groupIndex);
+                    if (!awards.TryGetValue(key, out var list))
+                    {
+                        list = new List<(double, double)>();
+                        awards[key] = list;
+                    }
+                    list.Add((credit, uptime.Value));
+                }
+            }
+        }
+
+        return awards
+            .GroupBy(kv => (kv.Key.Account, kv.Key.Boon))
+            .Select(g => new HtcmSummaryBoonRow(
+                g.Key.Account,
+                g.Key.Boon,
+                // Average within each phase group, then sum the groups: at most
+                // 5 + 5 + 5 + 15 = 30 however many pulls the giver played.
+                Points: g.Sum(kv => kv.Value.Average(v => v.Credit)),
+                AvgUptimePct: g.SelectMany(kv => kv.Value).Average(v => v.Uptime)))
+            .OrderByDescending(r => r.Points)
+            .ToList();
+    }
+
+    private const string BoonQuickness = "Quickness";
+    private const string BoonAlacrity = "Alacrity";
+
+    // PlayerEncounter.Role is assigned by LogImportService.CalculateRole at a 10%
+    // generation threshold. pure_dps (and anything unrecognised) gives no boon, and so
+    // scores nothing in this category.
+    private static string? BoonForRole(string? role) => role switch
+    {
+        "dps_quick" or "heal_quick" => BoonQuickness,
+        "dps_alac" or "heal_alac" => BoonAlacrity,
+        _ => null
+    };
+
     // Debilitated-in-Giants counts the pulls where the player carried the debuff into the
     // Giants window at all — pass/fail per pull, not a weighted uptime. Read straight off
     // the slice the prog page renders, so the count and the page's percentage are always
@@ -415,14 +569,16 @@ public class HtcmSessionSummaryService
             .ToDictionary(g => g.Key, g => g.Count());
     }
 
-    // Weighted sum of each player's share of the session leader in four categories, minus
-    // flat penalties for the night's mistakes. A category with no data simply contributes
-    // nothing to anyone's score. Returns the podium, best first.
+    // Weighted sum of each player's share of the session leader in four categories, plus
+    // the boon-giver bonus and minus flat penalties for the night's mistakes. A category
+    // with no data simply contributes nothing to anyone's score. Returns the podium,
+    // best first.
     private static List<HtcmSummaryMvdps> ComputeMvdps(
         List<HtcmSummaryBurstGroup> burstGroups,
         List<HtcmSummaryDragonRow> dragons,
         List<HtcmSummaryOrbRow> orbPushes,
         List<HtcmSummaryStatRow> boonRips,
+        List<HtcmSummaryBoonRow> boonUptime,
         Dictionary<string, int> firstDeaths,
         Dictionary<string, double> debilStacks,
         Dictionary<string, int> chomps)
@@ -435,11 +591,12 @@ public class HtcmSessionSummaryService
         var dps = dragons.ToDictionary(d => d.AccountName, d => d.DpsAvg);
         var orbs = orbPushes.ToDictionary(o => o.AccountName, o => (double)o.SessionTotal);
         var rips = boonRips.ToDictionary(r => r.AccountName, r => r.Avg);
+        var boons = boonUptime.ToDictionary(b => b.AccountName);
 
         // Penalised players are included even with no scoring data, so a night spent
         // mostly dead still shows up rather than quietly vanishing from the podium.
         var accounts = burst.Keys
-            .Concat(dps.Keys).Concat(orbs.Keys).Concat(rips.Keys)
+            .Concat(dps.Keys).Concat(orbs.Keys).Concat(rips.Keys).Concat(boons.Keys)
             .Concat(firstDeaths.Keys).Concat(debilStacks.Keys).Concat(chomps.Keys)
             .Distinct()
             .ToList();
@@ -459,12 +616,18 @@ public class HtcmSessionSummaryService
                 var deaths = firstDeaths.GetValueOrDefault(a);
                 var stacks = debilStacks.GetValueOrDefault(a);
                 var chomped = chomps.GetValueOrDefault(a);
+                var boon = boons.GetValueOrDefault(a);
                 return new HtcmSummaryMvdps(
                     a,
                     BurstPoints: Share(burst, a, BurstWeight),
                     DpsPoints: Share(dps, a, DpsWeight),
                     OrbPoints: Share(orbs, a, OrbWeight),
                     RipPoints: Share(rips, a, RipWeight),
+                    // Absolute, not a share of the leader: a giver is measured against the
+                    // 95% bar, not against whichever other giver had the best night.
+                    BoonPoints: boon?.Points ?? 0,
+                    Boon: boon?.Boon,
+                    BoonUptimePct: boon?.AvgUptimePct,
                     FirstDeaths: deaths,
                     DebilStacks: stacks,
                     Chomps: chomped,
@@ -479,6 +642,10 @@ public class HtcmSessionSummaryService
     }
 
     private record PhaseDamageRow(Guid EncounterId, string AccountName, string PhaseName, long Damage);
+
+    private record BoonPhaseRow(
+        Guid EncounterId, Guid PlayerId, string AccountName, string PhaseName,
+        decimal? Quickness, decimal? Alacrity);
 
     private record PullValue(Guid EncounterId, string AccountName, double Damage, double Dps);
 }
@@ -526,9 +693,16 @@ public record HtcmSummaryDragonRow(
 public record HtcmSummaryOrbRow(string AccountName, int SessionTotal, int BestSessionTotal, bool IsNewBest);
 
 /// <summary>
-/// One podium entry. The *Points are shares of the session leader (100 across all four);
-/// the *Penalty values are flat deductions, with the raw counts alongside them so the
-/// embed can show what earned the deduction.
+/// Points a boon giver earned for the uptime their subgroup received. Boon is
+/// "Quickness" or "Alacrity"; AvgUptimePct is across every scored phase, for display.
+/// </summary>
+public record HtcmSummaryBoonRow(string AccountName, string Boon, double Points, double AvgUptimePct);
+
+/// <summary>
+/// One podium entry. BurstPoints/DpsPoints/OrbPoints/RipPoints are shares of the session
+/// leader (260 across all four); BoonPoints is an absolute award out of 30 for boon
+/// givers only, so supports cap at 290. The *Penalty values are flat deductions, with the
+/// raw counts alongside them so the embed can show what earned the deduction.
 /// </summary>
 public record HtcmSummaryMvdps(
     string AccountName,
@@ -536,6 +710,9 @@ public record HtcmSummaryMvdps(
     double DpsPoints,
     double OrbPoints,
     double RipPoints,
+    double BoonPoints,
+    string? Boon,
+    double? BoonUptimePct,
     int FirstDeaths,
     double DebilStacks,
     int Chomps,
@@ -543,7 +720,7 @@ public record HtcmSummaryMvdps(
     double DebilPenalty,
     double ChompPenalty)
 {
-    public double EarnedPoints => BurstPoints + DpsPoints + OrbPoints + RipPoints;
+    public double EarnedPoints => BurstPoints + DpsPoints + OrbPoints + RipPoints + BoonPoints;
 
     public double Penalty => FirstDeathPenalty + DebilPenalty + ChompPenalty;
 

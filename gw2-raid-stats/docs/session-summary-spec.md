@@ -73,34 +73,66 @@ DPS, not a separate DPS maximum.
 
 Shown as a **top 3 podium**, each with their points broken down.
 
-Weighted in priority order, summing to 100:
+Weighted in priority order:
 
-1. Burst (Total Damage) — weight 37.5
-2. DPS — weight 37.5
-3. Orb pushes — weight 12.5
-4. Boon rips — weight 12.5
+1. Dragon DPS — weight 100
+2. Burst (Total Damage) — weight 100
+3. Orb pushes — weight 50
+4. Boon uptime — up to 30, **boon givers only** (see below)
+5. Boon rips — weight 10
+
+Boon rips sit deliberately low. They matter enormously squad-wide, but past the first
+dedicated ripper the marginal rip is nearly worthless, so weighting them heavily would
+just crown whoever happened to bring the strip build.
+
+A pure DPS therefore caps at **260** and a boon giver at **290**. The gap is the point:
+the boon category is a bonus compensating supports for the DPS they give up, not a
+category pure DPS are competing in and losing.
+
+**Boon uptime** is awarded to players whose `PlayerEncounter.Role` marks them a quickness
+or alacrity giver (`dps_quick`/`heal_quick` → Quickness, `dps_alac`/`heal_alac` →
+Alacrity; role is assigned by `CalculateRole` at a 10% generation threshold, read per
+encounter so a mid-session build swap scores on what was actually played).
+
+It is scored on the uptime the giver's **subgroup received** — not the giver's own — so a
+scrapper self-quickening while their group sits at 40% earns nothing. Allocation:
+
+| Phase group | Points |
+|---|---|
+| Timecaster | 5 |
+| Giants | 5 |
+| Saltspray | 5 |
+| Combined dragons | 15 |
+
+Uptime at or above **95%** earns the full allocation; below it the award ramps linearly
+(47.5% uptime → half). Each group is averaged across the pulls the giver was in before
+the four are summed, so playing more pulls can't push anyone past 30.
 
 **Penalties** are then subtracted as flat points — the same cost for everyone, unlike the
 weighted categories which are relative to the session leader:
 
 | Mistake | Cost |
 |---|---|
-| First death in a pull | 2 per death |
-| Debilitated stacks carried into Giants | 1 per stack, summed across pulls (avg stacks × pulls) |
-| Chomped by Primo | 1 per chomp |
+| First death in a pull | 5 per death |
+| Debilitated stacks carried into Giants | 3 per stack, summed across pulls (avg stacks × pulls) |
+| Chomped by Primo | 3 per chomp |
 
 A player carrying penalties but no scoring data still appears, so a night spent mostly
 dead doesn't quietly drop off the board. Penalty detail is shown only for players who
 incurred one.
 
-The weights are fixed by three constraints — burst == dps, orbs == rips, and
-burst == 3 × orbs — which with a total of 100 give `2b + 2o = 100`, `b = 3o`, so
-`o = 12.5` and `b = 37.5`.
-
-Scoring is a **weighted sum of each player's share of the session leader** in each
-category: the category leader earns the full weight, a player at half the leader's value
-earns half. This self-calibrates across comps instead of relying on fixed
+Scoring for dragon DPS, burst, orbs and rips is a **weighted sum of each player's share
+of the session leader**: the category leader earns the full weight, a player at half the
+leader's value earns half. This self-calibrates across comps instead of relying on fixed
 damage-per-rip conversion constants. A category with no data contributes nothing.
+
+Boon uptime is the exception — it is **absolute**, measured against the 95% bar rather
+than against whichever other giver had the best night, because "did you keep the group
+covered" has a right answer that doesn't depend on the rest of the squad.
+
+Boon uptime requires `player_encounter_phase_stats.quickness_uptime_pct` /
+`alacrity_uptime_pct` (migration 034). Sessions imported before that migration score 0
+in the category until **Admin → Manage Logs → Rescan** backfills them.
 
 ---
 

@@ -417,3 +417,6 @@ FodyWeavers.xsd
 *.msm
 *.msp
 /20240909-223645_twinlargos_kill.json
+
+# Roslyn language-server per-project caches
+*.csproj.lscache

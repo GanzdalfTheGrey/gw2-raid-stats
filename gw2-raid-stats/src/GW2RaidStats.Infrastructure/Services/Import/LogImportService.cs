@@ -377,6 +377,10 @@ public class LogImportService
 
             var debilBuff = eiPlayer.BuffUptimesActive?
                 .FirstOrDefault(b => b.Id == DebilitatedBuffId);
+            var quicknessBuff = eiPlayer.BuffUptimesActive?
+                .FirstOrDefault(b => b.Id == GW2BuffIds.Quickness);
+            var alacrityBuff = eiPlayer.BuffUptimesActive?
+                .FirstOrDefault(b => b.Id == GW2BuffIds.Alacrity);
 
             for (int phaseIndex = 0; phaseIndex < log.Phases.Count; phaseIndex++)
             {
@@ -420,10 +424,23 @@ public class LogImportService
                     DeadAtPhaseStart = WasDeadAtMs(eiPlayer.DeadCombatTimes, phase.Start),
                     DebilitatedUptimePct = debilUptimePct,
                     DebilitatedAvgStacks = debilAvgStacks,
+                    // Quickness and Alacrity are duration boons, so the % uptime lives
+                    // in Uptime — Presence is only populated for stacking buffs like
+                    // Debilitated above. Same field GetBoonSelfUptimeFromPlayer reads.
+                    QuicknessUptimePct = UptimeAt(quicknessBuff, phaseIndex),
+                    AlacrityUptimePct = UptimeAt(alacrityBuff, phaseIndex),
                     CreatedAt = DateTimeOffset.UtcNow
                 };
             }
         }
+    }
+
+    // Per-phase % uptime for a duration boon. Null (rather than 0) when the phase is
+    // missing from the buff's data, so "never had it" and "not recorded" stay distinct.
+    private static decimal? UptimeAt(EIBuffUptime? buff, int phaseIndex)
+    {
+        if (buff?.BuffData == null || phaseIndex >= buff.BuffData.Count) return null;
+        return buff.BuffData[phaseIndex].Uptime;
     }
 
     // EI's deadCombatTimes is a list of [startMs, endMs] pairs (endMs = -1 means

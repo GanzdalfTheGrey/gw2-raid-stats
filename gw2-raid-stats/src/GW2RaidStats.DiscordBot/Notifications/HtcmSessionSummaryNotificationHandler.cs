@@ -125,6 +125,12 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
                 line.AppendLine($"{medal} **{FormatName(m.AccountName)}** — {m.Score:F1} pts");
                 line.Append($"burst {m.BurstPoints:F1} · dps {m.DpsPoints:F1} · " +
                             $"orbs {m.OrbPoints:F1} · rips {m.RipPoints:F1}");
+                // Only boon givers have this category at all, so pure DPS lines stay short.
+                if (m.Boon != null)
+                {
+                    line.Append($" · {m.Boon.ToLowerInvariant()} {m.BoonPoints:F1}" +
+                                $" ({m.BoonUptimePct:F0}%)");
+                }
                 if (m.Penalty > 0)
                 {
                     line.Append($"\npenalties −{m.Penalty:F1} ({FormatPenalties(m)})");
