@@ -115,22 +115,35 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             embed.AddField("⚔️ Squad Burst (avg DPS)", string.Join("\n", squadLines));
         }
 
-        if (s.Mvdps != null)
+        if (s.Mvdps.Count > 0)
         {
-            var mvp = new StringBuilder();
-            mvp.AppendLine($"**{FormatName(s.Mvdps.AccountName)}** — {s.Mvdps.Score:F1} pts");
-            mvp.AppendLine($"burst {s.Mvdps.BurstPoints:F1} · dps {s.Mvdps.DpsPoints:F1} · " +
-                           $"orbs {s.Mvdps.OrbPoints:F1} · rips {s.Mvdps.RipPoints:F1}");
-            if (s.Mvdps.RunnerUp != null)
+            var medals = new[] { "🥇", "🥈", "🥉" };
+            var podium = s.Mvdps.Select((m, i) =>
             {
-                mvp.Append($"runner-up: {FormatName(s.Mvdps.RunnerUp)} ({s.Mvdps.RunnerUpScore:F1})");
-            }
-            embed.AddField("🏆 MVDPS", mvp.ToString());
+                var line = new StringBuilder();
+                var medal = i < medals.Length ? medals[i] : "🏅";
+                line.AppendLine($"{medal} **{FormatName(m.AccountName)}** — {m.Score:F1} pts");
+                line.Append($"burst {m.BurstPoints:F1} · dps {m.DpsPoints:F1} · " +
+                            $"orbs {m.OrbPoints:F1} · rips {m.RipPoints:F1}");
+                if (m.Penalty > 0)
+                {
+                    line.Append($"\npenalties −{m.Penalty:F1} ({FormatPenalties(m)})");
+                }
+                return line.ToString();
+            });
+
+            embed.AddField("🏆 MVDPS", string.Join("\n", podium));
         }
 
         if (wallOfShameEnabled)
         {
             var shameLines = new List<string>();
+            if (s.Shame.FirstDeathPlayer != null)
+            {
+                var deaths = s.Shame.FirstDeathCount == 1 ? "pull" : "pulls";
+                shameLines.Add($"First Death: **{FormatName(s.Shame.FirstDeathPlayer)}** " +
+                               $"({s.Shame.FirstDeathCount} {deaths})");
+            }
             if (s.Shame.DebilitatedPlayer != null)
             {
                 var pulls = s.Shame.DebilitatedPulls == 1 ? "pull" : "pulls";
@@ -161,14 +174,13 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             var avgDuration = TimeSpan.FromMilliseconds(group.AverageDurationMs);
             body.AppendLine($"**{group.Name}** · {group.PullsReached} pulls · {avgDuration.TotalSeconds:F0}s avg");
             body.AppendLine(RenderTable(
-                new[] { "avg (dps)", "top (dps)", "max (dps)" },
+                new[] { "avg (dps)", "top (dps)" },
                 group.Players.Take(MaxRows).Select(p => (
                     p.AccountName,
                     new[]
                     {
                         WithDps(p.Avg, p.DpsAvg),
-                        WithDps(p.Top, p.DpsTop),
-                        WithDps(p.Max, p.DpsMax)
+                        WithDps(p.Top, p.DpsTop)
                     },
                     p.IsNewBest))));
             AppendOverflow(body, group.Players.Count);
@@ -184,7 +196,7 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         }
 
         return new EmbedBuilder()
-            .WithTitle("Burst — total damage, avg | top | max")
+            .WithTitle("Burst — total damage, avg | top")
             .WithColor(Color.Purple)
             .WithDescription(body.ToString())
             .Build();
@@ -198,13 +210,13 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         if (s.Dragons.Count > 0)
         {
             body.AppendLine(RenderTable(
-                new[] { "dmg avg", "dmg top", "dps avg", "dps max" },
+                new[] { "dmg avg", "dmg top", "dps avg" },
                 s.Dragons.Take(MaxRows).Select(d => (
                     d.AccountName,
                     new[]
                     {
                         FormatShort(d.DamageAvg), FormatShort(d.DamageTop),
-                        FormatShort(d.DpsAvg), FormatShort(d.DpsMax)
+                        FormatShort(d.DpsAvg)
                     },
                     d.IsNewBest))));
             AppendOverflow(body, s.Dragons.Count);
@@ -228,24 +240,24 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
 
         if (s.OrbPushes.Count > 0)
         {
-            body.AppendLine("**Orb Pushes** — tonight | best session");
+            body.AppendLine("**Orb Pushes**");
             body.AppendLine(RenderTable(
-                new[] { "tonight", "best" },
+                new[] { "pushes" },
                 s.OrbPushes.Take(MaxRows).Select(o => (
                     o.AccountName,
-                    new[] { o.SessionTotal.ToString(), o.BestSessionTotal.ToString() },
+                    new[] { o.SessionTotal.ToString() },
                     o.IsNewBest))));
             AppendOverflow(body, s.OrbPushes.Count);
         }
 
         if (s.BoonRips.Count > 0)
         {
-            body.AppendLine("**Boon Rips** — avg | top | best");
+            body.AppendLine("**Boon Rips**");
             body.AppendLine(RenderTable(
-                new[] { "avg", "top", "best" },
+                new[] { "avg", "top" },
                 s.BoonRips.Take(MaxRows).Select(r => (
                     r.AccountName,
-                    new[] { $"{r.Avg:F0}", $"{r.Top:F0}", $"{r.Max:F0}" },
+                    new[] { $"{r.Avg:F0}", $"{r.Top:F0}" },
                     r.IsNewBest))));
             AppendOverflow(body, s.BoonRips.Count);
         }
@@ -266,8 +278,18 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             .Build();
     }
 
+    // Only the penalties a player actually incurred, so a clean night reads short.
+    private static string FormatPenalties(HtcmSummaryMvdps m)
+    {
+        var parts = new List<string>();
+        if (m.FirstDeaths > 0) parts.Add($"{m.FirstDeaths} first death{(m.FirstDeaths == 1 ? "" : "s")}");
+        if (m.DebilStacks > 0) parts.Add($"{m.DebilStacks:F1} debil stacks");
+        if (m.Chomps > 0) parts.Add($"{m.Chomps} chomp{(m.Chomps == 1 ? "" : "s")}");
+        return string.Join(", ", parts);
+    }
+
     // Damage with its DPS in parentheses. DPS drops the decimal here purely to keep the
-    // three-column burst table inside a phone's code-block width.
+    // burst table inside a phone's code-block width.
     private static string WithDps(double damage, double? dps) =>
         dps is { } d ? $"{FormatShort(damage)} ({FormatDpsCompact(d)})" : FormatShort(damage);
 

@@ -30,6 +30,16 @@ public class HtcmSessionSummaryService
     private const double OrbWeight = 12.5;
     private const double RipWeight = 12.5;
 
+    // Penalties are absolute points off the weighted score, not shares — a first death
+    // costs the same 2 points whoever you are. Debilitated is charged per stack carried
+    // into Giants, summed across the pulls it happened on.
+    private const double PenaltyPerFirstDeath = 2;
+    private const double PenaltyPerDebilStack = 1;
+    private const double PenaltyPerChomp = 1;
+
+    // How many players the MVDPS podium lists.
+    private const int MvdpsPodiumSize = 3;
+
     public HtcmSessionSummaryService(
         RaidStatsDb db,
         HtcmProgService htcmProgService,
@@ -106,9 +116,28 @@ public class HtcmSessionSummaryService
         var dragons = BuildDragonRows(sessionDate, guildPhaseRows, durationByKey, sessionDateByEncounter);
         var orbPushes = await BuildOrbPushesAsync(sessionDate, allEncounterIds, includedList, sessionDateByEncounter, ct);
         var boonRips = await BuildBoonRipsAsync(sessionDate, allEncounterIds, includedList, sessionDateByEncounter, ct);
-        var shame = await BuildShameAsync(detail, included, ct);
 
-        var mvdps = ComputeMvdps(burstGroups, dragons, orbPushes, boonRips);
+        // Shared between the shame awards and the MVDPS penalties, so a player can't be
+        // named for a mistake the scoring didn't charge them for.
+        var playerSlices = (detail.PlayerPhaseStats ?? new List<HtcmPlayerPhaseSessionStat>())
+            .Where(s => included.Contains(s.AccountName))
+            .ToList();
+
+        var firstDeaths = detail.Pulls
+            .Where(p => p.FirstDeathPlayer != null && included.Contains(p.FirstDeathPlayer))
+            .GroupBy(p => p.FirstDeathPlayer!)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var chomps = await GetChompCountsAsync(detail, included, ct);
+
+        // Stacks carried into Giants across the whole session: average stacks on the pulls
+        // it happened, times the number of those pulls.
+        var debilStacks = playerSlices.ToDictionary(
+            s => s.AccountName,
+            s => (double)(s.Giants.DebilAvgStacks ?? 0m) * s.Giants.DebilPulls);
+
+        var shame = BuildShame(playerSlices, firstDeaths, chomps);
+        var mvdps = ComputeMvdps(burstGroups, dragons, orbPushes, boonRips, firstDeaths, debilStacks, chomps);
 
         return new HtcmSessionSummary(
             Date: sessionDate,
@@ -338,19 +367,41 @@ public class HtcmSessionSummaryService
     // Giants window at all — pass/fail per pull, not a weighted uptime. Read straight off
     // the slice the prog page renders, so the count and the page's percentage are always
     // derived from the same pulls.
-    private async Task<HtcmSummaryShame> BuildShameAsync(
-        HtcmSessionDetail detail,
-        HashSet<string> included,
-        CancellationToken ct)
+    private static HtcmSummaryShame BuildShame(
+        List<HtcmPlayerPhaseSessionStat> playerSlices,
+        Dictionary<string, int> firstDeaths,
+        Dictionary<string, int> chomps)
     {
-        var sessionEncounterIds = detail.Pulls.Select(p => p.EncounterId).ToList();
-
-        var worstDebil = (detail.PlayerPhaseStats ?? new List<HtcmPlayerPhaseSessionStat>())
-            .Where(s => included.Contains(s.AccountName))
+        var worstDebil = playerSlices
             .Where(s => s.Giants.DebilPulls > 0)
             .Select(s => new { Account = s.AccountName, Pulls = s.Giants.DebilPulls })
             .OrderByDescending(x => x.Pulls)
             .FirstOrDefault();
+
+        var worstFirstDeath = Worst(firstDeaths);
+        var worstChomp = Worst(chomps);
+
+        return new HtcmSummaryShame(
+            FirstDeathPlayer: worstFirstDeath?.Key,
+            FirstDeathCount: worstFirstDeath?.Value ?? 0,
+            DebilitatedPlayer: worstDebil?.Account,
+            DebilitatedPulls: worstDebil?.Pulls ?? 0,
+            ChompedPlayer: worstChomp?.Key,
+            ChompCount: worstChomp?.Value ?? 0);
+    }
+
+    private static KeyValuePair<string, int>? Worst(Dictionary<string, int> counts)
+    {
+        if (counts.Count == 0) return null;
+        var worst = counts.OrderByDescending(kv => kv.Value).First();
+        return worst.Value > 0 ? worst : null;
+    }
+
+    private async Task<Dictionary<string, int>> GetChompCountsAsync(
+        HtcmSessionDetail detail, HashSet<string> included, CancellationToken ct)
+    {
+        var sessionEncounterIds = detail.Pulls.Select(p => p.EncounterId).ToList();
+
         var chomps = await _db.MechanicEvents
             .InnerJoin(_db.Players, (m, p) => m.PlayerId == p.Id, (m, p) => new { m, p })
             .Where(x => sessionEncounterIds.Contains(x.m.EncounterId)
@@ -358,26 +409,23 @@ public class HtcmSessionSummaryService
             .Select(x => x.p.AccountName)
             .ToListAsync(ct);
 
-        var worstChomp = chomps
+        return chomps
             .Where(included.Contains)
             .GroupBy(a => a)
-            .OrderByDescending(g => g.Count())
-            .FirstOrDefault();
-
-        return new HtcmSummaryShame(
-            DebilitatedPlayer: worstDebil?.Account,
-            DebilitatedPulls: worstDebil?.Pulls ?? 0,
-            ChompedPlayer: worstChomp?.Key,
-            ChompCount: worstChomp?.Count() ?? 0);
+            .ToDictionary(g => g.Key, g => g.Count());
     }
 
-    // Weighted sum of each player's share of the session leader in four categories.
-    // A category with no data simply contributes nothing to anyone's score.
-    private static HtcmSummaryMvdps? ComputeMvdps(
+    // Weighted sum of each player's share of the session leader in four categories, minus
+    // flat penalties for the night's mistakes. A category with no data simply contributes
+    // nothing to anyone's score. Returns the podium, best first.
+    private static List<HtcmSummaryMvdps> ComputeMvdps(
         List<HtcmSummaryBurstGroup> burstGroups,
         List<HtcmSummaryDragonRow> dragons,
         List<HtcmSummaryOrbRow> orbPushes,
-        List<HtcmSummaryStatRow> boonRips)
+        List<HtcmSummaryStatRow> boonRips,
+        Dictionary<string, int> firstDeaths,
+        Dictionary<string, double> debilStacks,
+        Dictionary<string, int> chomps)
     {
         // Burst = combined session-average total damage across all three burst groups.
         var burst = burstGroups
@@ -388,11 +436,14 @@ public class HtcmSessionSummaryService
         var orbs = orbPushes.ToDictionary(o => o.AccountName, o => (double)o.SessionTotal);
         var rips = boonRips.ToDictionary(r => r.AccountName, r => r.Avg);
 
+        // Penalised players are included even with no scoring data, so a night spent
+        // mostly dead still shows up rather than quietly vanishing from the podium.
         var accounts = burst.Keys
             .Concat(dps.Keys).Concat(orbs.Keys).Concat(rips.Keys)
+            .Concat(firstDeaths.Keys).Concat(debilStacks.Keys).Concat(chomps.Keys)
             .Distinct()
             .ToList();
-        if (accounts.Count == 0) return null;
+        if (accounts.Count == 0) return new List<HtcmSummaryMvdps>();
 
         static double Share(Dictionary<string, double> values, string account, double weight)
         {
@@ -402,22 +453,29 @@ public class HtcmSessionSummaryService
             return values.TryGetValue(account, out var v) ? v / leader * weight : 0;
         }
 
-        var scored = accounts
-            .Select(a => new HtcmSummaryMvdps(
-                a,
-                BurstPoints: Share(burst, a, BurstWeight),
-                DpsPoints: Share(dps, a, DpsWeight),
-                OrbPoints: Share(orbs, a, OrbWeight),
-                RipPoints: Share(rips, a, RipWeight),
-                RunnerUp: null,
-                RunnerUpScore: null))
+        return accounts
+            .Select(a =>
+            {
+                var deaths = firstDeaths.GetValueOrDefault(a);
+                var stacks = debilStacks.GetValueOrDefault(a);
+                var chomped = chomps.GetValueOrDefault(a);
+                return new HtcmSummaryMvdps(
+                    a,
+                    BurstPoints: Share(burst, a, BurstWeight),
+                    DpsPoints: Share(dps, a, DpsWeight),
+                    OrbPoints: Share(orbs, a, OrbWeight),
+                    RipPoints: Share(rips, a, RipWeight),
+                    FirstDeaths: deaths,
+                    DebilStacks: stacks,
+                    Chomps: chomped,
+                    FirstDeathPenalty: deaths * PenaltyPerFirstDeath,
+                    DebilPenalty: stacks * PenaltyPerDebilStack,
+                    ChompPenalty: chomped * PenaltyPerChomp);
+            })
             .OrderByDescending(s => s.Score)
             .ThenByDescending(s => s.BurstPoints)
+            .Take(MvdpsPodiumSize)
             .ToList();
-
-        var winner = scored[0];
-        var runnerUp = scored.Count > 1 ? scored[1] : null;
-        return winner with { RunnerUp = runnerUp?.AccountName, RunnerUpScore = runnerUp?.Score };
     }
 
     private record PhaseDamageRow(Guid EncounterId, string AccountName, string PhaseName, long Damage);
@@ -436,7 +494,7 @@ public record HtcmSessionSummary(
     List<HtcmSummaryDragonRow> Dragons,
     List<HtcmSummaryOrbRow> OrbPushes,
     List<HtcmSummaryStatRow> BoonRips,
-    HtcmSummaryMvdps? Mvdps,
+    List<HtcmSummaryMvdps> Mvdps,
     HtcmSummaryShame Shame);
 
 /// <summary>
@@ -467,19 +525,34 @@ public record HtcmSummaryDragonRow(
 
 public record HtcmSummaryOrbRow(string AccountName, int SessionTotal, int BestSessionTotal, bool IsNewBest);
 
+/// <summary>
+/// One podium entry. The *Points are shares of the session leader (100 across all four);
+/// the *Penalty values are flat deductions, with the raw counts alongside them so the
+/// embed can show what earned the deduction.
+/// </summary>
 public record HtcmSummaryMvdps(
     string AccountName,
     double BurstPoints,
     double DpsPoints,
     double OrbPoints,
     double RipPoints,
-    string? RunnerUp,
-    double? RunnerUpScore)
+    int FirstDeaths,
+    double DebilStacks,
+    int Chomps,
+    double FirstDeathPenalty,
+    double DebilPenalty,
+    double ChompPenalty)
 {
-    public double Score => BurstPoints + DpsPoints + OrbPoints + RipPoints;
+    public double EarnedPoints => BurstPoints + DpsPoints + OrbPoints + RipPoints;
+
+    public double Penalty => FirstDeathPenalty + DebilPenalty + ChompPenalty;
+
+    public double Score => EarnedPoints - Penalty;
 }
 
 public record HtcmSummaryShame(
+    string? FirstDeathPlayer,
+    int FirstDeathCount,
     string? DebilitatedPlayer,
     int DebilitatedPulls,
     string? ChompedPlayer,

@@ -24,17 +24,15 @@ leaderboard behaviour.
 
 ### Per Player
 
-**Total Damage** (not DPS) — reported as `Average | Top | Max` for each of:
-
-| Metric | Average | Top | Max |
-|---|---|---|---|
-| Timecaster | Avg of the night | Best of the night | Best ever (all sessions) |
-| Giants | Avg of the night | Best of the night | Best ever (all sessions) |
-| Saltspray | Avg of the night | Best of the night | Best ever (all sessions) |
+**Total Damage** (not DPS) — reported as `Average | Top` for Timecaster, Giants and
+Saltspray.
 
 - **Average** = average across the night
 - **Top** = best single result of the night
-- **Max** = best ever, across all sessions
+
+Best-ever ("max") figures are **computed but no longer displayed** — with DPS alongside
+each damage column the tables ran too wide to read. The all-time value survives only as
+the `*` marker, which flags a metric where tonight set a new best-ever.
 
 Average and Top are computed per pull, over only the pulls where the player did damage in
 that phase group — a pull where they were dead the whole phase is left out rather than
@@ -47,10 +45,8 @@ DPS, not a separate DPS maximum.
 
 **Combined bosses — Jormag, Kralk, Morde, Zhaitan, Soo**
 
-- Report **Total Damage** *and* **DPS** as `Average | Top | Max`. Damage and DPS are
-  independent series here, so "best-ever DPS" is its own figure rather than the DPS of
-  whichever pull did the most damage. The rendered table shows `dmg avg | dmg top |
-  dps avg | dps max`.
+- Report **Total Damage** *and* **DPS**. The rendered table shows
+  `dmg avg | dmg top | dps avg`; best-ever figures are computed but not displayed.
 - This is collapsed into **one number** for the combined group — one value for Total Damage and one value for DPS (not per-boss).
 - **Primordus is deliberately excluded**: its arena heavily favours 1200-range builds, so
   including it would rank players by class rather than by performance.
@@ -59,16 +55,15 @@ DPS, not a separate DPS maximum.
 
 **Total Orb Pushes**
 
-- `Cumulative (this session) | Max (best-ever session)`
+- Cumulative for the session. The best-ever session total is computed but not displayed.
 - Counted from EI's `Orb Push` mechanic. EI emits one event per channel tick (~350ms while
   pushing), so a 1s ICD (`MechanicIcdHelper`) collapses a continuous push into one
   occurrence; without it the metric measures time-on-orb rather than pushes.
 
 **Boon Rips**
 
-- `Average | Top | Max`
-- Per pull, from `player_encounters.boon_strips` (full-fight basis). **Max is the best-ever
-  single pull**, the same basis as Average and Top.
+- `Average | Top`, per pull, from `player_encounters.boon_strips` (full-fight basis). The
+  best-ever single pull is computed but not displayed.
 
 ---
 
@@ -76,12 +71,27 @@ DPS, not a separate DPS maximum.
 
 **MVDPS** — awarded for the best metric across the categories above.
 
+Shown as a **top 3 podium**, each with their points broken down.
+
 Weighted in priority order, summing to 100:
 
 1. Burst (Total Damage) — weight 37.5
 2. DPS — weight 37.5
 3. Orb pushes — weight 12.5
 4. Boon rips — weight 12.5
+
+**Penalties** are then subtracted as flat points — the same cost for everyone, unlike the
+weighted categories which are relative to the session leader:
+
+| Mistake | Cost |
+|---|---|
+| First death in a pull | 2 per death |
+| Debilitated stacks carried into Giants | 1 per stack, summed across pulls (avg stacks × pulls) |
+| Chomped by Primo | 1 per chomp |
+
+A player carrying penalties but no scoring data still appears, so a night spent mostly
+dead doesn't quietly drop off the board. Penalty detail is shown only for players who
+incurred one.
 
 The weights are fixed by three constraints — burst == dps, orbs == rips, and
 burst == 3 × orbs — which with a total of 100 give `2b + 2o = 100`, `b = 3o`, so
@@ -96,6 +106,8 @@ damage-per-rip conversion constants. A category with no data contributes nothing
 
 ### Shame Awards
 
+- **First Death** — the count of pulls where the player was the first to die. Taken from
+  the same per-pull first-death the prog page shows.
 - **Debilitated** — pass/fail per pull: the count of pulls where the player carried
   Debilitated into the Giants window at all, regardless of uptime or stack count. Uses the
   same phase set as the prog page's Phase Insights column (Giants main phases plus their
