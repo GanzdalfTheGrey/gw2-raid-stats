@@ -16,9 +16,11 @@ public class HtcmSessionSummaryService
     private readonly IncludedPlayerService _includedPlayerService;
 
     // EI mechanic short names. "Orb Push" fires per channel tick and is ICD-grouped
-    // via MechanicIcdHelper; "Jaws.H" (Primordus Jaws) is a discrete hit.
+    // via MechanicIcdHelper; "Jaws.H" (Primordus Jaws) is a discrete hit. "ShckWv.H"
+    // (Mordremoth Shockwave) double-hits and is ICD-grouped to one count per wave.
     private const string OrbPushMechanic = "Orb Push";
     private const string PrimordusJawsMechanic = "Jaws.H";
+    private const string ShockwaveMechanic = "ShckWv.H";
 
     // MVP category weights. Each player's value is normalised against the session leader
     // in that category (leader = full weight), so the scale self-calibrates instead of
@@ -45,11 +47,12 @@ public class HtcmSessionSummaryService
     private const decimal BoonFullCreditUptimePct = 95m;
 
     // Penalties are absolute points off the weighted score, not shares — a first death
-    // costs the same 5 points whoever you are. Debilitated is charged per stack carried
-    // into Giants, summed across the pulls it happened on.
+    // costs the same 5 points whoever you are. Debilitated is charged per pull the
+    // player carried the debuff into Giants.
     private const double PenaltyPerFirstDeath = 5;
-    private const double PenaltyPerDebilStack = 3;
+    private const double PenaltyPerDebilPull = 3;
     private const double PenaltyPerChomp = 3;
+    private const double PenaltyPerShockwave = 3;
 
     // How many players the MVDPS podium lists.
     private const int MvdpsPodiumSize = 3;
@@ -142,22 +145,22 @@ public class HtcmSessionSummaryService
             .GroupBy(p => p.FirstDeathPlayer!)
             .ToDictionary(g => g.Key, g => g.Count());
 
-        var chomps = await GetChompCountsAsync(detail, included, ct);
+        var chomps = await GetMechanicCountsAsync(detail, included, PrimordusJawsMechanic, ct);
+        var shockwaves = await GetMechanicCountsAsync(detail, included, ShockwaveMechanic, ct);
 
-        // Stacks carried into Giants across the whole session: average stacks on the pulls
-        // it happened, times the number of those pulls.
-        var debilStacks = playerSlices.ToDictionary(
+        // Pulls where the player carried Debilitated into the Giants window at all.
+        var debilPulls = playerSlices.ToDictionary(
             s => s.AccountName,
-            s => (double)(s.Giants.DebilAvgStacks ?? 0m) * s.Giants.DebilPulls);
+            s => s.Giants.DebilPulls);
 
         // Boon points are a session award, so unlike the damage tables this only looks at
         // tonight's pulls — there is no "best ever" comparison to make.
         var boonUptime = await BuildBoonPointsAsync(
             detail.Pulls.Select(p => p.EncounterId).ToList(), phaseNames, included, ct);
 
-        var shame = BuildShame(playerSlices, firstDeaths, chomps);
+        var shame = BuildShame(playerSlices, firstDeaths, chomps, shockwaves);
         var mvdps = ComputeMvdps(burstGroups, dragons, orbPushes, boonRips, boonUptime,
-            firstDeaths, debilStacks, chomps);
+            firstDeaths, debilPulls, chomps, shockwaves);
 
         return new HtcmSessionSummary(
             Date: sessionDate,
@@ -524,7 +527,8 @@ public class HtcmSessionSummaryService
     private static HtcmSummaryShame BuildShame(
         List<HtcmPlayerPhaseSessionStat> playerSlices,
         Dictionary<string, int> firstDeaths,
-        Dictionary<string, int> chomps)
+        Dictionary<string, int> chomps,
+        Dictionary<string, int> shockwaves)
     {
         var worstDebil = playerSlices
             .Where(s => s.Giants.DebilPulls > 0)
@@ -534,6 +538,7 @@ public class HtcmSessionSummaryService
 
         var worstFirstDeath = Worst(firstDeaths);
         var worstChomp = Worst(chomps);
+        var worstShockwave = Worst(shockwaves);
 
         return new HtcmSummaryShame(
             FirstDeathPlayer: worstFirstDeath?.Key,
@@ -541,7 +546,9 @@ public class HtcmSessionSummaryService
             DebilitatedPlayer: worstDebil?.Account,
             DebilitatedPulls: worstDebil?.Pulls ?? 0,
             ChompedPlayer: worstChomp?.Key,
-            ChompCount: worstChomp?.Value ?? 0);
+            ChompCount: worstChomp?.Value ?? 0,
+            ShockwavePlayer: worstShockwave?.Key,
+            ShockwaveCount: worstShockwave?.Value ?? 0);
     }
 
     private static KeyValuePair<string, int>? Worst(Dictionary<string, int> counts)
@@ -551,22 +558,29 @@ public class HtcmSessionSummaryService
         return worst.Value > 0 ? worst : null;
     }
 
-    private async Task<Dictionary<string, int>> GetChompCountsAsync(
-        HtcmSessionDetail detail, HashSet<string> included, CancellationToken ct)
+    // Per-player occurrence counts for one mechanic across the session's pulls,
+    // ICD-grouped per pull so multi-hit mechanics count as single occurrences.
+    private async Task<Dictionary<string, int>> GetMechanicCountsAsync(
+        HtcmSessionDetail detail, HashSet<string> included, string mechanicName, CancellationToken ct)
     {
         var sessionEncounterIds = detail.Pulls.Select(p => p.EncounterId).ToList();
 
-        var chomps = await _db.MechanicEvents
+        var events = await _db.MechanicEvents
             .InnerJoin(_db.Players, (m, p) => m.PlayerId == p.Id, (m, p) => new { m, p })
             .Where(x => sessionEncounterIds.Contains(x.m.EncounterId)
-                     && x.m.MechanicName == PrimordusJawsMechanic)
-            .Select(x => x.p.AccountName)
+                     && x.m.MechanicName == mechanicName)
+            .Select(x => new { x.p.AccountName, x.m.EncounterId, x.m.EventTimeMs })
             .ToListAsync(ct);
 
-        return chomps
-            .Where(included.Contains)
-            .GroupBy(a => a)
-            .ToDictionary(g => g.Key, g => g.Count());
+        var icd = MechanicIcdHelper.GetIcd(mechanicName);
+        return events
+            .Where(e => included.Contains(e.AccountName))
+            .GroupBy(e => e.AccountName)
+            .ToDictionary(
+                g => g.Key,
+                g => g.GroupBy(e => e.EncounterId)
+                      .Sum(pull => MechanicIcdHelper.CountWithIcd(
+                          pull.Select(e => e.EventTimeMs).ToList(), icd)));
     }
 
     // Weighted sum of each player's share of the session leader in four categories, plus
@@ -580,8 +594,9 @@ public class HtcmSessionSummaryService
         List<HtcmSummaryStatRow> boonRips,
         List<HtcmSummaryBoonRow> boonUptime,
         Dictionary<string, int> firstDeaths,
-        Dictionary<string, double> debilStacks,
-        Dictionary<string, int> chomps)
+        Dictionary<string, int> debilPulls,
+        Dictionary<string, int> chomps,
+        Dictionary<string, int> shockwaves)
     {
         // Burst = combined session-average total damage across all three burst groups.
         var burst = burstGroups
@@ -597,7 +612,8 @@ public class HtcmSessionSummaryService
         // mostly dead still shows up rather than quietly vanishing from the podium.
         var accounts = burst.Keys
             .Concat(dps.Keys).Concat(orbs.Keys).Concat(rips.Keys).Concat(boons.Keys)
-            .Concat(firstDeaths.Keys).Concat(debilStacks.Keys).Concat(chomps.Keys)
+            .Concat(firstDeaths.Keys).Concat(debilPulls.Keys).Concat(chomps.Keys)
+            .Concat(shockwaves.Keys)
             .Distinct()
             .ToList();
         if (accounts.Count == 0) return new List<HtcmSummaryMvdps>();
@@ -614,8 +630,9 @@ public class HtcmSessionSummaryService
             .Select(a =>
             {
                 var deaths = firstDeaths.GetValueOrDefault(a);
-                var stacks = debilStacks.GetValueOrDefault(a);
+                var debiled = debilPulls.GetValueOrDefault(a);
                 var chomped = chomps.GetValueOrDefault(a);
+                var waves = shockwaves.GetValueOrDefault(a);
                 var boon = boons.GetValueOrDefault(a);
                 return new HtcmSummaryMvdps(
                     a,
@@ -629,11 +646,13 @@ public class HtcmSessionSummaryService
                     Boon: boon?.Boon,
                     BoonUptimePct: boon?.AvgUptimePct,
                     FirstDeaths: deaths,
-                    DebilStacks: stacks,
+                    DebilPulls: debiled,
                     Chomps: chomped,
+                    Shockwaves: waves,
                     FirstDeathPenalty: deaths * PenaltyPerFirstDeath,
-                    DebilPenalty: stacks * PenaltyPerDebilStack,
-                    ChompPenalty: chomped * PenaltyPerChomp);
+                    DebilPenalty: debiled * PenaltyPerDebilPull,
+                    ChompPenalty: chomped * PenaltyPerChomp,
+                    ShockwavePenalty: waves * PenaltyPerShockwave);
             })
             .OrderByDescending(s => s.Score)
             .ThenByDescending(s => s.BurstPoints)
@@ -714,15 +733,17 @@ public record HtcmSummaryMvdps(
     string? Boon,
     double? BoonUptimePct,
     int FirstDeaths,
-    double DebilStacks,
+    int DebilPulls,
     int Chomps,
+    int Shockwaves,
     double FirstDeathPenalty,
     double DebilPenalty,
-    double ChompPenalty)
+    double ChompPenalty,
+    double ShockwavePenalty)
 {
     public double EarnedPoints => BurstPoints + DpsPoints + OrbPoints + RipPoints + BoonPoints;
 
-    public double Penalty => FirstDeathPenalty + DebilPenalty + ChompPenalty;
+    public double Penalty => FirstDeathPenalty + DebilPenalty + ChompPenalty + ShockwavePenalty;
 
     public double Score => EarnedPoints - Penalty;
 }
@@ -733,4 +754,6 @@ public record HtcmSummaryShame(
     string? DebilitatedPlayer,
     int DebilitatedPulls,
     string? ChompedPlayer,
-    int ChompCount);
+    int ChompCount,
+    string? ShockwavePlayer,
+    int ShockwaveCount);

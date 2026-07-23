@@ -7,12 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Mordy Shockwave no longer double-counts.** EI logs the shockwave as a multi-hit — duplicate events land 74–80ms apart for a single wave, while consecutive waves of the same cast are 1.8s+ apart. `ShckWv.H` now gets a 1s ICD (same treatment as Orb Push), so the HTCM prog page's Player Mechanics Breakdown and Mechanic Trends count unique instances of being hit. No rescan needed — the ICD is applied at query time over the raw events.
+
 ### Changed
 - **Most Valuable Proggers rescored.** Weights move off the old share-of-100 scale to absolute points: dragon DPS 100, burst damage 100, orb pushes 50, boon rips 10. Rips stay deliberately cheap — squad-wide they're vital, but past the first dedicated ripper the marginal rip is nearly worthless. Deductions scale to match: 5 per first death, 3 per Debilitated stack carried into Giants, 3 per Primo chomp.
+- **Debilitated is now an integer, everywhere.** The HTCM prog page's phase chips and Phase Insights drop the fractional average-stacks figure (e.g. `43% (1.3)`) for a clean count of stacks gained (e.g. `43% (4)`), and the MVDPS Debilitated deduction switches from the fuzzy `avg stacks × pulls` product to 3 points per **pull** the player carried the debuff into Giants — the same pass/fail count the Wall of Shame has always named.
 
 ### Added
 - **Boon uptime as an MVP category.** Quickness and alacrity givers earn up to 30 points on top — 5 each for Timecaster, Giants and Saltspray, 15 across the combined dragons. Scored on the uptime the giver's **subgroup received**, not their own, so self-quickening while the group sits at 40% earns nothing. 95% uptime or better takes the full allocation; below that it ramps linearly. Givers are identified from the existing `PlayerEncounter.Role` (10% generation threshold), read per encounter so a mid-session build swap is scored on what was played. Pure DPS cap at 260 and boon givers at 290 — the gap is intentional, compensating supports for the DPS they give up.
   - **Requires migration 034 + a rescan**: adds `quickness_uptime_pct` / `alacrity_uptime_pct` to `player_encounter_phase_stats` from EI's `buffUptimesActive` (IDs 1187 / 30328). Until **Admin → Manage Logs → Rescan** backfills them, the boon category scores 0 for everyone and the podium behaves as if the category didn't exist.
+- **Debilitated stack counts.** EI emits one `Debilitated` mechanic event per stack applied, which turns out to be the clean number the fractional buff-uptime stats never were. The prog page's Player Mechanics Breakdown and Mechanic Trends gain a **Debil Stacks** column (total applications per player — works on all history immediately, since mechanic events were always imported), and migration 035 adds `debilitated_stacks` to `player_encounter_phase_stats` so the per-phase chips and Phase Insights show stacks gained per phase.
+  - **Requires migration 035 + a rescan**: `DELETE FROM player_encounter_phase_stats`, then **Admin → Manage Logs → Rescan** (RescanService skips encounters that already have phase-stat rows). Until then the per-phase displays fall back to uptime % only.
+- **Shockwaved in the Discord HTCM summary.** The Wall of Shame names whoever ate the most Mordy shockwaves, and MVDPS deducts 3 points per hit — same rate as a chomp. Counts are ICD-grouped per pull, so a double-hit wave costs one penalty, not two.
 
 ## [1.17.0] - 2026-07-21
 

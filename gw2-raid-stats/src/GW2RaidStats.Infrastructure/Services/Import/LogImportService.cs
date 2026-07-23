@@ -334,6 +334,11 @@ public class LogImportService
     // too coarse — would need parsing of buffsActiveStats with the presence field.
     private const long DebilitatedBuffId = 67972;
 
+    // EI mechanic short name for a Debilitated application ("Debilitated Applied").
+    // One event per stack gained, so counting events inside a phase window gives the
+    // integer stacks-gained figure for that phase.
+    private const string DebilitatedMechanicName = "Debilitated";
+
     private async Task ImportHtcmPhaseStatsAsync(EliteInsightsLog log, Guid encounterId, CancellationToken ct)
     {
         var playerIdsByAccount = await BulkLoadPlayerIdsAsync(log, ct);
@@ -370,6 +375,15 @@ public class LogImportService
     {
         if (log.Phases == null || log.Phases.Count == 0) yield break;
 
+        // Debilitated application timestamps per character name, for the per-phase
+        // stacks-gained count. Mechanic actors are character names, not accounts.
+        var debilTimesByActor = (log.Mechanics ?? new List<EIMechanic>())
+            .Where(m => m.Name == DebilitatedMechanicName)
+            .SelectMany(m => m.MechanicsData ?? new List<EIMechanicData>())
+            .Where(d => !string.IsNullOrEmpty(d.Actor))
+            .GroupBy(d => d.Actor!)
+            .ToDictionary(g => g.Key, g => g.Select(d => d.Time).ToList());
+
         foreach (var eiPlayer in log.Players)
         {
             if (string.IsNullOrEmpty(eiPlayer.Account)) continue;
@@ -404,6 +418,14 @@ public class LogImportService
                     if (bd.Uptime > 0m) debilAvgStacks = bd.Uptime;
                 }
 
+                // Stacks gained during the phase. Half-open window so a stack landing
+                // exactly on a boundary between adjacent phases counts once.
+                var debilStacks = 0;
+                if (debilTimesByActor.TryGetValue(eiPlayer.Name ?? "", out var debilTimes))
+                {
+                    debilStacks = debilTimes.Count(t => t >= phase.Start && t < phase.End);
+                }
+
                 yield return new PlayerEncounterPhaseStatEntity
                 {
                     Id = Guid.NewGuid(),
@@ -424,6 +446,7 @@ public class LogImportService
                     DeadAtPhaseStart = WasDeadAtMs(eiPlayer.DeadCombatTimes, phase.Start),
                     DebilitatedUptimePct = debilUptimePct,
                     DebilitatedAvgStacks = debilAvgStacks,
+                    DebilitatedStacks = debilStacks,
                     // Quickness and Alacrity are duration boons, so the % uptime lives
                     // in Uptime — Presence is only populated for stacking buffs like
                     // Debilitated above. Same field GetBoonSelfUptimeFromPlayer reads.

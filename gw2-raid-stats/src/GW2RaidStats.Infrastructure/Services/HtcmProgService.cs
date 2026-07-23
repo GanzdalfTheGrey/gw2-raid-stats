@@ -229,6 +229,7 @@ public class HtcmProgService
         "Spread.B",        // Spread Bait
         "Spread.O",        // Spread Overlap
         "Void.D",          // Void Debuff
+        "Debilitated",     // Debilitated Applied — one event per stack gained
         "ShckWv.H",        // Mordremoth Shockwave
         "Mord.Poi.H",      // Mordremoth Poison
         "Giant.Puke.H",    // Giant Puke
@@ -395,8 +396,8 @@ public class HtcmProgService
             // player with phase-relative uptime > 0 in that phase, sorted desc. Phase-
             // relative scales EI's active-basis % down for players who spent part of
             // the phase dead, so the number reflects what the burst actually lost to
-            // the debuff rather than overstating it for largely-dead players. AvgStacks
-            // pulls EI's per-phase average stack count alongside the % uptime.
+            // the debuff rather than overstating it for largely-dead players. Stacks is
+            // the integer count of stacks gained during the phase (migration 035).
             var pullPlayerStatsForDebil = playerPhaseByEncounter.TryGetValue(encounter.Id, out var pps)
                 ? pps : new List<PlayerPhaseRow>();
             var playerDebilByPhase = pullPlayerStatsForDebil
@@ -411,7 +412,7 @@ public class HtcmProgService
                 .GroupBy(x => x.Row.Stats.PhaseName)
                 .ToDictionary(g => g.Key, g => g
                     .OrderByDescending(x => x.RelPct)
-                    .Select(x => new HtcmPhaseDebilEntry(x.Row.AccountName, x.RelPct, x.Row.Stats.DebilitatedAvgStacks))
+                    .Select(x => new HtcmPhaseDebilEntry(x.Row.AccountName, x.RelPct, x.Row.Stats.DebilitatedStacks))
                     .ToList());
 
             // Get phase stats for this encounter, excluding "Full Fight" (index 0)
@@ -592,16 +593,14 @@ public class HtcmProgService
         var deaths = mainFiltered.Sum(r => r.Stats.DeadCount);
         var deadAtStart = mainFiltered.Count(r => r.Stats.DeadAtPhaseStart);
 
-        // For each pull, compute the combined segment uptime + avg stacks by
-        // summing buff_time across the main phase and its sub-phases. EI's
-        // presence on the main phase is computed against the main duration MINUS
-        // sub-phase durations, so we mirror that here: main_active_window =
-        // main_duration − sum(sub_durations) − dead − down. Each row's contribution
-        // is presence × that row's active window, divided in the end by the total
-        // main-phase window. Per-pull values are then averaged across pulls where
-        // the player picked up the buff at all.
+        // For each pull, compute the combined segment uptime by summing buff_time
+        // across the main phase and its sub-phases. EI's presence on the main phase
+        // is computed against the main duration MINUS sub-phase durations, so we
+        // mirror that here: main_active_window = main_duration − sum(sub_durations)
+        // − dead − down. Each row's contribution is presence × that row's active
+        // window, divided in the end by the total main-phase window. Per-pull values
+        // are then averaged across pulls where the player picked up the buff at all.
         var pullUptimes = new List<decimal>();
-        var pullStacks = new List<decimal>();
         var rowsByEncounter = rowList
             .Where(r => MatchesAny(r.Stats.PhaseName, debilPhaseNames))
             .GroupBy(r => r.Stats.EncounterId);
@@ -614,8 +613,6 @@ public class HtcmProgService
 
             long totalBuffMs = 0;
             long mainWindowMs = 0;
-            decimal totalStackWeightedMs = 0;
-            long totalStackWeight = 0;
 
             foreach (var main in encMainRows)
             {
@@ -635,11 +632,6 @@ public class HtcmProgService
                 {
                     if (main.Stats.DebilitatedUptimePct is decimal mPct && mPct > 0)
                         totalBuffMs += (long)(mPct * mainActive / 100m);
-                    if (main.Stats.DebilitatedAvgStacks is decimal mStacks && mStacks > 0)
-                    {
-                        totalStackWeightedMs += mStacks * mainActive;
-                        totalStackWeight += mainActive;
-                    }
                 }
 
                 // Sub-phases each contribute presence × their own active window.
@@ -650,25 +642,23 @@ public class HtcmProgService
                     if (subActive <= 0) continue;
                     if (sub.Stats.DebilitatedUptimePct is decimal sPct && sPct > 0)
                         totalBuffMs += (long)(sPct * subActive / 100m);
-                    if (sub.Stats.DebilitatedAvgStacks is decimal sStacks && sStacks > 0)
-                    {
-                        totalStackWeightedMs += sStacks * subActive;
-                        totalStackWeight += subActive;
-                    }
                 }
             }
 
             if (mainWindowMs > 0 && totalBuffMs > 0)
                 pullUptimes.Add((decimal)totalBuffMs / mainWindowMs * 100m);
-            if (totalStackWeight > 0)
-                pullStacks.Add(totalStackWeightedMs / totalStackWeight);
         }
+
+        // Stacks gained across the group, summed over the strict main-phase rows only —
+        // each main phase's import-time window spans its breakbar sub-phases, so adding
+        // sub rows on top would double-count the same applications.
+        var stackRows = mainFiltered.Where(r => r.Stats.DebilitatedStacks != null).ToList();
 
         return new HtcmPlayerPhaseSlice(
             Deaths: deaths,
             DeadAtPhaseStart: deadAtStart,
             DebilUptimeAvgPct: pullUptimes.Count == 0 ? null : pullUptimes.Average(),
-            DebilAvgStacks: pullStacks.Count == 0 ? null : pullStacks.Average(),
+            DebilStacks: stackRows.Count == 0 ? null : stackRows.Sum(r => r.Stats.DebilitatedStacks!.Value),
             // The pulls that contributed to the average above — i.e. the ones where the
             // player carried the debuff into this phase group at all. Emitted here rather
             // than recomputed by callers so a pass/fail count can never disagree with the
@@ -1022,7 +1012,7 @@ public record HtcmPlayerPhaseSlice(
     int Deaths,
     int DeadAtPhaseStart,
     decimal? DebilUptimeAvgPct,
-    decimal? DebilAvgStacks,
+    int? DebilStacks,
     int DebilPulls = 0);
 
 public record HtcmPhaseStats(
@@ -1035,10 +1025,10 @@ public record HtcmPhaseStats(
 
 // Per-phase debilitated readout used in the Phase Breakdown table to explain low
 // burst — only players with uptime > 0 in that phase are emitted, sorted by
-// uptime descending so the heaviest hitters surface first. AvgStacks is the
-// EI BuffUptimesActive.Uptime field (average stack count over the phase active
-// time, 0-5 for Debilitated).
-public record HtcmPhaseDebilEntry(string AccountName, decimal UptimePct, decimal? AvgStacks);
+// uptime descending so the heaviest hitters surface first. Stacks is the integer
+// count of Debilitated applications during the phase (null on rows imported
+// before migration 035's rescan).
+public record HtcmPhaseDebilEntry(string AccountName, decimal UptimePct, int? Stacks);
 
 public record HtcmPlayerMechanics(
     string AccountName,

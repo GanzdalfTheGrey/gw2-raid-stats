@@ -160,6 +160,10 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             {
                 shameLines.Add($"Chomped: **{FormatName(s.Shame.ChompedPlayer)}** ({s.Shame.ChompCount})");
             }
+            if (s.Shame.ShockwavePlayer != null)
+            {
+                shameLines.Add($"Shockwaved: **{FormatName(s.Shame.ShockwavePlayer)}** ({s.Shame.ShockwaveCount})");
+            }
             if (shameLines.Count > 0)
             {
                 embed.AddField("💀 Wall of Shame", string.Join("\n", shameLines));
@@ -289,8 +293,9 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
     {
         var parts = new List<string>();
         if (m.FirstDeaths > 0) parts.Add($"{m.FirstDeaths} first death{(m.FirstDeaths == 1 ? "" : "s")}");
-        if (m.DebilStacks > 0) parts.Add($"{m.DebilStacks:F1} debil stacks");
+        if (m.DebilPulls > 0) parts.Add($"{m.DebilPulls} debil pull{(m.DebilPulls == 1 ? "" : "s")}");
         if (m.Chomps > 0) parts.Add($"{m.Chomps} chomp{(m.Chomps == 1 ? "" : "s")}");
+        if (m.Shockwaves > 0) parts.Add($"{m.Shockwaves} shockwave{(m.Shockwaves == 1 ? "" : "s")}");
         return string.Join(", ", parts);
     }
 

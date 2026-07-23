@@ -27,6 +27,10 @@ public class PlayerEncounterPhaseStatEntity
     // shows this in the "Avg Active" column for stacking buffs.
     [Column("debilitated_avg_stacks")] public decimal? DebilitatedAvgStacks { get; set; }
 
+    // Number of Debilitated stacks gained during the phase: count of EI
+    // "Debilitated" mechanic events (one per application) inside the phase window.
+    [Column("debilitated_stacks")] public int? DebilitatedStacks { get; set; }
+
     // % of phase active time the player *had* the boon (0-100), from EI's
     // BuffUptimesActive.Presence. Recorded for every player, not just givers — the
     // MVP boon category scores a giver on their subgroup's average received uptime.

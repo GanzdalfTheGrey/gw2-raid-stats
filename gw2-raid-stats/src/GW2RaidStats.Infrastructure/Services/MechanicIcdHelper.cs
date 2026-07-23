@@ -33,6 +33,11 @@ public static class MechanicIcdHelper
         // genuinely separate pushes are >1s.
         ["Orb Push"] = 1000,
 
+        // Mordremoth's shockwave double-hits: observed duplicate events land 74-80ms
+        // apart, while consecutive waves of the same cast are 1.8s+ apart. A 1s ICD
+        // collapses the double-hit into one occurrence per wave crossed.
+        ["ShckWv.H"] = 1000,
+
         // Add more mechanics as needed...
         // Format: ["MechanicShortName"] = IcdInMilliseconds,
     };
