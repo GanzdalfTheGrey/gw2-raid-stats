@@ -214,10 +214,11 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             .Build();
     }
 
-    // Per burst group, one line per targeted player: their session-average status vs target
-    // (🍪 cookie / ✅ in-spec / 💀 shame) with average and margin, then how many of tonight's
-    // pulls fell in each bucket. Group-agnostic: any group with target rows renders, so
-    // adding Timecaster/Saltspray targets later needs no change here. Null when nothing has.
+    // Per burst group, a fixed-width table (one row per targeted player) so it lines up at a
+    // glance: session-avg DPS, its status vs target (cookie / spec / shame), then how many
+    // of tonight's pulls landed in each bucket. Rendered in a code block, so no emoji — they
+    // break monospace alignment. Group-agnostic: any group with target rows renders, so
+    // adding Timecaster/Saltspray targets later needs no change. Null when nothing has any.
     public static Embed? BuildCookiesShamesEmbed(HtcmSessionSummary s)
     {
         var body = new StringBuilder();
@@ -227,24 +228,25 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             if (group.Targets.Count == 0) continue;
 
             body.AppendLine($"**{group.Name}** — squad target {FormatShort(group.SquadTarget)}");
-            foreach (var r in group.Targets)
-            {
-                var emoji = r.Status switch
-                {
-                    HtcmBurstStatus.Cookie => "🍪",
-                    HtcmBurstStatus.Shame => "💀",
-                    _ => "✅"
-                };
-                body.AppendLine(
-                    $"{emoji} **{FormatName(r.AccountName)}** {FormatShort(r.AvgDps)} " +
-                    $"({FormatMargin(r.AvgDps - r.TargetDps)}) — pulls {r.CookiePulls}🍪 {r.SpecPulls}✅ {r.ShamePulls}💀");
-            }
+            body.AppendLine(RenderTable(
+                new[] { "avg", "status", "ck", "sp", "sh" },
+                group.Targets.Select(r => (
+                    r.AccountName,
+                    new[]
+                    {
+                        FormatShort(r.AvgDps),
+                        StatusWord(r.Status),
+                        r.CookiePulls.ToString(),
+                        r.SpecPulls.ToString(),
+                        r.ShamePulls.ToString(),
+                    },
+                    false))));
             body.AppendLine();
         }
 
         if (body.Length == 0) return null;
 
-        body.Append("🍪 ≥10k over target · ✅ within 10k · 💀 ≥10k under");
+        body.Append("status = session avg vs target · ck/sp/sh pulls = cookie/spec/shame");
 
         return new EmbedBuilder()
             .WithTitle("🍪 Cookies & 💀 Shames")
@@ -252,6 +254,13 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             .WithDescription(body.ToString())
             .Build();
     }
+
+    private static string StatusWord(HtcmBurstStatus status) => status switch
+    {
+        HtcmBurstStatus.Cookie => "cookie",
+        HtcmBurstStatus.Shame => "shame",
+        _ => "spec"
+    };
 
     public static Embed BuildDragonsEmbed(HtcmSessionSummary s)
     {
