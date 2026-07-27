@@ -38,24 +38,38 @@ leaderboard behaviour.
 
 ### Per Player
 
-**Total Damage** (not DPS) — reported as `Average | Top` for Timecaster, Giants and
-Saltspray.
+**Total Damage** with DPS in parentheses — reported as `avg (dps)` per player for
+Timecaster, Giants and Saltspray. The average is per pull, over only the pulls where the
+player did damage in that group (a pull spent dead is left out rather than dragging the
+average down). Each group's table ends with a **squad total vs its target** (✅/❌),
+repeating the header line so it can be checked without scrolling.
 
-- **Average** = average across the night
-- **Top** = best single result of the night
+**Squad DPS targets** (shown in the header next to tonight's figure):
 
-Best-ever ("max") figures are **computed but no longer displayed** — with DPS alongside
-each damage column the tables ran too wide to read. The all-time value survives only as
-the `*` marker, which flags a metric where tonight set a new best-ever.
+| Group | Target |
+|---|---|
+| Timecaster | 175k |
+| Giants | 310k |
+| Saltspray | 170k |
+| Dragons | *(no target — shows all-time average instead)* |
 
-Average and Top are computed per pull, over only the pulls where the player did damage in
-that phase group — a pull where they were dead the whole phase is left out rather than
-dragging the average to zero. `*` in the rendered table marks a metric where tonight set
-the all-time max.
+**Giants per-player targets and cookies/shames.** Only Giants carries a per-player DPS
+target, by profession then role:
 
-Each burst column also carries its DPS in parentheses — `930k (39k)` — giving a read on
-how long that burst window ran. The DPS shown against Top and Max is that specific pull's
-DPS, not a separate DPS maximum.
+| Build | Target |
+|---|---|
+| Virtuoso | 35k |
+| Vindicator | 45k |
+| Boon DPS (`dps_quick`/`dps_alac`) | 30k |
+| Pure DPS | 55k |
+| Healer (`heal_quick`/`heal_alac`) | *(exempt — no target, not shamed for low burst)* |
+
+Profession (elite spec) wins over role, so a portal-running Virtuoso is judged on 35k, not
+the pure-DPS 55k. The Giants table adds a `target` column and a `pulls` column showing
+`+beat / −missed` — how many of tonight's pulls cleared the target by 10k versus fell short
+by 10k. A player whose Giants **session average** clears target + 10k is a **cookie**
+(→ Doing It Right); target − 10k or worse is a **shame** (→ Wall of Shame). The header names
+the single biggest cookie and biggest miss of the night, with their average and margin.
 
 **Combined bosses — Jormag, Kralk, Morde, Zhaitan, Soo**
 
@@ -119,16 +133,9 @@ names the single leader in its category; a category with no data is dropped.
 | 🎵 Boons | best boon giver by uptime points (subgroup-received) |
 | 🔵 Orbs | most orb pushes |
 | 🚑 Medic | most resurrects (`PlayerEncounter.Resurrects`) |
-| 🧼 Cleanest | fewest avoidable-mistake hits — reads "flawless" at zero |
-
-**Cleanest** ranks the fewest avoidable hits among players who were in **at least half**
-the session's pulls (so a one-pull sub can't win by absence). A perfectly clean player has
-no mechanic events at all, so the candidate pool is the participants, not the hit list —
-zero is the winning score. The avoidable-mistake set is a curated list of individual,
-dodgeable hits (shockwave, chomp, void pools, failed spreads, giant/Kralk/Zhaitan hits,
-knockbacks, …), maintained in `HtcmSessionSummaryService.AvoidableMistakeMechanics`. It
-deliberately excludes raid-wide cleave that lands on everyone (Jormag Breath), bait/target
-markers (being targeted isn't a failure), and stacking debuffs that aren't discrete hits.
+| 🌀 Rips | highest session-avg boon strips |
+| 💥 CC | most total breakbar damage (`PlayerEncounter.BreakbarDamage`) |
+| 🍪 Giants | biggest Giants over-target performer (see Giants targets above) |
 
 ### Shame Awards
 
@@ -144,6 +151,8 @@ markers (being targeted isn't a failure), and stacking debuffs that aren't discr
   for healers to take, so this is role-gated: healer = `PlayerEncounter.Role` of `heal_quick`
   or `heal_alac`, read per encounter so a build swap is respected. A healer catching reds is
   not shamed.
+- **Giants Miss** — biggest Giants under-target performer (see Giants targets above): the
+  player whose session-average Giants DPS fell furthest below their target (by at least 10k).
 
 All are gated on the guild's Wall of Shame toggle.
 

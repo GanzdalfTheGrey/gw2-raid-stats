@@ -106,11 +106,11 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             embed.WithUrl(_settings.AppUrl);
         }
 
-        // Squad average DPS for each burst group plus the combined dragons, tonight with
-        // an all-time figure alongside for comparison.
+        // Squad average DPS for each burst group vs its target, plus the combined dragons
+        // (which shows an all-time average instead of a target).
         var squadLines = s.BurstGroups
             .Where(g => g.SquadDps > 0)
-            .Select(g => $"**{g.Name}** {FormatShort(g.SquadDps)} — all-time {FormatShort(g.SquadDpsAllTime)}")
+            .Select(g => $"**{g.Name}** {FormatShort(g.SquadDps)} — target {FormatShort(g.SquadTarget)}")
             .ToList();
         if (s.DragonSquadDps > 0)
         {
@@ -154,6 +154,11 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             {
                 shameLines.Add($"Bad Reds: **{FormatName(s.Shame.RedsPlayer)}** ({s.Shame.RedsCount})");
             }
+            if (s.Shame.GiantsMiss is { } miss)
+            {
+                shameLines.Add($"Giants Miss: **{FormatName(miss.AccountName)}** " +
+                               $"({FormatShort(miss.AvgDps)}, {FormatMargin(miss.AvgDps - miss.TargetDps)})");
+            }
             if (shameLines.Count > 0)
             {
                 embed.AddField("💀 Wall of Shame", string.Join("\n", shameLines));
@@ -171,19 +176,27 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         {
             if (group.Players.Count == 0) continue;
 
+            // Only Giants carries per-player targets, so it gets the extra columns: the
+            // player's DPS target and their tonight pull tally (+beat / -missed by the band).
+            var isGiants = group.Name == "Giants";
+            var headers = isGiants ? new[] { "avg (dps)", "target", "pulls" } : new[] { "avg (dps)" };
+
             var avgDuration = TimeSpan.FromMilliseconds(group.AverageDurationMs);
             body.AppendLine($"**{group.Name}** · {group.PullsReached} pulls · {avgDuration.TotalSeconds:F0}s avg");
             body.AppendLine(RenderTable(
-                new[] { "avg (dps)", "top (dps)" },
+                headers,
                 group.Players.Take(MaxRows).Select(p => (
                     p.AccountName,
-                    new[]
-                    {
-                        WithDps(p.Avg, p.DpsAvg),
-                        WithDps(p.Top, p.DpsTop)
-                    },
+                    isGiants
+                        ? new[] { WithDps(p.Avg, p.DpsAvg), GiantsTargetCell(p), GiantsPullCell(p) }
+                        : new[] { WithDps(p.Avg, p.DpsAvg) },
                     p.IsNewBest))));
             AppendOverflow(body, group.Players.Count);
+
+            // Repeat the header's squad-vs-target so it can be checked without scrolling up.
+            var mark = group.SquadDps >= group.SquadTarget ? "✅" : "❌";
+            body.AppendLine($"Squad {FormatShort(group.SquadDps)} / target {FormatShort(group.SquadTarget)} {mark}");
+            body.AppendLine();
         }
 
         if (body.Length == 0)
@@ -193,10 +206,11 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         else
         {
             body.Append(NewBestLegend);
+            body.Append("\nGiants `pulls` = +beat / −missed target by 10k");
         }
 
         return new EmbedBuilder()
-            .WithTitle("Burst — total damage, avg | top")
+            .WithTitle("Burst — total damage, avg (dps)")
             .WithColor(Color.Purple)
             .WithDescription(body.ToString())
             .Build();
@@ -294,10 +308,30 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         Add(h.BoonRock, "🎵", "Boons", e => $"{e.Label} {e.Value:F0}%");
         Add(h.OrbMaster, "🔵", "Orbs", e => $"{e.Value:F0}");
         Add(h.FieldMedic, "🚑", "Medic", e => $"{e.Value:F0} rezzes");
-        Add(h.Cleanest, "🧼", "Cleanest", e => e.Value == 0 ? "flawless" : $"{e.Value:F0} hits");
+        Add(h.BoonRips, "🌀", "Rips", e => $"{e.Value:F0}");
+        Add(h.MostCc, "💥", "CC", e => FormatShort(e.Value));
+        if (h.GiantsCookie is { } c)
+        {
+            lines.Add($"🍪 Giants: **{FormatName(c.AccountName)}** " +
+                      $"({FormatShort(c.AvgDps)}, {FormatMargin(c.AvgDps - c.TargetDps)})");
+        }
 
         return lines;
     }
+
+    // Signed margin vs a Giants target, e.g. +17.0k / −12.0k.
+    private static string FormatMargin(int delta) =>
+        (delta >= 0 ? "+" : "−") + FormatShort(Math.Abs(delta));
+
+    // Giants target cell — the player's DPS target, or "—" for healers (no target). The
+    // − used here is a plain ASCII hyphen so it stays monospace-aligned in the code block.
+    private static string GiantsTargetCell(HtcmSummaryStatRow p) =>
+        p.TargetDps is { } t ? FormatShort(t) : "-";
+
+    // Giants pull tally cell — pulls that beat / missed the target by the band, e.g.
+    // "+2/-1". Blank for healers, who have no target.
+    private static string GiantsPullCell(HtcmSummaryStatRow p) =>
+        p.TargetDps is null ? "" : $"+{p.CookiePulls ?? 0}/-{p.ShamePulls ?? 0}";
 
     // Full per-category shame rankings for the expanded view — the whole board, not just
     // the single worst. Null when every category is empty (nothing to show).

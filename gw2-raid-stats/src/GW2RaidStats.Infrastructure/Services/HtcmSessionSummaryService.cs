@@ -27,30 +27,35 @@ public class HtcmSessionSummaryService
     // events (no ICD): each bait is a distinct assignment.
     private const string RedBaitMechanic = "Red.B";
 
-    // The "little things" set powering the Cleanest highlight: individual, avoidable
-    // hits a player should have dodged. Deliberately excludes raid-wide cleave that lands
-    // on everyone (Jormag Breath), the bait/target markers (Red.B, Spread.B — being
-    // targeted isn't a failure), stacking debuffs that aren't discrete hits (Void.D,
-    // Infirmity, Debilitated — the last already has its own metric), and status events
-    // (Downed/Dead). Both EI naming variants are listed where they've drifted between
-    // versions (e.g. M.Poison.H vs Mord.Poi.H, Storm.H/K.Pool.H vs Kralk.*.H). Edit freely.
-    private static readonly HashSet<string> AvoidableMistakeMechanics = new(StringComparer.Ordinal)
+    // Squad average-DPS targets per burst group, shown next to tonight's figure in the
+    // header. Dragons has no target (it shows all-time average instead).
+    private const int TimecasterSquadTarget = 175_000;
+    private const int GiantsSquadTarget = 310_000;
+    private const int SaltspraySquadTarget = 170_000;
+
+    // Per-player Giants DPS targets. Profession (elite spec) wins over role, so a Virtuoso
+    // running portals or a Vindicator is judged on its own bar rather than the pure-DPS
+    // one. Healers (heal_quick/heal_alac) have no Giants DPS target — they're not shamed
+    // for low burst — so GiantsTargetFor returns null for them.
+    private const int GiantsTargetVirtuoso = 35_000;
+    private const int GiantsTargetVindicator = 45_000;
+    private const int GiantsTargetBoonDps = 30_000;
+    private const int GiantsTargetPureDps = 55_000;
+
+    // A player's Giants performance this far above their target earns a cookie, this far
+    // below earns a shame — applied both per pull and to the session average.
+    private const int BurstCookieShameBand = 10_000;
+
+    private static int? GiantsTargetFor(string? profession, string? role) => profession switch
     {
-        "ShckWv.H",                                        // Mordremoth Shockwave
-        "Jaws.H",                                          // Primordus Jaws (chomp)
-        "Red.H",                                           // Void Pool (standing in red)
-        "Spread.H",                                        // Targeted Expulsion (failed spread)
-        "Void.H", "VoidExp.H",                             // Void Hit / Void Explosion
-        "M.Poison.H", "Mord.Poi.H",                        // Mordremoth Poison
-        "NigEpoch.H",                                      // Nightmare Epoch
-        "Storm.H", "K.Pool.H",                             // Kralk Stormfall / Void Pool
-        "Kralk.Beam.H", "Kralk.Riv.H", "Kralk.Met.H",      // Kralk (older EI naming)
-        "Grav.Cru.H",                                      // Gravity Crush
-        "Giant.Puke.H", "Giant.Scream.H", "Giant.Stomp.H", // Void Giants
-        "Zhai.Poi.H",                                      // Zhaitan Poison
-        "J.Grasp.H",                                       // Grasp of Jormag
-        "Barrage.H", "Artillery.H", "Kick.H",              // Skullpiercer / Brandbomber
-        "Knck.Dwn", "Knck.Pll",                            // Knocked Down / Back
+        "Virtuoso" => GiantsTargetVirtuoso,
+        "Vindicator" => GiantsTargetVindicator,
+        _ => role switch
+        {
+            "heal_quick" or "heal_alac" => null,
+            "dps_quick" or "dps_alac" => GiantsTargetBoonDps,
+            _ => GiantsTargetPureDps
+        }
     };
 
     // Boon points rank the "🎵 Boons" highlight. They apply only to players whose
@@ -126,13 +131,15 @@ public class HtcmSessionSummaryService
             .GroupBy(d => (d.EncounterId, d.PhaseName))
             .ToDictionary(g => g.Key, g => g.First().DurationMs);
 
+        var sessionIds = detail.Pulls.Select(p => p.EncounterId).ToHashSet();
+
         var burstGroups = new List<HtcmSummaryBurstGroup>
         {
-            BuildBurstGroup("Timecaster", HtcmProgService.TimecasterPhases, sessionDate,
+            BuildBurstGroup("Timecaster", HtcmProgService.TimecasterPhases, TimecasterSquadTarget, sessionDate,
                 phaseRows, guildPhaseRows, durationByKey, sessionDateByEncounter, detail.SessionBurstAverages?.Timecaster),
-            BuildBurstGroup("Giants", HtcmProgService.GiantsPhases, sessionDate,
+            BuildBurstGroup("Giants", HtcmProgService.GiantsPhases, GiantsSquadTarget, sessionDate,
                 phaseRows, guildPhaseRows, durationByKey, sessionDateByEncounter, detail.SessionBurstAverages?.Giants),
-            BuildBurstGroup("Saltspray", HtcmProgService.SaltsprayPhases, sessionDate,
+            BuildBurstGroup("Saltspray", HtcmProgService.SaltsprayPhases, SaltspraySquadTarget, sessionDate,
                 phaseRows, guildPhaseRows, durationByKey, sessionDateByEncounter, detail.SessionBurstAverages?.Saltspray),
         };
 
@@ -140,8 +147,6 @@ public class HtcmSessionSummaryService
         var orbPushes = await BuildOrbPushesAsync(sessionDate, allEncounterIds, includedList, sessionDateByEncounter, ct);
         var boonRips = await BuildBoonRipsAsync(sessionDate, allEncounterIds, includedList, sessionDateByEncounter, ct);
 
-        // Shared between the shame awards and the MVDPS penalties, so a player can't be
-        // named for a mistake the scoring didn't charge them for.
         var playerSlices = (detail.PlayerPhaseStats ?? new List<HtcmPlayerPhaseSessionStat>())
             .Where(s => included.Contains(s.AccountName))
             .ToList();
@@ -159,21 +164,26 @@ public class HtcmSessionSummaryService
         var boonUptime = await BuildBoonPointsAsync(
             detail.Pulls.Select(p => p.EncounterId).ToList(), phaseNames, included, ct);
 
-        // Participation, resurrects and per-pull roles drive the Field Medic / Cleanest
-        // highlights and gate the bad-reds shame — all in one pass over the pulls.
-        var participation = await LoadParticipationAsync(
-            detail.Pulls.Select(p => p.EncounterId).ToList(), included, ct);
+        // Participation drives the Field Medic / CC highlights, the Giants targets, and the
+        // bad-reds gate — all in one pass over the pulls.
+        var participation = await LoadParticipationAsync(sessionIds.ToList(), included, ct);
 
         var reds = await BuildBadRedsAsync(detail, included, participation.NonHealer, ct);
-        var cleanest = await BuildCleanestAsync(detail, included, participation.PullsPlayed, ct);
 
-        var shame = BuildShame(playerSlices, firstDeaths, chomps, shockwaves, reds);
+        // Enrich the Giants group with per-player targets + per-pull cookie/shame tallies,
+        // and pull out the night's single biggest over-/under-target performer.
+        var giantsPerPull = AggregatePerPull(HtcmProgService.GiantsPhases, guildPhaseRows, durationByKey);
+        var (giantsPlayers, giantsCookie, giantsMiss) =
+            BuildGiantsTargets(burstGroups[1].Players, giantsPerPull, participation, sessionIds);
+        burstGroups[1] = burstGroups[1] with { Players = giantsPlayers };
+
+        var shame = BuildShame(playerSlices, firstDeaths, chomps, shockwaves, reds, giantsMiss);
         var highlights = BuildHighlights(
-            burstGroups, dragons, boonUptime, orbPushes, participation.Resurrects, cleanest);
+            burstGroups, dragons, boonUptime, orbPushes, boonRips,
+            participation.Resurrects, participation.Breakbar, giantsCookie);
 
         // Combined-dragon squad DPS for the header's squad-totals line: tonight (restricted
         // to this session's pulls) and all-time, same basis as the burst groups.
-        var sessionIds = detail.Pulls.Select(p => p.EncounterId).ToHashSet();
         var dragonSquadDps = ComputeSquadDps(HtcmProgService.CombinedDragonPhases, phaseRows, durationByKey, sessionIds);
         var dragonSquadDpsAllTime = ComputeSquadDps(HtcmProgService.CombinedDragonPhases, phaseRows, durationByKey, null);
 
@@ -196,6 +206,7 @@ public class HtcmSessionSummaryService
     private static HtcmSummaryBurstGroup BuildBurstGroup(
         string name,
         string[] groupPhases,
+        int squadTarget,
         DateTime sessionDate,
         List<PhaseDamageRow> allPhaseRows,
         List<PhaseDamageRow> guildPhaseRows,
@@ -212,7 +223,63 @@ public class HtcmSessionSummaryService
             AverageDurationMs: squadBurst is { PullCount: > 0 } b ? b.DurationMs / b.PullCount : 0,
             SquadDps: squadBurst?.SquadDps ?? 0,
             SquadDpsAllTime: ComputeSquadDps(groupPhases, allPhaseRows, durationByKey, encounterFilter: null),
+            SquadTarget: squadTarget,
             Players: players);
+    }
+
+    // Per-player Giants target + per-pull cookie/shame tally, plus the night's single
+    // biggest over-target (cookie) and under-target (miss) performer for the header boards.
+    // Cookie/shame are measured on DPS, per this session's pulls only.
+    private static (List<HtcmSummaryStatRow> Players, HtcmBurstAward? Cookie, HtcmBurstAward? Miss) BuildGiantsTargets(
+        List<HtcmSummaryStatRow> giantsPlayers,
+        List<PullValue> perPull,
+        SessionParticipation participation,
+        HashSet<Guid> sessionIds)
+    {
+        var pullDpsByAccount = perPull
+            .Where(p => sessionIds.Contains(p.EncounterId))
+            .GroupBy(p => p.AccountName)
+            .ToDictionary(g => g.Key, g => g.Select(p => p.Dps).ToList());
+
+        var enriched = new List<HtcmSummaryStatRow>();
+        HtcmBurstAward? cookie = null;
+        HtcmBurstAward? miss = null;
+        double cookieMargin = 0, missMargin = 0;
+
+        foreach (var pl in giantsPlayers)
+        {
+            var target = GiantsTargetFor(
+                participation.Profession.GetValueOrDefault(pl.AccountName),
+                participation.Role.GetValueOrDefault(pl.AccountName));
+
+            if (target is not { } t || pl.DpsAvg is not { } avgDps)
+            {
+                enriched.Add(pl);
+                continue;
+            }
+
+            var pulls = pullDpsByAccount.GetValueOrDefault(pl.AccountName) ?? new List<double>();
+            enriched.Add(pl with
+            {
+                TargetDps = t,
+                CookiePulls = pulls.Count(d => d >= t + BurstCookieShameBand),
+                ShamePulls = pulls.Count(d => d <= t - BurstCookieShameBand),
+            });
+
+            var margin = avgDps - t;
+            if (margin >= BurstCookieShameBand && (cookie == null || margin > cookieMargin))
+            {
+                cookie = new HtcmBurstAward(pl.AccountName, (int)avgDps, t);
+                cookieMargin = margin;
+            }
+            if (margin <= -BurstCookieShameBand && (miss == null || margin < missMargin))
+            {
+                miss = new HtcmBurstAward(pl.AccountName, (int)avgDps, t);
+                missMargin = margin;
+            }
+        }
+
+        return (enriched, cookie, miss);
     }
 
     // Squad DPS = total squad damage across the group's phases / the summed phase
@@ -546,7 +613,8 @@ public class HtcmSessionSummaryService
         Dictionary<string, int> firstDeaths,
         Dictionary<string, int> chomps,
         Dictionary<string, int> shockwaves,
-        Dictionary<string, int> reds)
+        Dictionary<string, int> reds,
+        HtcmBurstAward? giantsMiss)
     {
         var worstDebil = playerSlices
             .Where(s => s.Giants.DebilPulls > 0)
@@ -578,6 +646,7 @@ public class HtcmSessionSummaryService
             ShockwaveCount: worstShockwave?.Value ?? 0,
             RedsPlayer: worstReds?.Key,
             RedsCount: worstReds?.Value ?? 0,
+            GiantsMiss: giantsMiss,
             FirstDeathRanking: Ranking(firstDeaths),
             DebilRanking: debilRanking,
             ChompRanking: Ranking(chomps),
@@ -608,8 +677,10 @@ public class HtcmSessionSummaryService
         List<HtcmSummaryDragonRow> dragons,
         List<HtcmSummaryBoonRow> boonUptime,
         List<HtcmSummaryOrbRow> orbPushes,
+        List<HtcmSummaryStatRow> boonRips,
         Dictionary<string, int> resurrects,
-        HighlightEntry? cleanest)
+        Dictionary<string, double> breakbar,
+        HtcmBurstAward? giantsCookie)
     {
         var burstKing = burstGroups
             .SelectMany(g => g.Players)
@@ -637,31 +708,19 @@ public class HtcmSessionSummaryService
             ? new HighlightEntry(m.Key, m.Value)
             : null;
 
-        return new HtcmSummaryHighlights(
-            burstKing, dragonDps, boonRock, orbMaster, medic, cleanest);
-    }
+        var topRips = boonRips
+            .OrderByDescending(r => r.Avg)
+            .Select(r => new HighlightEntry(r.AccountName, r.Avg))
+            .FirstOrDefault(e => e.Value > 0);
 
-    // Cleanest = fewest avoidable-mistake hits, among players who were in at least half
-    // the session's pulls (so a one-pull sub doesn't win by not being there). Clean
-    // players have no mechanic events at all, so the candidate list is the participants,
-    // not the hit dictionary — a perfect zero is exactly what should win.
-    private async Task<HighlightEntry?> BuildCleanestAsync(
-        HtcmSessionDetail detail,
-        HashSet<string> included,
-        Dictionary<string, int> pullsPlayed,
-        CancellationToken ct)
-    {
-        var hits = await GetMechanicSetCountsAsync(detail, included, AvoidableMistakeMechanics, ct);
-
-        var floor = (detail.PullCount + 1) / 2;
-        var cleanest = pullsPlayed
-            .Where(kv => kv.Value >= floor)
-            .Select(kv => new { Account = kv.Key, Hits = hits.GetValueOrDefault(kv.Key), Pulls = kv.Value })
-            .OrderBy(x => x.Hits)
-            .ThenByDescending(x => x.Pulls)
+        var mostCc = breakbar
+            .OrderByDescending(kv => kv.Value)
+            .Where(kv => kv.Value > 0)
+            .Select(kv => new HighlightEntry(kv.Key, kv.Value))
             .FirstOrDefault();
 
-        return cleanest == null ? null : new HighlightEntry(cleanest.Account, cleanest.Hits);
+        return new HtcmSummaryHighlights(
+            burstKing, dragonDps, boonRock, orbMaster, medic, topRips, mostCc, giantsCookie);
     }
 
     // Red baits caught by non-healers. Role is read per encounter (via NonHealer), so a
@@ -718,68 +777,59 @@ public class HtcmSessionSummaryService
                           pull.Select(e => e.EventTimeMs).ToList(), icd)));
     }
 
-    // Total occurrences across a set of mechanics per player, ICD-grouped per mechanic per
-    // pull (each mechanic keeps its own cooldown). Used by the Cleanest highlight.
-    private async Task<Dictionary<string, int>> GetMechanicSetCountsAsync(
-        HtcmSessionDetail detail, HashSet<string> included, HashSet<string> mechanicNames, CancellationToken ct)
-    {
-        var sessionEncounterIds = detail.Pulls.Select(p => p.EncounterId).ToList();
-        var mechanicList = mechanicNames.ToList();
 
-        var events = await _db.MechanicEvents
-            .InnerJoin(_db.Players, (m, p) => m.PlayerId == p.Id, (m, p) => new { m, p })
-            .Where(x => sessionEncounterIds.Contains(x.m.EncounterId)
-                     && mechanicList.Contains(x.m.MechanicName))
-            .Select(x => new { x.p.AccountName, x.m.MechanicName, x.m.EncounterId, x.m.EventTimeMs })
-            .ToListAsync(ct);
-
-        return events
-            .Where(e => included.Contains(e.AccountName))
-            .GroupBy(e => e.AccountName)
-            .ToDictionary(
-                g => g.Key,
-                g => g.GroupBy(e => (e.MechanicName, e.EncounterId))
-                      .Sum(mg => MechanicIcdHelper.CountWithIcd(
-                          mg.Select(e => e.EventTimeMs).ToList(),
-                          MechanicIcdHelper.GetIcd(mg.Key.MechanicName))));
-    }
-
-    // One pass over the session's PlayerEncounter rows: pulls played and total resurrects
-    // per guild member, plus the (encounter, account) pairs where the player was NOT a
-    // healer — read per encounter so a build swap is respected. NonHealer covers everyone
-    // in the pull, not just guild members, so the bad-reds gate matches whoever was there.
+    // One pass over the session's PlayerEncounter rows: per guild member, total resurrects
+    // and CC (breakbar) for the highlights, plus their dominant profession and role for the
+    // Giants target. NonHealer is per (encounter, account) — read per pull so a build swap
+    // is respected — and covers everyone, not just guild members, so the bad-reds gate
+    // matches whoever was there.
     private async Task<SessionParticipation> LoadParticipationAsync(
         List<Guid> sessionEncounterIds, HashSet<string> included, CancellationToken ct)
     {
         var rows = await _db.PlayerEncounters
             .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id,
-                (pe, p) => new { pe.EncounterId, p.AccountName, pe.Resurrects, pe.Role })
+                (pe, p) => new { p.AccountName, pe.EncounterId, pe.Resurrects, pe.Role, pe.Profession, pe.BreakbarDamage })
             .Where(x => sessionEncounterIds.Contains(x.EncounterId))
             .ToListAsync(ct);
 
         var guild = rows.Where(r => included.Contains(r.AccountName)).ToList();
 
-        var pullsPlayed = guild
-            .GroupBy(r => r.AccountName)
-            .ToDictionary(g => g.Key, g => g.Select(r => r.EncounterId).Distinct().Count());
-
         var resurrects = guild
             .GroupBy(r => r.AccountName)
             .ToDictionary(g => g.Key, g => g.Sum(r => r.Resurrects));
+
+        var breakbar = guild
+            .GroupBy(r => r.AccountName)
+            .ToDictionary(g => g.Key, g => g.Sum(r => (double)(r.BreakbarDamage ?? 0m)));
+
+        // Most-played profession / role across the player's pulls — build swaps are rare,
+        // and a single dominant build is what the Giants target should judge.
+        static T Dominant<T>(IEnumerable<T> values) =>
+            values.GroupBy(v => v).OrderByDescending(g => g.Count()).First().Key;
+
+        var profession = guild
+            .GroupBy(r => r.AccountName)
+            .ToDictionary(g => g.Key, g => Dominant(g.Select(r => r.Profession)));
+
+        var role = guild
+            .GroupBy(r => r.AccountName)
+            .ToDictionary(g => g.Key, g => Dominant(g.Select(r => r.Role)));
 
         var nonHealer = rows
             .Where(r => !IsHealerRole(r.Role))
             .Select(r => (r.EncounterId, r.AccountName))
             .ToHashSet();
 
-        return new SessionParticipation(pullsPlayed, resurrects, nonHealer);
+        return new SessionParticipation(resurrects, breakbar, profession, role, nonHealer);
     }
 
     private static bool IsHealerRole(string? role) => role is "heal_quick" or "heal_alac";
 
     private record SessionParticipation(
-        Dictionary<string, int> PullsPlayed,
         Dictionary<string, int> Resurrects,
+        Dictionary<string, double> Breakbar,
+        Dictionary<string, string> Profession,
+        Dictionary<string, string?> Role,
         HashSet<(Guid EncounterId, string Account)> NonHealer);
 
     private record PhaseDamageRow(Guid EncounterId, string AccountName, string PhaseName, long Damage);
@@ -818,9 +868,18 @@ public record HtcmSummaryHighlights(
     HighlightEntry? BoonRock,
     HighlightEntry? OrbMaster,
     HighlightEntry? FieldMedic,
-    HighlightEntry? Cleanest);
+    HighlightEntry? BoonRips,
+    HighlightEntry? MostCc,
+    HtcmBurstAward? GiantsCookie);
 
 public record HighlightEntry(string AccountName, double Value, string? Label = null);
+
+/// <summary>
+/// A player's Giants performance vs their target — the biggest over-target (cookie) or
+/// under-target (miss) of the night. The renderer shows AvgDps and the AvgDps−TargetDps
+/// margin.
+/// </summary>
+public record HtcmBurstAward(string AccountName, int AvgDps, int TargetDps);
 
 /// <summary>
 /// SquadDps is tonight's average across the group's phases; SquadDpsAllTime is the same
@@ -832,15 +891,19 @@ public record HtcmSummaryBurstGroup(
     int AverageDurationMs,
     int SquadDps,
     int SquadDpsAllTime,
+    int SquadTarget,
     List<HtcmSummaryStatRow> Players);
 
 /// <summary>
 /// Avg/Top are tonight; Max is best-ever. IsNewBest means tonight set the max. The Dps*
 /// figures accompany each damage column where the metric is damage-based, otherwise null.
+/// TargetDps / CookiePulls / ShamePulls are populated only for the Giants group: the
+/// player's DPS target and the count of tonight's pulls that beat / missed it by the band.
 /// </summary>
 public record HtcmSummaryStatRow(
     string AccountName, double Avg, double Top, double Max, bool IsNewBest,
-    double? DpsAvg = null, double? DpsTop = null, double? DpsMax = null);
+    double? DpsAvg = null, double? DpsTop = null, double? DpsMax = null,
+    int? TargetDps = null, int? CookiePulls = null, int? ShamePulls = null);
 
 public record HtcmSummaryDragonRow(
     string AccountName,
@@ -872,6 +935,7 @@ public record HtcmSummaryShame(
     int ShockwaveCount,
     string? RedsPlayer,
     int RedsCount,
+    HtcmBurstAward? GiantsMiss,
     List<HtcmShameRank> FirstDeathRanking,
     List<HtcmShameRank> DebilRanking,
     List<HtcmShameRank> ChompRanking,
