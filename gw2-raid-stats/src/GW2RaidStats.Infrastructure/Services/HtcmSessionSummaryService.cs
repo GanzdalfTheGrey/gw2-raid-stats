@@ -171,7 +171,10 @@ public class HtcmSessionSummaryService
         var reds = await BuildBadRedsAsync(detail, included, participation.NonHealer, ct);
 
         // Enrich the Giants group with per-player targets + per-pull cookie/spec/shame rows.
-        var giantsPerPull = AggregatePerPull(HtcmProgService.GiantsPhases, guildPhaseRows, durationByKey);
+        // Include zero-damage pulls so a dead-whole-phase pull counts (as a shame) and the
+        // three counts sum to the pulls the player actually played.
+        var giantsPerPull = AggregatePerPull(
+            HtcmProgService.GiantsPhases, guildPhaseRows, durationByKey, includeZeroDamage: true);
         var (giantsPlayers, giantsTargets) =
             BuildGiantsTargets(burstGroups[1].Players, giantsPerPull, participation, sessionIds);
         burstGroups[1] = burstGroups[1] with { Players = giantsPlayers, Targets = giantsTargets };
@@ -342,10 +345,16 @@ public class HtcmSessionSummaryService
     // Collapses phase rows into one (encounter, player) entry per pull: total damage
     // across the group's phases, and DPS over only the phases that player has rows in
     // (a player absent from a pull must not have their DPS diluted by its duration).
+    //
+    // By default zero-damage pulls (the player was dead the whole phase group) are dropped,
+    // so they don't drag a DPS average down to zero. Pass includeZeroDamage: true when
+    // counting pulls — a dead-whole-phase pull is a real pull (and a shame at 0 dps), and
+    // dropping it makes per-player cookie/spec/shame counts fall short of the pulls played.
     private static List<PullValue> AggregatePerPull(
         string[] groupPhases,
         List<PhaseDamageRow> phaseRows,
-        Dictionary<(Guid, string), int> durationByKey)
+        Dictionary<(Guid, string), int> durationByKey,
+        bool includeZeroDamage = false)
     {
         return phaseRows
             .Where(r => HtcmProgService.MatchesAny(r.PhaseName, groupPhases))
@@ -358,7 +367,7 @@ public class HtcmSessionSummaryService
                 var dps = durationMs > 0 ? damage * 1000d / durationMs : 0d;
                 return new PullValue(g.Key.EncounterId, g.Key.AccountName, damage, dps);
             })
-            .Where(p => p.Damage > 0)
+            .Where(p => includeZeroDamage || p.Damage > 0)
             .ToList();
     }
 

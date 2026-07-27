@@ -82,6 +82,13 @@ monospace alignment). It is **group-agnostic**: any burst group with target rows
 once Timecaster / Saltspray gain per-player targets they appear here with no further change.
 Currently only Giants has per-player targets.
 
+A player's `ck + sp + sh` sums to the pulls they were **present in Giants for** — which is
+the group's pulls-reached (shown in the section header) minus any they subbed out of, and
+not the session pull count (not every pull reaches Giants). A pull spent **dead the whole
+Giants phase counts as a shame** (0 DPS); those pulls are excluded from the DPS *average*
+(so a death doesn't drag it to zero) but included in the counts, so the counts don't silently
+fall short of pulls played.
+
 **Combined bosses — Jormag, Kralk, Morde, Zhaitan, Soo**
 
 - Report **Total Damage** *and* **DPS**. The rendered table shows

@@ -227,7 +227,9 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         {
             if (group.Targets.Count == 0) continue;
 
-            body.AppendLine($"**{group.Name}** — squad target {FormatShort(group.SquadTarget)}");
+            // Pulls reached ≤ session pulls (not every pull gets to Giants), and a player's
+            // ck+sp+sh sums to the pulls they were in — shown so the denominator is clear.
+            body.AppendLine($"**{group.Name}** — {group.PullsReached} pulls · target {FormatShort(group.SquadTarget)}");
             body.AppendLine(RenderTable(
                 new[] { "avg", "status", "ck", "sp", "sh" },
                 group.Targets.Select(r => (
