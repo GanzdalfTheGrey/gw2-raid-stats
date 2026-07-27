@@ -233,13 +233,13 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             var failedNote = group.FailedPulls > 0 ? $" · {group.FailedPulls} failed" : "";
             body.AppendLine($"**{group.Name}** — {group.PullsReached} completed{failedNote} · target {FormatShort(group.SquadTarget)}");
             body.AppendLine(RenderTable(
-                new[] { "avg", "status", "ck", "sp", "sh" },
+                new[] { "avg", "target", "ck", "sp", "sh" },
                 group.Targets.Select(r => (
                     r.AccountName,
                     new[]
                     {
                         FormatShort(r.AvgDps),
-                        StatusWord(r.Status),
+                        FormatShort(r.TargetDps),
                         r.CookiePulls.ToString(),
                         r.SpecPulls.ToString(),
                         r.ShamePulls.ToString(),
@@ -250,7 +250,7 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
 
         if (body.Length == 0) return null;
 
-        body.Append("status = session avg vs target · ck/sp/sh pulls = cookie/spec/shame");
+        body.Append("ck/sp/sh pulls = cookie/spec/shame (avg vs target ±10k)");
 
         return new EmbedBuilder()
             .WithTitle("🍪 Cookies & 💀 Shames")
@@ -258,13 +258,6 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             .WithDescription(body.ToString())
             .Build();
     }
-
-    private static string StatusWord(HtcmBurstStatus status) => status switch
-    {
-        HtcmBurstStatus.Cookie => "cookie",
-        HtcmBurstStatus.Shame => "shame",
-        _ => "spec"
-    };
 
     public static Embed BuildDragonsEmbed(HtcmSessionSummary s)
     {
