@@ -141,6 +141,12 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             embed.AddField("🏆 Most Valuable Proggers", string.Join("\n", podium));
         }
 
+        var goodLines = BuildHighlightLines(s.Highlights);
+        if (goodLines.Count > 0)
+        {
+            embed.AddField("✨ Doing It Right", string.Join("\n", goodLines));
+        }
+
         if (wallOfShameEnabled)
         {
             var shameLines = new List<string>();
@@ -163,6 +169,10 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             if (s.Shame.ShockwavePlayer != null)
             {
                 shameLines.Add($"Shockwaved: **{FormatName(s.Shame.ShockwavePlayer)}** ({s.Shame.ShockwaveCount})");
+            }
+            if (s.Shame.RedsPlayer != null)
+            {
+                shameLines.Add($"Bad Reds: **{FormatName(s.Shame.RedsPlayer)}** ({s.Shame.RedsCount})");
             }
             if (shameLines.Count > 0)
             {
@@ -286,6 +296,27 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             .WithColor(Color.Purple)
             .WithDescription(body.ToString())
             .Build();
+    }
+
+    // The good-play callouts, one line each, dropping any category with no data. The
+    // positive mirror of the Wall of Shame — who did the little things right tonight.
+    private static List<string> BuildHighlightLines(HtcmSummaryHighlights h)
+    {
+        var lines = new List<string>();
+
+        void Add(HighlightEntry? e, string emoji, string label, Func<HighlightEntry, string> value)
+        {
+            if (e != null) lines.Add($"{emoji} {label}: **{FormatName(e.AccountName)}** ({value(e)})");
+        }
+
+        Add(h.BurstKing, "🔥", "Burst", e => FormatShort(e.Value));
+        Add(h.DragonDps, "🐉", "Dragon DPS", e => FormatShort(e.Value));
+        Add(h.BoonRock, "🎵", "Boons", e => $"{e.Label} {e.Value:F0}%");
+        Add(h.OrbMaster, "🔵", "Orbs", e => $"{e.Value:F0}");
+        Add(h.FieldMedic, "🚑", "Medic", e => $"{e.Value:F0} rezzes");
+        Add(h.Cleanest, "🧼", "Cleanest", e => e.Value == 0 ? "flawless" : $"{e.Value:F0} hits");
+
+        return lines;
     }
 
     // Only the penalties a player actually incurred, so a clean night reads short.

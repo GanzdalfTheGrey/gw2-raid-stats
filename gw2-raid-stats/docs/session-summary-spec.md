@@ -136,6 +136,32 @@ in the category until **Admin → Manage Logs → Rescan** backfills them.
 
 ---
 
+### Highlights Board
+
+A scannable good-play / bad-play board in the header embed — the glance layer, so the
+little things people do right and wrong stand out without opening the app. Each callout
+names the single leader in its category; a category with no data is dropped.
+
+**✨ Doing It Right** (always shown)
+
+| Callout | Source |
+|---|---|
+| 🔥 Burst | highest combined session-avg burst damage |
+| 🐉 Dragon DPS | highest combined-dragon session-avg DPS |
+| 🎵 Boons | best boon giver by uptime points (subgroup-received) |
+| 🔵 Orbs | most orb pushes |
+| 🚑 Medic | most resurrects (`PlayerEncounter.Resurrects`) |
+| 🧼 Cleanest | fewest avoidable-mistake hits — reads "flawless" at zero |
+
+**Cleanest** ranks the fewest avoidable hits among players who were in **at least half**
+the session's pulls (so a one-pull sub can't win by absence). A perfectly clean player has
+no mechanic events at all, so the candidate pool is the participants, not the hit list —
+zero is the winning score. The avoidable-mistake set is a curated list of individual,
+dodgeable hits (shockwave, chomp, void pools, failed spreads, giant/Kralk/Zhaitan hits,
+knockbacks, …), maintained in `HtcmSessionSummaryService.AvoidableMistakeMechanics`. It
+deliberately excludes raid-wide cleave that lands on everyone (Jormag Breath), bait/target
+markers (being targeted isn't a failure), and stacking debuffs that aren't discrete hits.
+
 ### Shame Awards
 
 - **First Death** — the count of pulls where the player was the first to die. Taken from
@@ -145,8 +171,13 @@ in the category until **Admin → Manage Logs → Rescan** backfills them.
   same phase set as the prog page's Phase Insights column (Giants main phases plus their
   breakbars, where EI records the buff separately).
 - **Chomped** — if any. Counted from EI's `Jaws.H` (Primordus Jaws) mechanic.
+- **Shockwaved** — most `ShckWv.H` (Mordremoth Shockwave) hits.
+- **Bad Reds** — most `Red.B` (Red Bait) targets caught by a **non-healer**. Reds are meant
+  for healers to take, so this is role-gated: healer = `PlayerEncounter.Role` of `heal_quick`
+  or `heal_alac`, read per encounter so a build swap is respected. A healer catching reds is
+  not shamed.
 
-Both are gated on the guild's Wall of Shame toggle.
+All are gated on the guild's Wall of Shame toggle.
 
 ---
 
