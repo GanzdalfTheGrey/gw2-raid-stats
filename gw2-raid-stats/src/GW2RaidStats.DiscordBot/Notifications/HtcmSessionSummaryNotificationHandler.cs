@@ -181,7 +181,8 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             var headers = isGiants ? new[] { "avg (dps)", "target" } : new[] { "avg (dps)" };
 
             var avgDuration = TimeSpan.FromMilliseconds(group.AverageDurationMs);
-            body.AppendLine($"**{group.Name}** · {group.PullsReached} pulls · {avgDuration.TotalSeconds:F0}s avg");
+            var failedNote = group.FailedPulls > 0 ? $" · {group.FailedPulls} failed" : "";
+            body.AppendLine($"**{group.Name}** · {group.PullsReached} pulls{failedNote} · {avgDuration.TotalSeconds:F0}s avg");
             body.AppendLine(RenderTable(
                 headers,
                 group.Players.Take(MaxRows).Select(p => (
@@ -227,9 +228,10 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         {
             if (group.Targets.Count == 0) continue;
 
-            // Pulls reached ≤ session pulls (not every pull gets to Giants), and a player's
-            // ck+sp+sh sums to the pulls they were in — shown so the denominator is clear.
-            body.AppendLine($"**{group.Name}** — {group.PullsReached} pulls · target {FormatShort(group.SquadTarget)}");
+            // Counts are over completed-phase pulls only; failed = reached but wiped in the
+            // phase. A player's ck+sp+sh sums to the completed pulls they were in.
+            var failedNote = group.FailedPulls > 0 ? $" · {group.FailedPulls} failed" : "";
+            body.AppendLine($"**{group.Name}** — {group.PullsReached} completed{failedNote} · target {FormatShort(group.SquadTarget)}");
             body.AppendLine(RenderTable(
                 new[] { "avg", "status", "ck", "sp", "sh" },
                 group.Targets.Select(r => (

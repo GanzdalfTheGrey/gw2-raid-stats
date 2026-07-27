@@ -96,12 +96,22 @@ public class HtcmSessionSummaryService
             .Where(e => e.TriggerId == HtcmProgService.HtcmTriggerId
                      && e.IsCM
                      && e.DurationMs >= HtcmProgService.MinDurationMs)
-            .Select(e => new { e.Id, e.EncounterTime })
+            .Select(e => new { e.Id, e.EncounterTime, e.FurthestPhase })
             .ToListAsync(ct);
 
         var sessionDateByEncounter = allEncounters.ToDictionary(e => e.Id, e => e.EncounterTime.Date);
         var allEncounterIds = allEncounters.Select(e => e.Id).ToList();
         if (allEncounterIds.Count == 0) return null;
+
+        // Encounters that *completed* Giants — progressed past it to Zhaitan or beyond. The
+        // Giants burst / target metrics use these only, so a pull that wiped mid-Giants
+        // (a short, ramp-heavy partial phase) doesn't distort the numbers. Pulls that
+        // reached Giants but wiped there are counted as "failed Giants" for context.
+        var zhaitanIndex = HtcmProgService.GetCanonicalPhaseIndex("Zhaitan");
+        var completedGiants = allEncounters
+            .Where(e => HtcmProgService.GetCanonicalPhaseIndex(e.FurthestPhase) >= zhaitanIndex)
+            .Select(e => e.Id)
+            .ToHashSet();
 
         var phaseNames = HtcmProgService.TimecasterPhases
             .Concat(HtcmProgService.GiantsPhases)
@@ -133,12 +143,24 @@ public class HtcmSessionSummaryService
 
         var sessionIds = detail.Pulls.Select(p => p.EncounterId).ToHashSet();
 
+        // Giants uses completed-Giants pulls only for its burst and targets. Filter its rows
+        // to those encounters; failed = tonight's Giants-reached pulls that didn't complete.
+        var giantsAllRows = phaseRows.Where(r => completedGiants.Contains(r.EncounterId)).ToList();
+        var giantsGuildRows = guildPhaseRows.Where(r => completedGiants.Contains(r.EncounterId)).ToList();
+        var giantsReachedTonight = phaseRows
+            .Where(r => sessionIds.Contains(r.EncounterId) && HtcmProgService.MatchesAny(r.PhaseName, HtcmProgService.GiantsPhases))
+            .Select(r => r.EncounterId).Distinct().Count();
+        var giantsCompletedTonight = giantsAllRows
+            .Where(r => sessionIds.Contains(r.EncounterId) && HtcmProgService.MatchesAny(r.PhaseName, HtcmProgService.GiantsPhases))
+            .Select(r => r.EncounterId).Distinct().Count();
+        var giantsFailedTonight = giantsReachedTonight - giantsCompletedTonight;
+
         var burstGroups = new List<HtcmSummaryBurstGroup>
         {
             BuildBurstGroup("Timecaster", HtcmProgService.TimecasterPhases, TimecasterSquadTarget, sessionDate,
                 phaseRows, guildPhaseRows, durationByKey, sessionDateByEncounter, detail.SessionBurstAverages?.Timecaster),
             BuildBurstGroup("Giants", HtcmProgService.GiantsPhases, GiantsSquadTarget, sessionDate,
-                phaseRows, guildPhaseRows, durationByKey, sessionDateByEncounter, detail.SessionBurstAverages?.Giants),
+                giantsAllRows, giantsGuildRows, durationByKey, sessionDateByEncounter, sessionIds, giantsFailedTonight),
             BuildBurstGroup("Saltspray", HtcmProgService.SaltsprayPhases, SaltspraySquadTarget, sessionDate,
                 phaseRows, guildPhaseRows, durationByKey, sessionDateByEncounter, detail.SessionBurstAverages?.Saltspray),
         };
@@ -170,11 +192,11 @@ public class HtcmSessionSummaryService
 
         var reds = await BuildBadRedsAsync(detail, included, participation.NonHealer, ct);
 
-        // Enrich the Giants group with per-player targets + per-pull cookie/spec/shame rows.
-        // Include zero-damage pulls so a dead-whole-phase pull counts (as a shame) and the
-        // three counts sum to the pulls the player actually played.
+        // Enrich the Giants group with per-player targets + per-pull cookie/spec/shame rows,
+        // over completed-Giants pulls only (giantsGuildRows). Include zero-damage pulls so a
+        // dead-whole-phase pull counts (as a shame) and the three sum to the pulls played.
         var giantsPerPull = AggregatePerPull(
-            HtcmProgService.GiantsPhases, guildPhaseRows, durationByKey, includeZeroDamage: true);
+            HtcmProgService.GiantsPhases, giantsGuildRows, durationByKey, includeZeroDamage: true);
         var (giantsPlayers, giantsTargets) =
             BuildGiantsTargets(burstGroups[1].Players, giantsPerPull, participation, sessionIds);
         burstGroups[1] = burstGroups[1] with { Players = giantsPlayers, Targets = giantsTargets };
@@ -236,6 +258,46 @@ public class HtcmSessionSummaryService
             SquadTarget: squadTarget,
             Players: players,
             Targets: new List<HtcmBurstTargetRow>());
+    }
+
+    // Overload that derives the squad figures from the phase rows directly (rather than
+    // HtcmProgService.SessionBurstAverages), so the caller can pass a filtered row set —
+    // Giants passes completed-Giants rows only. failedPulls is the group-reached-but-not-
+    // completed count for tonight, carried through for display.
+    private static HtcmSummaryBurstGroup BuildBurstGroup(
+        string name,
+        string[] groupPhases,
+        int squadTarget,
+        DateTime sessionDate,
+        List<PhaseDamageRow> allPhaseRows,
+        List<PhaseDamageRow> guildPhaseRows,
+        Dictionary<(Guid, string), int> durationByKey,
+        Dictionary<Guid, DateTime> sessionDateByEncounter,
+        HashSet<Guid> sessionIds,
+        int failedPulls)
+    {
+        var perPull = AggregatePerPull(groupPhases, guildPhaseRows, durationByKey);
+        var players = BuildStatRows(perPull, sessionDate, sessionDateByEncounter, p => p.Damage, includeDps: true);
+
+        // Tonight's group-phase durations, de-duplicated across the players sharing a phase.
+        var tonightKeys = allPhaseRows
+            .Where(r => sessionIds.Contains(r.EncounterId) && HtcmProgService.MatchesAny(r.PhaseName, groupPhases))
+            .Select(r => (r.EncounterId, r.PhaseName))
+            .Distinct()
+            .ToList();
+        var pullsReached = tonightKeys.Select(k => k.EncounterId).Distinct().Count();
+        var totalDurationMs = tonightKeys.Sum(k => durationByKey.TryGetValue(k, out var d) ? d : 0);
+
+        return new HtcmSummaryBurstGroup(
+            name,
+            PullsReached: pullsReached,
+            AverageDurationMs: pullsReached > 0 ? totalDurationMs / pullsReached : 0,
+            SquadDps: ComputeSquadDps(groupPhases, allPhaseRows, durationByKey, sessionIds),
+            SquadDpsAllTime: ComputeSquadDps(groupPhases, allPhaseRows, durationByKey, encounterFilter: null),
+            SquadTarget: squadTarget,
+            Players: players,
+            Targets: new List<HtcmBurstTargetRow>(),
+            FailedPulls: failedPulls);
     }
 
     // Attaches each Giants player's DPS target and builds a per-player target row: their
@@ -891,7 +953,8 @@ public record HtcmSummaryBurstGroup(
     int SquadDpsAllTime,
     int SquadTarget,
     List<HtcmSummaryStatRow> Players,
-    List<HtcmBurstTargetRow> Targets);
+    List<HtcmBurstTargetRow> Targets,
+    int FailedPulls = 0);
 
 public enum HtcmBurstStatus { Cookie, InSpec, Shame }
 

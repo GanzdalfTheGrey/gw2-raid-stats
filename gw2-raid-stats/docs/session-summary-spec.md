@@ -71,6 +71,13 @@ the pure-DPS 55k. The Giants table shows `avg (dps) | target`. A player whose Gi
 (→ Wall of Shame) with their average and margin, and the expanded **Cookies & Shames**
 section lists them all (see below).
 
+**Completed pulls only.** All Giants burst and target numbers (squad DPS, per-player avg,
+cookies/shames) count **only pulls that completed Giants** — i.e. progressed past it to
+Zhaitan or beyond (`furthest phase ≥ Zhaitan` in the canonical order). A pull that reached
+Giants but wiped mid-phase is a short, ramp-heavy partial that would distort DPS, so it's
+excluded from the numbers and instead counted as **failed** — shown as `N failed` next to
+the completed count. So `ck + sp + sh` sums to the completed Giants pulls the player was in.
+
 ### Cookies & Shames
 
 A dedicated embed in the expanded (ephemeral) view, one **fixed-width table per burst
@@ -82,12 +89,11 @@ monospace alignment). It is **group-agnostic**: any burst group with target rows
 once Timecaster / Saltspray gain per-player targets they appear here with no further change.
 Currently only Giants has per-player targets.
 
-A player's `ck + sp + sh` sums to the pulls they were **present in Giants for** — which is
-the group's pulls-reached (shown in the section header) minus any they subbed out of, and
-not the session pull count (not every pull reaches Giants). A pull spent **dead the whole
-Giants phase counts as a shame** (0 DPS); those pulls are excluded from the DPS *average*
-(so a death doesn't drag it to zero) but included in the counts, so the counts don't silently
-fall short of pulls played.
+A player's `ck + sp + sh` sums to the **completed** Giants pulls they were present for (see
+"Completed pulls only" above) — minus any they subbed out of, not the session pull count. A
+pull spent **dead the whole Giants phase counts as a shame** (0 DPS); those pulls are
+excluded from the DPS *average* (so a death doesn't drag it to zero) but included in the
+counts, so the counts don't silently fall short of the completed pulls played.
 
 **Combined bosses — Jormag, Kralk, Morde, Zhaitan, Soo**
 
