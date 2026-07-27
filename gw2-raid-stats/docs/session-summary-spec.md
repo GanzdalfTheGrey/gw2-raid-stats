@@ -66,10 +66,11 @@ target, by profession then role:
 
 Profession (elite spec) wins over role, so a portal-running Virtuoso is judged on 35k, not
 the pure-DPS 55k. The Giants table adds a `target` column and a `pulls` column showing
-`+beat / −missed` — how many of tonight's pulls cleared the target by 10k versus fell short
-by 10k. A player whose Giants **session average** clears target + 10k is a **cookie**
-(→ Doing It Right); target − 10k or worse is a **shame** (→ Wall of Shame). The header names
-the single biggest cookie and biggest miss of the night, with their average and margin.
+`cookie · within · shame` — how many of tonight's pulls cleared the target by 10k, landed
+within 10k, or fell short by 10k. A player whose Giants **session average** clears target +
+10k is a **cookie** (→ Doing It Right); target − 10k or worse is a **shame** (→ Wall of
+Shame). The header names the single biggest cookie and biggest miss of the night, with
+their average and margin.
 
 **Combined bosses — Jormag, Kralk, Morde, Zhaitan, Soo**
 
@@ -142,9 +143,12 @@ names the single leader in its category; a category with no data is dropped.
 - **First Death** — the count of pulls where the player was the first to die. Taken from
   the same per-pull first-death the prog page shows.
 - **Debilitated** — pass/fail per pull: the count of pulls where the player carried
-  Debilitated into the Giants window at all, regardless of uptime or stack count. Uses the
-  same phase set as the prog page's Phase Insights column (Giants main phases plus their
-  breakbars, where EI records the buff separately).
+  Debilitated into the Giants window at all (it can only be carried in from a Mordremoth
+  shockwave; nothing applies it during Giants). Counted as the distinct pulls that show a
+  Debilitated readout on the prog page's phase breakdown — any Giants-window phase (main OR
+  breakbar) with non-zero phase-relative uptime — so the bot count matches the page exactly.
+  (Previously it was derived from the average-uptime pull set, which required a main-phase
+  row and undercounted pulls whose debil landed only on a breakbar.)
 - **Chomped** — if any. Counted from EI's `Jaws.H` (Primordus Jaws) mechanic.
 - **Shockwaved** — most `ShckWv.H` (Mordremoth Shockwave) hits.
 - **Bad Reds** — most `Red.B` (Red Bait) targets caught by a **non-healer**. Reds are meant

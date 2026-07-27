@@ -654,16 +654,26 @@ public class HtcmProgService
         // sub rows on top would double-count the same applications.
         var stackRows = mainFiltered.Where(r => r.Stats.DebilitatedStacks != null).ToList();
 
+        // Pulls where the player carried Debilitated into the Giants window — one per
+        // distinct pull that shows a Debilitated readout on the prog page's phase
+        // breakdown, i.e. any Giants-window phase (main OR breakbar) with non-zero
+        // phase-relative uptime. Counted directly off the phase rows rather than off
+        // pullUptimes, which requires a main-phase row and so drops a pull whose debil
+        // landed only on a breakbar (e.g. a wipe mid-breakbar) — that was undercounting.
+        var debilPulls = rowList
+            .Where(r => MatchesAny(r.Stats.PhaseName, debilPhaseNames))
+            .Where(r => phaseDurationByKey.TryGetValue((r.Stats.EncounterId, r.Stats.PhaseName), out var d)
+                        && ToPhaseRelativeDebilPct(r.Stats, d) > 0m)
+            .Select(r => r.Stats.EncounterId)
+            .Distinct()
+            .Count();
+
         return new HtcmPlayerPhaseSlice(
             Deaths: deaths,
             DeadAtPhaseStart: deadAtStart,
             DebilUptimeAvgPct: pullUptimes.Count == 0 ? null : pullUptimes.Average(),
             DebilStacks: stackRows.Count == 0 ? null : stackRows.Sum(r => r.Stats.DebilitatedStacks!.Value),
-            // The pulls that contributed to the average above — i.e. the ones where the
-            // player carried the debuff into this phase group at all. Emitted here rather
-            // than recomputed by callers so a pass/fail count can never disagree with the
-            // percentage it was derived from.
-            DebilPulls: pullUptimes.Count);
+            DebilPulls: debilPulls);
     }
 
     // DebilitatedUptimePct comes from EI's BuffUptimesActive.Presence field — true

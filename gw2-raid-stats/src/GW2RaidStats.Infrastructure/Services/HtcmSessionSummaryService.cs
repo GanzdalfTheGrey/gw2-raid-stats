@@ -259,11 +259,15 @@ public class HtcmSessionSummaryService
             }
 
             var pulls = pullDpsByAccount.GetValueOrDefault(pl.AccountName) ?? new List<double>();
+            var cookiePulls = pulls.Count(d => d >= t + BurstCookieShameBand);
+            var shamePulls = pulls.Count(d => d <= t - BurstCookieShameBand);
             enriched.Add(pl with
             {
                 TargetDps = t,
-                CookiePulls = pulls.Count(d => d >= t + BurstCookieShameBand),
-                ShamePulls = pulls.Count(d => d <= t - BurstCookieShameBand),
+                CookiePulls = cookiePulls,
+                ShamePulls = shamePulls,
+                // Remaining pulls landed within ±band of target.
+                WithinPulls = pulls.Count - cookiePulls - shamePulls,
             });
 
             var margin = avgDps - t;
@@ -897,13 +901,14 @@ public record HtcmSummaryBurstGroup(
 /// <summary>
 /// Avg/Top are tonight; Max is best-ever. IsNewBest means tonight set the max. The Dps*
 /// figures accompany each damage column where the metric is damage-based, otherwise null.
-/// TargetDps / CookiePulls / ShamePulls are populated only for the Giants group: the
-/// player's DPS target and the count of tonight's pulls that beat / missed it by the band.
+/// TargetDps / CookiePulls / WithinPulls / ShamePulls are populated only for the Giants
+/// group: the player's DPS target, and how many of tonight's pulls beat it by the band,
+/// landed within the band, or fell short by the band.
 /// </summary>
 public record HtcmSummaryStatRow(
     string AccountName, double Avg, double Top, double Max, bool IsNewBest,
     double? DpsAvg = null, double? DpsTop = null, double? DpsMax = null,
-    int? TargetDps = null, int? CookiePulls = null, int? ShamePulls = null);
+    int? TargetDps = null, int? CookiePulls = null, int? ShamePulls = null, int? WithinPulls = null);
 
 public record HtcmSummaryDragonRow(
     string AccountName,

@@ -206,7 +206,7 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         else
         {
             body.Append(NewBestLegend);
-            body.Append("\nGiants `pulls` = +beat / −missed target by 10k");
+            body.Append("\nGiants `pulls` = 🍪 cookie · within 10k · shame 💀");
         }
 
         return new EmbedBuilder()
@@ -328,10 +328,10 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
     private static string GiantsTargetCell(HtcmSummaryStatRow p) =>
         p.TargetDps is { } t ? FormatShort(t) : "-";
 
-    // Giants pull tally cell — pulls that beat / missed the target by the band, e.g.
-    // "+2/-1". Blank for healers, who have no target.
+    // Giants pull tally cell — cookie / within-band / shame counts, e.g. "2·3·1". Blank
+    // for healers, who have no target.
     private static string GiantsPullCell(HtcmSummaryStatRow p) =>
-        p.TargetDps is null ? "" : $"+{p.CookiePulls ?? 0}/-{p.ShamePulls ?? 0}";
+        p.TargetDps is null ? "" : $"{p.CookiePulls ?? 0}·{p.WithinPulls ?? 0}·{p.ShamePulls ?? 0}";
 
     // Full per-category shame rankings for the expanded view — the whole board, not just
     // the single worst. Null when every category is empty (nothing to show).
