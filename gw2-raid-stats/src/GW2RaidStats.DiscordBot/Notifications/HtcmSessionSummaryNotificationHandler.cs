@@ -80,9 +80,11 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         var embeds = new List<Embed>
         {
             BuildBurstEmbed(summary),
-            BuildDragonsEmbed(summary),
-            BuildOrbsAndRipsEmbed(summary),
         };
+        var cookiesShames = BuildCookiesShamesEmbed(summary);
+        if (cookiesShames != null) embeds.Add(cookiesShames);
+        embeds.Add(BuildDragonsEmbed(summary));
+        embeds.Add(BuildOrbsAndRipsEmbed(summary));
         if (wallOfShameEnabled)
         {
             var shameDetail = BuildShameDetailEmbed(summary.Shame);
@@ -130,30 +132,11 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         if (wallOfShameEnabled)
         {
             var shameLines = new List<string>();
-            if (s.Shame.FirstDeathPlayer != null)
-            {
-                var deaths = s.Shame.FirstDeathCount == 1 ? "pull" : "pulls";
-                shameLines.Add($"First Death: **{FormatName(s.Shame.FirstDeathPlayer)}** " +
-                               $"({s.Shame.FirstDeathCount} {deaths})");
-            }
-            if (s.Shame.DebilitatedPlayer != null)
-            {
-                var pulls = s.Shame.DebilitatedPulls == 1 ? "pull" : "pulls";
-                shameLines.Add($"Debilitated in Giants: **{FormatName(s.Shame.DebilitatedPlayer)}** " +
-                               $"({s.Shame.DebilitatedPulls} {pulls})");
-            }
-            if (s.Shame.ChompedPlayer != null)
-            {
-                shameLines.Add($"Chomped: **{FormatName(s.Shame.ChompedPlayer)}** ({s.Shame.ChompCount})");
-            }
-            if (s.Shame.ShockwavePlayer != null)
-            {
-                shameLines.Add($"Shockwaved: **{FormatName(s.Shame.ShockwavePlayer)}** ({s.Shame.ShockwaveCount})");
-            }
-            if (s.Shame.RedsPlayer != null)
-            {
-                shameLines.Add($"Bad Reds: **{FormatName(s.Shame.RedsPlayer)}** ({s.Shame.RedsCount})");
-            }
+            ShameLeaderLine(shameLines, "First Death", s.Shame.FirstDeathRanking, "pull", "pulls");
+            ShameLeaderLine(shameLines, "Debilitated in Giants", s.Shame.DebilRanking, "pull", "pulls");
+            ShameLeaderLine(shameLines, "Chomped", s.Shame.ChompRanking);
+            ShameLeaderLine(shameLines, "Shockwaved", s.Shame.ShockwaveRanking);
+            ShameLeaderLine(shameLines, "Bad Reds", s.Shame.RedsRanking);
             if (s.Shame.GiantsMiss is { } miss)
             {
                 shameLines.Add($"Giants Miss: **{FormatName(miss.AccountName)}** " +
@@ -168,6 +151,22 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         return embed.Build();
     }
 
+    // One Wall of Shame line for a category's leader. When several players tie for the top
+    // count it reads "Multiple" instead of naming one arbitrarily. unit is optional — bare
+    // count when omitted (e.g. "Chomped: X (4)").
+    private static void ShameLeaderLine(
+        List<string> lines, string label, List<HtcmShameRank> ranking,
+        string? unitSingular = null, string? unitPlural = null)
+    {
+        if (ranking.Count == 0) return;
+
+        var top = ranking[0].Count;
+        var tied = ranking.Count(r => r.Count == top);
+        var name = tied > 1 ? "Multiple" : FormatName(ranking[0].AccountName);
+        var unit = unitSingular == null ? "" : " " + (top == 1 ? unitSingular : unitPlural);
+        lines.Add($"{label}: **{name}** ({top}{unit})");
+    }
+
     public static Embed BuildBurstEmbed(HtcmSessionSummary s)
     {
         var body = new StringBuilder();
@@ -176,10 +175,10 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         {
             if (group.Players.Count == 0) continue;
 
-            // Only Giants carries per-player targets, so it gets the extra columns: the
-            // player's DPS target and their tonight pull tally (+beat / -missed by the band).
+            // Only Giants carries per-player targets, so it gets a target column alongside
+            // avg. Who beat / missed target is broken out into the Cookies & Shames section.
             var isGiants = group.Name == "Giants";
-            var headers = isGiants ? new[] { "avg (dps)", "target", "pulls" } : new[] { "avg (dps)" };
+            var headers = isGiants ? new[] { "avg (dps)", "target" } : new[] { "avg (dps)" };
 
             var avgDuration = TimeSpan.FromMilliseconds(group.AverageDurationMs);
             body.AppendLine($"**{group.Name}** · {group.PullsReached} pulls · {avgDuration.TotalSeconds:F0}s avg");
@@ -188,7 +187,7 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
                 group.Players.Take(MaxRows).Select(p => (
                     p.AccountName,
                     isGiants
-                        ? new[] { WithDps(p.Avg, p.DpsAvg), GiantsTargetCell(p), GiantsPullCell(p) }
+                        ? new[] { WithDps(p.Avg, p.DpsAvg), GiantsTargetCell(p) }
                         : new[] { WithDps(p.Avg, p.DpsAvg) },
                     p.IsNewBest))));
             AppendOverflow(body, group.Players.Count);
@@ -206,13 +205,45 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         else
         {
             body.Append(NewBestLegend);
-            body.Append("\nGiants `pulls` = 🍪 cookie · within 10k · shame 💀");
         }
 
         return new EmbedBuilder()
             .WithTitle("Burst — total damage, avg (dps)")
             .WithColor(Color.Purple)
             .WithDescription(body.ToString())
+            .Build();
+    }
+
+    // Per burst group, who beat their target (cookies) and who fell short (shames), by
+    // session-average DPS. Group-agnostic: any group with cookies/shames renders, so adding
+    // Timecaster/Saltspray targets later needs no change here. Null when nothing qualifies.
+    public static Embed? BuildCookiesShamesEmbed(HtcmSessionSummary s)
+    {
+        var body = new StringBuilder();
+
+        string Line(HtcmBurstAward a) =>
+            $"{FormatName(a.AccountName)} ({FormatShort(a.AvgDps)}, {FormatMargin(a.AvgDps - a.TargetDps)})";
+
+        foreach (var group in s.BurstGroups)
+        {
+            if (group.Cookies.Count == 0 && group.Shames.Count == 0) continue;
+
+            body.AppendLine($"**{group.Name}** — target {FormatShort(group.SquadTarget)} squad");
+            body.AppendLine(group.Cookies.Count > 0
+                ? "🍪 " + string.Join(" · ", group.Cookies.Select(Line))
+                : "🍪 _none_");
+            body.AppendLine(group.Shames.Count > 0
+                ? "💀 " + string.Join(" · ", group.Shames.Select(Line))
+                : "💀 _none_");
+            body.AppendLine();
+        }
+
+        if (body.Length == 0) return null;
+
+        return new EmbedBuilder()
+            .WithTitle("🍪 Cookies & 💀 Shames")
+            .WithColor(Color.Gold)
+            .WithDescription(body.ToString().TrimEnd())
             .Build();
     }
 
@@ -323,15 +354,9 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
     private static string FormatMargin(int delta) =>
         (delta >= 0 ? "+" : "−") + FormatShort(Math.Abs(delta));
 
-    // Giants target cell — the player's DPS target, or "—" for healers (no target). The
-    // − used here is a plain ASCII hyphen so it stays monospace-aligned in the code block.
+    // Giants target cell — the player's DPS target, or "-" for healers (no target).
     private static string GiantsTargetCell(HtcmSummaryStatRow p) =>
         p.TargetDps is { } t ? FormatShort(t) : "-";
-
-    // Giants pull tally cell — cookie / within-band / shame counts, e.g. "2·3·1". Blank
-    // for healers, who have no target.
-    private static string GiantsPullCell(HtcmSummaryStatRow p) =>
-        p.TargetDps is null ? "" : $"{p.CookiePulls ?? 0}·{p.WithinPulls ?? 0}·{p.ShamePulls ?? 0}";
 
     // Full per-category shame rankings for the expanded view — the whole board, not just
     // the single worst. Null when every category is empty (nothing to show).

@@ -65,12 +65,19 @@ target, by profession then role:
 | Healer (`heal_quick`/`heal_alac`) | *(exempt — no target, not shamed for low burst)* |
 
 Profession (elite spec) wins over role, so a portal-running Virtuoso is judged on 35k, not
-the pure-DPS 55k. The Giants table adds a `target` column and a `pulls` column showing
-`cookie · within · shame` — how many of tonight's pulls cleared the target by 10k, landed
-within 10k, or fell short by 10k. A player whose Giants **session average** clears target +
-10k is a **cookie** (→ Doing It Right); target − 10k or worse is a **shame** (→ Wall of
-Shame). The header names the single biggest cookie and biggest miss of the night, with
-their average and margin.
+the pure-DPS 55k. The Giants table shows `avg (dps) | target`. A player whose Giants
+**session average** clears target + 10k is a **cookie**; target − 10k or worse is a
+**shame**. The header names the single biggest cookie (→ Doing It Right) and biggest miss
+(→ Wall of Shame) with their average and margin, and the expanded **Cookies & Shames**
+section lists them all (see below).
+
+### Cookies & Shames
+
+A dedicated embed in the expanded (ephemeral) view, one section per burst group, listing
+who beat their target (🍪) and who fell short (💀) by session-average DPS — each with their
+average and margin. It is **group-agnostic**: any burst group with cookies or shames
+renders, so once Timecaster / Saltspray gain per-player targets they appear here with no
+further change. Currently only Giants has per-player targets, so only Giants shows.
 
 **Combined bosses — Jormag, Kralk, Morde, Zhaitan, Soo**
 
@@ -157,6 +164,10 @@ names the single leader in its category; a category with no data is dropped.
   not shamed.
 - **Giants Miss** — biggest Giants under-target performer (see Giants targets above): the
   player whose session-average Giants DPS fell furthest below their target (by at least 10k).
+
+Each header line names the single worst in its category, or **"Multiple (N)"** when several
+players tie for the top count (rather than picking one arbitrarily). The expanded view lists
+the full per-category ranking.
 
 All are gated on the guild's Wall of Shame toggle.
 
