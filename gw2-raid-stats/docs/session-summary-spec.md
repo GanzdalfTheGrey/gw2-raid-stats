@@ -73,11 +73,12 @@ section lists them all (see below).
 
 ### Cookies & Shames
 
-A dedicated embed in the expanded (ephemeral) view, one section per burst group, listing
-who beat their target (🍪) and who fell short (💀) by session-average DPS — each with their
-average and margin. It is **group-agnostic**: any burst group with cookies or shames
-renders, so once Timecaster / Saltspray gain per-player targets they appear here with no
-further change. Currently only Giants has per-player targets, so only Giants shows.
+A dedicated embed in the expanded (ephemeral) view, one section per burst group, with **one
+line per targeted player**: their session-average status (🍪 cookie ≥10k over target / ✅
+in-spec within 10k / 💀 shame ≥10k under), their average and margin, then how many of
+tonight's pulls landed in each bucket (`6🍪 1✅ 0💀`). It is **group-agnostic**: any burst
+group with target rows renders, so once Timecaster / Saltspray gain per-player targets they
+appear here with no further change. Currently only Giants has per-player targets.
 
 **Combined bosses — Jormag, Kralk, Morde, Zhaitan, Soo**
 

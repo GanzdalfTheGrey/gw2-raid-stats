@@ -214,36 +214,42 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             .Build();
     }
 
-    // Per burst group, who beat their target (cookies) and who fell short (shames), by
-    // session-average DPS. Group-agnostic: any group with cookies/shames renders, so adding
-    // Timecaster/Saltspray targets later needs no change here. Null when nothing qualifies.
+    // Per burst group, one line per targeted player: their session-average status vs target
+    // (🍪 cookie / ✅ in-spec / 💀 shame) with average and margin, then how many of tonight's
+    // pulls fell in each bucket. Group-agnostic: any group with target rows renders, so
+    // adding Timecaster/Saltspray targets later needs no change here. Null when nothing has.
     public static Embed? BuildCookiesShamesEmbed(HtcmSessionSummary s)
     {
         var body = new StringBuilder();
 
-        string Line(HtcmBurstAward a) =>
-            $"{FormatName(a.AccountName)} ({FormatShort(a.AvgDps)}, {FormatMargin(a.AvgDps - a.TargetDps)})";
-
         foreach (var group in s.BurstGroups)
         {
-            if (group.Cookies.Count == 0 && group.Shames.Count == 0) continue;
+            if (group.Targets.Count == 0) continue;
 
-            body.AppendLine($"**{group.Name}** — target {FormatShort(group.SquadTarget)} squad");
-            body.AppendLine(group.Cookies.Count > 0
-                ? "🍪 " + string.Join(" · ", group.Cookies.Select(Line))
-                : "🍪 _none_");
-            body.AppendLine(group.Shames.Count > 0
-                ? "💀 " + string.Join(" · ", group.Shames.Select(Line))
-                : "💀 _none_");
+            body.AppendLine($"**{group.Name}** — squad target {FormatShort(group.SquadTarget)}");
+            foreach (var r in group.Targets)
+            {
+                var emoji = r.Status switch
+                {
+                    HtcmBurstStatus.Cookie => "🍪",
+                    HtcmBurstStatus.Shame => "💀",
+                    _ => "✅"
+                };
+                body.AppendLine(
+                    $"{emoji} **{FormatName(r.AccountName)}** {FormatShort(r.AvgDps)} " +
+                    $"({FormatMargin(r.AvgDps - r.TargetDps)}) — pulls {r.CookiePulls}🍪 {r.SpecPulls}✅ {r.ShamePulls}💀");
+            }
             body.AppendLine();
         }
 
         if (body.Length == 0) return null;
 
+        body.Append("🍪 ≥10k over target · ✅ within 10k · 💀 ≥10k under");
+
         return new EmbedBuilder()
             .WithTitle("🍪 Cookies & 💀 Shames")
             .WithColor(Color.Gold)
-            .WithDescription(body.ToString().TrimEnd())
+            .WithDescription(body.ToString())
             .Build();
     }
 

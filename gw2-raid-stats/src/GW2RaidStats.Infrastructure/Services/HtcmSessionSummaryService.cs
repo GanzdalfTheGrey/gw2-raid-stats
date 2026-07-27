@@ -170,21 +170,24 @@ public class HtcmSessionSummaryService
 
         var reds = await BuildBadRedsAsync(detail, included, participation.NonHealer, ct);
 
-        // Enrich the Giants group with per-player targets and split it into cookies/shames.
-        var (giantsPlayers, giantsCookies, giantsShames) =
-            BuildGiantsTargets(burstGroups[1].Players, participation);
-        burstGroups[1] = burstGroups[1] with
-        {
-            Players = giantsPlayers,
-            Cookies = giantsCookies,
-            Shames = giantsShames,
-        };
+        // Enrich the Giants group with per-player targets + per-pull cookie/spec/shame rows.
+        var giantsPerPull = AggregatePerPull(HtcmProgService.GiantsPhases, guildPhaseRows, durationByKey);
+        var (giantsPlayers, giantsTargets) =
+            BuildGiantsTargets(burstGroups[1].Players, giantsPerPull, participation, sessionIds);
+        burstGroups[1] = burstGroups[1] with { Players = giantsPlayers, Targets = giantsTargets };
 
-        var shame = BuildShame(playerSlices, firstDeaths, chomps, shockwaves, reds,
-            giantsShames.FirstOrDefault());
+        // Rows are sorted by margin desc, so the first cookie is the biggest and the last
+        // shame is the worst — the header standouts.
+        static HtcmBurstAward Award(HtcmBurstTargetRow r) => new(r.AccountName, r.AvgDps, r.TargetDps);
+        var giantsCookie = giantsTargets
+            .Where(r => r.Status == HtcmBurstStatus.Cookie).Select(Award).FirstOrDefault();
+        var giantsMiss = giantsTargets
+            .Where(r => r.Status == HtcmBurstStatus.Shame).Select(Award).LastOrDefault();
+
+        var shame = BuildShame(playerSlices, firstDeaths, chomps, shockwaves, reds, giantsMiss);
         var highlights = BuildHighlights(
             burstGroups, dragons, boonUptime, orbPushes, boonRips,
-            participation.Resurrects, participation.Breakbar, giantsCookies.FirstOrDefault());
+            participation.Resurrects, participation.Breakbar, giantsCookie);
 
         // Combined-dragon squad DPS for the header's squad-totals line: tonight (restricted
         // to this session's pulls) and all-time, same basis as the burst groups.
@@ -229,22 +232,27 @@ public class HtcmSessionSummaryService
             SquadDpsAllTime: ComputeSquadDps(groupPhases, allPhaseRows, durationByKey, encounterFilter: null),
             SquadTarget: squadTarget,
             Players: players,
-            Cookies: new List<HtcmBurstAward>(),
-            Shames: new List<HtcmBurstAward>());
+            Targets: new List<HtcmBurstTargetRow>());
     }
 
-    // Attaches each Giants player's DPS target, and splits the group into cookies (session
-    // average at least a band over target) and shames (a band or more under). Both lists are
-    // sorted by margin — biggest cookie / biggest miss first — so the header can take the
-    // top of each and the Cookies & Shames section can show them all. Measured on session-
-    // average DPS. Healers (no target) are neither.
-    private static (List<HtcmSummaryStatRow> Players, List<HtcmBurstAward> Cookies, List<HtcmBurstAward> Shames) BuildGiantsTargets(
+    // Attaches each Giants player's DPS target and builds a per-player target row: their
+    // session-average status (cookie / in-spec / shame vs the band) plus how many of
+    // tonight's pulls landed in each of those buckets. Sorted by margin, biggest first, so
+    // the header can take the top cookie and worst shame and the Cookies & Shames section
+    // can list everyone. Healers (no target) are omitted.
+    private static (List<HtcmSummaryStatRow> Players, List<HtcmBurstTargetRow> Targets) BuildGiantsTargets(
         List<HtcmSummaryStatRow> giantsPlayers,
-        SessionParticipation participation)
+        List<PullValue> perPull,
+        SessionParticipation participation,
+        HashSet<Guid> sessionIds)
     {
+        var pullDpsByAccount = perPull
+            .Where(p => sessionIds.Contains(p.EncounterId))
+            .GroupBy(p => p.AccountName)
+            .ToDictionary(g => g.Key, g => g.Select(p => p.Dps).ToList());
+
         var enriched = new List<HtcmSummaryStatRow>();
-        var cookies = new List<HtcmBurstAward>();
-        var shames = new List<HtcmBurstAward>();
+        var targets = new List<HtcmBurstTargetRow>();
 
         foreach (var pl in giantsPlayers)
         {
@@ -260,14 +268,22 @@ public class HtcmSessionSummaryService
 
             enriched.Add(pl with { TargetDps = t });
 
+            var pulls = pullDpsByAccount.GetValueOrDefault(pl.AccountName) ?? new List<double>();
+            var cookiePulls = pulls.Count(d => d >= t + BurstCookieShameBand);
+            var shamePulls = pulls.Count(d => d <= t - BurstCookieShameBand);
+
             var margin = avgDps - t;
-            if (margin >= BurstCookieShameBand) cookies.Add(new HtcmBurstAward(pl.AccountName, (int)avgDps, t));
-            else if (margin <= -BurstCookieShameBand) shames.Add(new HtcmBurstAward(pl.AccountName, (int)avgDps, t));
+            var status = margin >= BurstCookieShameBand ? HtcmBurstStatus.Cookie
+                : margin <= -BurstCookieShameBand ? HtcmBurstStatus.Shame
+                : HtcmBurstStatus.InSpec;
+
+            targets.Add(new HtcmBurstTargetRow(
+                pl.AccountName, (int)avgDps, t, status,
+                cookiePulls, pulls.Count - cookiePulls - shamePulls, shamePulls));
         }
 
-        cookies = cookies.OrderByDescending(a => a.AvgDps - a.TargetDps).ToList();
-        shames = shames.OrderBy(a => a.AvgDps - a.TargetDps).ToList();
-        return (enriched, cookies, shames);
+        targets = targets.OrderByDescending(r => r.AvgDps - r.TargetDps).ToList();
+        return (enriched, targets);
     }
 
     // Squad DPS = total squad damage across the group's phases / the summed phase
@@ -854,8 +870,9 @@ public record HtcmBurstAward(string AccountName, int AvgDps, int TargetDps);
 /// figure across every session, for comparison. Both cover the whole squad, pugs included.
 /// </summary>
 /// <summary>
-/// Cookies / Shames are the group's over- and under-target performers (session-average),
-/// biggest first — empty for groups without per-player targets (currently all but Giants).
+/// Targets is the group's per-player target breakdown (session-average status + per-pull
+/// counts), sorted by margin, biggest first — empty for groups without per-player targets
+/// (currently all but Giants).
 /// </summary>
 public record HtcmSummaryBurstGroup(
     string Name,
@@ -865,8 +882,17 @@ public record HtcmSummaryBurstGroup(
     int SquadDpsAllTime,
     int SquadTarget,
     List<HtcmSummaryStatRow> Players,
-    List<HtcmBurstAward> Cookies,
-    List<HtcmBurstAward> Shames);
+    List<HtcmBurstTargetRow> Targets);
+
+public enum HtcmBurstStatus { Cookie, InSpec, Shame }
+
+/// <summary>
+/// A Giants player's session-average status vs their DPS target, plus how many of tonight's
+/// pulls beat it by the band (Cookie), landed within the band (Spec), or fell short (Shame).
+/// </summary>
+public record HtcmBurstTargetRow(
+    string AccountName, int AvgDps, int TargetDps, HtcmBurstStatus Status,
+    int CookiePulls, int SpecPulls, int ShamePulls);
 
 /// <summary>
 /// Avg/Top are tonight; Max is best-ever. IsNewBest means tonight set the max. The Dps*
