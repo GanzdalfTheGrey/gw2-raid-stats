@@ -19,10 +19,6 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
     private readonly DiscordBotSettings _settings;
     private readonly ILogger<HtcmSessionSummaryNotificationHandler> _logger;
 
-    // Discord caps a single message at 6000 characters summed across all its embeds.
-    // We stay well under, and split into a second message if a huge roster gets close.
-    private const int MessageCharBudget = 5200;
-
     // Rows per table. A prog night with heavy subbing can produce more names than are
     // useful in a summary; anything dropped is reported rather than silently cut.
     private const int MaxRows = 12;
@@ -59,36 +55,40 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             return;
         }
 
-        // One table per embed (burst gets its three, which share a layout). Embeds give
-        // each table its own visual break, which reads far better than stacking several
-        // differently-shaped code blocks inside one description.
+        // Collapsed by default: post just the header (squad totals, highlights, shame) with
+        // a button. The per-player tables and deeper shame are heavy, so they're revealed
+        // on demand — ephemerally to the clicker — by HtcmSummaryInteractionHandler, keyed
+        // off the session date encoded in the button id.
+        var button = new ComponentBuilder()
+            .WithButton("Full breakdown", $"{ExpandCustomIdPrefix}{summary.Date:yyyy-MM-dd}",
+                ButtonStyle.Secondary, new Emoji("📊"))
+            .Build();
+
+        await channel.SendMessageAsync(
+            embed: BuildHeaderEmbed(summary, wallOfShameEnabled),
+            components: button);
+    }
+
+    // Custom-id prefix routed to HtcmSummaryInteractionHandler; the remainder is the
+    // session date (yyyy-MM-dd).
+    public const string ExpandCustomIdPrefix = "htcm:expand:";
+
+    // The per-player tables plus the deeper shame breakdown, for the expanded view. Shame
+    // detail is gated on the guild's Wall of Shame toggle just like the collapsed header.
+    public static IReadOnlyList<Embed> BuildDetailEmbeds(HtcmSessionSummary summary, bool wallOfShameEnabled)
+    {
         var embeds = new List<Embed>
         {
-            BuildHeaderEmbed(summary, wallOfShameEnabled),
             BuildBurstEmbed(summary),
             BuildDragonsEmbed(summary),
             BuildOrbsAndRipsEmbed(summary),
         };
-
-        // Send as one message when it fits the shared 6000-char budget, otherwise split.
-        var running = 0;
-        var batch = new List<Embed>();
-        foreach (var embed in embeds)
+        if (wallOfShameEnabled)
         {
-            var length = embed.Length;
-            if (batch.Count > 0 && running + length > MessageCharBudget)
-            {
-                await channel.SendMessageAsync(embeds: batch.ToArray());
-                batch.Clear();
-                running = 0;
-            }
-            batch.Add(embed);
-            running += length;
+            var shameDetail = BuildShameDetailEmbed(summary.Shame);
+            if (shameDetail != null) embeds.Add(shameDetail);
         }
-        if (batch.Count > 0)
-        {
-            await channel.SendMessageAsync(embeds: batch.ToArray());
-        }
+        return embeds;
     }
 
     private Embed BuildHeaderEmbed(HtcmSessionSummary s, bool wallOfShameEnabled)
@@ -106,39 +106,19 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             embed.WithUrl(_settings.AppUrl);
         }
 
+        // Squad average DPS for each burst group plus the combined dragons, tonight with
+        // an all-time figure alongside for comparison.
         var squadLines = s.BurstGroups
             .Where(g => g.SquadDps > 0)
             .Select(g => $"**{g.Name}** {FormatShort(g.SquadDps)} — all-time {FormatShort(g.SquadDpsAllTime)}")
             .ToList();
+        if (s.DragonSquadDps > 0)
+        {
+            squadLines.Add($"**Dragons** {FormatShort(s.DragonSquadDps)} — all-time {FormatShort(s.DragonSquadDpsAllTime)}");
+        }
         if (squadLines.Count > 0)
         {
-            embed.AddField("⚔️ Squad Burst (avg DPS)", string.Join("\n", squadLines));
-        }
-
-        if (s.Mvdps.Count > 0)
-        {
-            var medals = new[] { "🥇", "🥈", "🥉" };
-            var podium = s.Mvdps.Select((m, i) =>
-            {
-                var line = new StringBuilder();
-                var medal = i < medals.Length ? medals[i] : "🏅";
-                line.AppendLine($"{medal} **{FormatName(m.AccountName)}** — {m.Score:F1} pts");
-                line.Append($"burst {m.BurstPoints:F1} · dps {m.DpsPoints:F1} · " +
-                            $"orbs {m.OrbPoints:F1} · rips {m.RipPoints:F1}");
-                // Only boon givers have this category at all, so pure DPS lines stay short.
-                if (m.Boon != null)
-                {
-                    line.Append($" · {m.Boon.ToLowerInvariant()} {m.BoonPoints:F1}" +
-                                $" ({m.BoonUptimePct:F0}%)");
-                }
-                if (m.Penalty > 0)
-                {
-                    line.Append($"\npenalties −{m.Penalty:F1} ({FormatPenalties(m)})");
-                }
-                return line.ToString();
-            });
-
-            embed.AddField("🏆 Most Valuable Proggers", string.Join("\n", podium));
+            embed.AddField("⚔️ Squad DPS (avg)", string.Join("\n", squadLines));
         }
 
         var goodLines = BuildHighlightLines(s.Highlights);
@@ -183,7 +163,7 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         return embed.Build();
     }
 
-    private static Embed BuildBurstEmbed(HtcmSessionSummary s)
+    public static Embed BuildBurstEmbed(HtcmSessionSummary s)
     {
         var body = new StringBuilder();
 
@@ -222,7 +202,7 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             .Build();
     }
 
-    private static Embed BuildDragonsEmbed(HtcmSessionSummary s)
+    public static Embed BuildDragonsEmbed(HtcmSessionSummary s)
     {
         var body = new StringBuilder();
         body.AppendLine("Jormag · Kralk · Morde · Zhaitan · Soo-Won _(Primordus excluded)_");
@@ -254,7 +234,7 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
             .Build();
     }
 
-    private static Embed BuildOrbsAndRipsEmbed(HtcmSessionSummary s)
+    public static Embed BuildOrbsAndRipsEmbed(HtcmSessionSummary s)
     {
         var body = new StringBuilder();
 
@@ -319,15 +299,37 @@ public class HtcmSessionSummaryNotificationHandler : INotificationHandler
         return lines;
     }
 
-    // Only the penalties a player actually incurred, so a clean night reads short.
-    private static string FormatPenalties(HtcmSummaryMvdps m)
+    // Full per-category shame rankings for the expanded view — the whole board, not just
+    // the single worst. Null when every category is empty (nothing to show).
+    private static Embed? BuildShameDetailEmbed(HtcmSummaryShame shame)
     {
-        var parts = new List<string>();
-        if (m.FirstDeaths > 0) parts.Add($"{m.FirstDeaths} first death{(m.FirstDeaths == 1 ? "" : "s")}");
-        if (m.DebilPulls > 0) parts.Add($"{m.DebilPulls} debil pull{(m.DebilPulls == 1 ? "" : "s")}");
-        if (m.Chomps > 0) parts.Add($"{m.Chomps} chomp{(m.Chomps == 1 ? "" : "s")}");
-        if (m.Shockwaves > 0) parts.Add($"{m.Shockwaves} shockwave{(m.Shockwaves == 1 ? "" : "s")}");
-        return string.Join(", ", parts);
+        var body = new StringBuilder();
+
+        void Section(string title, List<HtcmShameRank> ranking, string unitSingular, string unitPlural)
+        {
+            if (ranking.Count == 0) return;
+            body.AppendLine($"**{title}**");
+            foreach (var r in ranking.Take(MaxRows))
+            {
+                var unit = r.Count == 1 ? unitSingular : unitPlural;
+                body.AppendLine($"{FormatName(r.AccountName)} — {r.Count} {unit}");
+            }
+            body.AppendLine();
+        }
+
+        Section("First Death", shame.FirstDeathRanking, "pull", "pulls");
+        Section("Debilitated in Giants", shame.DebilRanking, "pull", "pulls");
+        Section("Chomped", shame.ChompRanking, "hit", "hits");
+        Section("Shockwaved", shame.ShockwaveRanking, "hit", "hits");
+        Section("Bad Reds", shame.RedsRanking, "red", "reds");
+
+        if (body.Length == 0) return null;
+
+        return new EmbedBuilder()
+            .WithTitle("💀 Wall of Shame — full breakdown")
+            .WithColor(Color.DarkRed)
+            .WithDescription(body.ToString().TrimEnd())
+            .Build();
     }
 
     // Damage with its DPS in parentheses. DPS drops the decimal here purely to keep the

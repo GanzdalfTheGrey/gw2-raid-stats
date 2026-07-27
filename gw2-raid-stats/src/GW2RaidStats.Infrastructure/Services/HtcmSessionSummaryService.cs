@@ -53,40 +53,15 @@ public class HtcmSessionSummaryService
         "Knck.Dwn", "Knck.Pll",                            // Knocked Down / Back
     };
 
-    // MVP category weights. Each player's value is normalised against the session leader
-    // in that category (leader = full weight), so the scale self-calibrates instead of
-    // relying on fixed damage-per-rip conversion constants. The weights are absolute
-    // points rather than shares of 100: a pure DPS tops out at 260, a boon giver at 290,
-    // because the boon category is a bonus on top for the DPS a support gives up.
-    //
-    // Boon rips sit deliberately low. They matter enormously squad-wide, but past the
-    // first dedicated ripper the marginal rip is nearly worthless, so rewarding them
-    // heavily would just crown whoever happened to bring the strip build.
-    private const double BurstWeight = 100;
-    private const double DpsWeight = 100;
-    private const double OrbWeight = 50;
-    private const double RipWeight = 10;
-
-    // Boon points apply only to players whose PlayerEncounter.Role marks them a quickness
-    // or alacrity giver, and are scored on the uptime their *subgroup received*, not their
-    // own — a scrapper self-quickening while the group sits at 40% has not done the job.
-    // 5 points per burst group (Timecaster, Giants, Saltspray) and 15 across the dragons,
-    // so 30 in total. Uptime at or above the full-credit threshold earns the whole
-    // allocation; below it the award ramps linearly.
+    // Boon points rank the "🎵 Boons" highlight. They apply only to players whose
+    // PlayerEncounter.Role marks them a quickness or alacrity giver, scored on the uptime
+    // their *subgroup received*, not their own — a scrapper self-quickening while the group
+    // sits at 40% has not done the job. 5 points per burst group (Timecaster, Giants,
+    // Saltspray) and 15 across the dragons, so 30 in total. Uptime at or above the
+    // full-credit threshold earns the whole allocation; below it the award ramps linearly.
     private const double BoonPointsPerBurstGroup = 5;
     private const double BoonPointsDragons = 15;
     private const decimal BoonFullCreditUptimePct = 95m;
-
-    // Penalties are absolute points off the weighted score, not shares — a first death
-    // costs the same 5 points whoever you are. Debilitated is charged per pull the
-    // player carried the debuff into Giants.
-    private const double PenaltyPerFirstDeath = 5;
-    private const double PenaltyPerDebilPull = 3;
-    private const double PenaltyPerChomp = 3;
-    private const double PenaltyPerShockwave = 3;
-
-    // How many players the MVDPS podium lists.
-    private const int MvdpsPodiumSize = 3;
 
     public HtcmSessionSummaryService(
         RaidStatsDb db,
@@ -179,11 +154,6 @@ public class HtcmSessionSummaryService
         var chomps = await GetMechanicCountsAsync(detail, included, PrimordusJawsMechanic, ct);
         var shockwaves = await GetMechanicCountsAsync(detail, included, ShockwaveMechanic, ct);
 
-        // Pulls where the player carried Debilitated into the Giants window at all.
-        var debilPulls = playerSlices.ToDictionary(
-            s => s.AccountName,
-            s => s.Giants.DebilPulls);
-
         // Boon points are a session award, so unlike the damage tables this only looks at
         // tonight's pulls — there is no "best ever" comparison to make.
         var boonUptime = await BuildBoonPointsAsync(
@@ -198,21 +168,26 @@ public class HtcmSessionSummaryService
         var cleanest = await BuildCleanestAsync(detail, included, participation.PullsPlayed, ct);
 
         var shame = BuildShame(playerSlices, firstDeaths, chomps, shockwaves, reds);
-        var mvdps = ComputeMvdps(burstGroups, dragons, orbPushes, boonRips, boonUptime,
-            firstDeaths, debilPulls, chomps, shockwaves);
         var highlights = BuildHighlights(
             burstGroups, dragons, boonUptime, orbPushes, participation.Resurrects, cleanest);
+
+        // Combined-dragon squad DPS for the header's squad-totals line: tonight (restricted
+        // to this session's pulls) and all-time, same basis as the burst groups.
+        var sessionIds = detail.Pulls.Select(p => p.EncounterId).ToHashSet();
+        var dragonSquadDps = ComputeSquadDps(HtcmProgService.CombinedDragonPhases, phaseRows, durationByKey, sessionIds);
+        var dragonSquadDpsAllTime = ComputeSquadDps(HtcmProgService.CombinedDragonPhases, phaseRows, durationByKey, null);
 
         return new HtcmSessionSummary(
             Date: sessionDate,
             PullCount: detail.PullCount,
             BestPhase: detail.BestPhase,
             BestBossHpRemaining: detail.BestBossHpRemaining,
+            DragonSquadDps: dragonSquadDps,
+            DragonSquadDpsAllTime: dragonSquadDpsAllTime,
             BurstGroups: burstGroups,
             Dragons: dragons,
             OrbPushes: orbPushes,
             BoonRips: boonRips,
-            Mvdps: mvdps,
             Highlights: highlights,
             Shame: shame);
     }
@@ -584,6 +559,14 @@ public class HtcmSessionSummaryService
         var worstShockwave = Highest(shockwaves);
         var worstReds = Highest(reds);
 
+        // Full per-category rankings for the expanded (ephemeral) view. Debilitated ranks
+        // off the same per-player slice the collapsed single-worst uses.
+        var debilRanking = playerSlices
+            .Where(s => s.Giants.DebilPulls > 0)
+            .Select(s => new HtcmShameRank(s.AccountName, s.Giants.DebilPulls))
+            .OrderByDescending(r => r.Count)
+            .ToList();
+
         return new HtcmSummaryShame(
             FirstDeathPlayer: worstFirstDeath?.Key,
             FirstDeathCount: worstFirstDeath?.Value ?? 0,
@@ -594,8 +577,20 @@ public class HtcmSessionSummaryService
             ShockwavePlayer: worstShockwave?.Key,
             ShockwaveCount: worstShockwave?.Value ?? 0,
             RedsPlayer: worstReds?.Key,
-            RedsCount: worstReds?.Value ?? 0);
+            RedsCount: worstReds?.Value ?? 0,
+            FirstDeathRanking: Ranking(firstDeaths),
+            DebilRanking: debilRanking,
+            ChompRanking: Ranking(chomps),
+            ShockwaveRanking: Ranking(shockwaves),
+            RedsRanking: Ranking(reds));
     }
+
+    // Accounts with a non-zero count, highest first, for the expanded shame view.
+    private static List<HtcmShameRank> Ranking(Dictionary<string, int> counts) => counts
+        .Where(kv => kv.Value > 0)
+        .OrderByDescending(kv => kv.Value)
+        .Select(kv => new HtcmShameRank(kv.Key, kv.Value))
+        .ToList();
 
     // The account with the highest count, or null when the dictionary is empty or every
     // count is zero. Used for both shame ("most X") and the Field Medic highlight.
@@ -787,83 +782,6 @@ public class HtcmSessionSummaryService
         Dictionary<string, int> Resurrects,
         HashSet<(Guid EncounterId, string Account)> NonHealer);
 
-    // Weighted sum of each player's share of the session leader in four categories, plus
-    // the boon-giver bonus and minus flat penalties for the night's mistakes. A category
-    // with no data simply contributes nothing to anyone's score. Returns the podium,
-    // best first.
-    private static List<HtcmSummaryMvdps> ComputeMvdps(
-        List<HtcmSummaryBurstGroup> burstGroups,
-        List<HtcmSummaryDragonRow> dragons,
-        List<HtcmSummaryOrbRow> orbPushes,
-        List<HtcmSummaryStatRow> boonRips,
-        List<HtcmSummaryBoonRow> boonUptime,
-        Dictionary<string, int> firstDeaths,
-        Dictionary<string, int> debilPulls,
-        Dictionary<string, int> chomps,
-        Dictionary<string, int> shockwaves)
-    {
-        // Burst = combined session-average total damage across all three burst groups.
-        var burst = burstGroups
-            .SelectMany(g => g.Players)
-            .GroupBy(p => p.AccountName)
-            .ToDictionary(g => g.Key, g => g.Sum(p => p.Avg));
-        var dps = dragons.ToDictionary(d => d.AccountName, d => d.DpsAvg);
-        var orbs = orbPushes.ToDictionary(o => o.AccountName, o => (double)o.SessionTotal);
-        var rips = boonRips.ToDictionary(r => r.AccountName, r => r.Avg);
-        var boons = boonUptime.ToDictionary(b => b.AccountName);
-
-        // Penalised players are included even with no scoring data, so a night spent
-        // mostly dead still shows up rather than quietly vanishing from the podium.
-        var accounts = burst.Keys
-            .Concat(dps.Keys).Concat(orbs.Keys).Concat(rips.Keys).Concat(boons.Keys)
-            .Concat(firstDeaths.Keys).Concat(debilPulls.Keys).Concat(chomps.Keys)
-            .Concat(shockwaves.Keys)
-            .Distinct()
-            .ToList();
-        if (accounts.Count == 0) return new List<HtcmSummaryMvdps>();
-
-        static double Share(Dictionary<string, double> values, string account, double weight)
-        {
-            if (values.Count == 0) return 0;
-            var leader = values.Values.Max();
-            if (leader <= 0) return 0;
-            return values.TryGetValue(account, out var v) ? v / leader * weight : 0;
-        }
-
-        return accounts
-            .Select(a =>
-            {
-                var deaths = firstDeaths.GetValueOrDefault(a);
-                var debiled = debilPulls.GetValueOrDefault(a);
-                var chomped = chomps.GetValueOrDefault(a);
-                var waves = shockwaves.GetValueOrDefault(a);
-                var boon = boons.GetValueOrDefault(a);
-                return new HtcmSummaryMvdps(
-                    a,
-                    BurstPoints: Share(burst, a, BurstWeight),
-                    DpsPoints: Share(dps, a, DpsWeight),
-                    OrbPoints: Share(orbs, a, OrbWeight),
-                    RipPoints: Share(rips, a, RipWeight),
-                    // Absolute, not a share of the leader: a giver is measured against the
-                    // 95% bar, not against whichever other giver had the best night.
-                    BoonPoints: boon?.Points ?? 0,
-                    Boon: boon?.Boon,
-                    BoonUptimePct: boon?.AvgUptimePct,
-                    FirstDeaths: deaths,
-                    DebilPulls: debiled,
-                    Chomps: chomped,
-                    Shockwaves: waves,
-                    FirstDeathPenalty: deaths * PenaltyPerFirstDeath,
-                    DebilPenalty: debiled * PenaltyPerDebilPull,
-                    ChompPenalty: chomped * PenaltyPerChomp,
-                    ShockwavePenalty: waves * PenaltyPerShockwave);
-            })
-            .OrderByDescending(s => s.Score)
-            .ThenByDescending(s => s.BurstPoints)
-            .Take(MvdpsPodiumSize)
-            .ToList();
-    }
-
     private record PhaseDamageRow(Guid EncounterId, string AccountName, string PhaseName, long Damage);
 
     private record BoonPhaseRow(
@@ -880,11 +798,12 @@ public record HtcmSessionSummary(
     int PullCount,
     string BestPhase,
     decimal BestBossHpRemaining,
+    int DragonSquadDps,
+    int DragonSquadDpsAllTime,
     List<HtcmSummaryBurstGroup> BurstGroups,
     List<HtcmSummaryDragonRow> Dragons,
     List<HtcmSummaryOrbRow> OrbPushes,
     List<HtcmSummaryStatRow> BoonRips,
-    List<HtcmSummaryMvdps> Mvdps,
     HtcmSummaryHighlights Highlights,
     HtcmSummaryShame Shame);
 
@@ -938,36 +857,10 @@ public record HtcmSummaryOrbRow(string AccountName, int SessionTotal, int BestSe
 public record HtcmSummaryBoonRow(string AccountName, string Boon, double Points, double AvgUptimePct);
 
 /// <summary>
-/// One podium entry. BurstPoints/DpsPoints/OrbPoints/RipPoints are shares of the session
-/// leader (260 across all four); BoonPoints is an absolute award out of 30 for boon
-/// givers only, so supports cap at 290. The *Penalty values are flat deductions, with the
-/// raw counts alongside them so the embed can show what earned the deduction.
+/// Shame awards. The scalar fields are the single worst per category, shown in the
+/// collapsed header. The *Ranking lists are the full per-category rankings (non-zero,
+/// highest first) shown in the expanded ephemeral breakdown.
 /// </summary>
-public record HtcmSummaryMvdps(
-    string AccountName,
-    double BurstPoints,
-    double DpsPoints,
-    double OrbPoints,
-    double RipPoints,
-    double BoonPoints,
-    string? Boon,
-    double? BoonUptimePct,
-    int FirstDeaths,
-    int DebilPulls,
-    int Chomps,
-    int Shockwaves,
-    double FirstDeathPenalty,
-    double DebilPenalty,
-    double ChompPenalty,
-    double ShockwavePenalty)
-{
-    public double EarnedPoints => BurstPoints + DpsPoints + OrbPoints + RipPoints + BoonPoints;
-
-    public double Penalty => FirstDeathPenalty + DebilPenalty + ChompPenalty + ShockwavePenalty;
-
-    public double Score => EarnedPoints - Penalty;
-}
-
 public record HtcmSummaryShame(
     string? FirstDeathPlayer,
     int FirstDeathCount,
@@ -978,4 +871,11 @@ public record HtcmSummaryShame(
     string? ShockwavePlayer,
     int ShockwaveCount,
     string? RedsPlayer,
-    int RedsCount);
+    int RedsCount,
+    List<HtcmShameRank> FirstDeathRanking,
+    List<HtcmShameRank> DebilRanking,
+    List<HtcmShameRank> ChompRanking,
+    List<HtcmShameRank> ShockwaveRanking,
+    List<HtcmShameRank> RedsRanking);
+
+public record HtcmShameRank(string AccountName, int Count);

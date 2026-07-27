@@ -65,6 +65,7 @@ var host = Host.CreateDefaultBuilder(args)
 
         // Event button-interaction handler (registered with the bot interaction router)
         services.AddScoped<EventInteractionHandler>();
+        services.AddScoped<HtcmSummaryInteractionHandler>();
 
         // Background services
         services.AddHostedService<DiscordBotService>();

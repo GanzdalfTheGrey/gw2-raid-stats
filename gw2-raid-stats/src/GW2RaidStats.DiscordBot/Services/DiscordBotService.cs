@@ -117,6 +117,12 @@ public class DiscordBotService : BackgroundService
                     await eventHandler.HandleAsync(component, CancellationToken.None);
                     return;
                 }
+                var htcmHandler = scope.ServiceProvider.GetRequiredService<HtcmSummaryInteractionHandler>();
+                if (htcmHandler.CanHandle(component.Data.CustomId))
+                {
+                    await htcmHandler.HandleAsync(component, CancellationToken.None);
+                    return;
+                }
                 _logger.LogDebug("Unhandled message component: {CustomId}", component.Data.CustomId);
                 return;
             }
