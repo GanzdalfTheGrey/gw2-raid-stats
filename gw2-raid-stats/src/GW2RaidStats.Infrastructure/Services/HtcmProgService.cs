@@ -17,6 +17,18 @@ public class HtcmProgService
     // Minimum fight duration to count (30 seconds)
     public const int MinDurationMs = 30000;
 
+    // encounter_time is a timestamptz — a pure UTC instant — and the app containers run
+    // in UTC, so DateTimeOffset.Date is the UTC date. An evening NA raid (8–11pm Central
+    // ≈ 01:00–04:00 UTC) would be labelled and grouped under the NEXT day's date. All
+    // HTCM session grouping, lookup windows, and displayed session dates therefore go
+    // through this zone so a "session" is a raid night on the guild's calendar.
+    public static readonly TimeZoneInfo SessionTimeZone =
+        TimeZoneInfo.FindSystemTimeZoneById("America/Chicago");
+
+    /// <summary>Raid-night calendar date for an encounter (see SessionTimeZone).</summary>
+    public static DateTime GetSessionDate(DateTimeOffset encounterTime)
+        => TimeZoneInfo.ConvertTime(encounterTime, SessionTimeZone).Date;
+
     // Canonical phase order for HTCM progression
     // This maps phase names to their canonical progression index
     // Higher index = further into the fight = better progression
@@ -241,9 +253,12 @@ public class HtcmProgService
         "Zhai.Poi.H"       // Zhaitan Poison
     };
 
-    public HtcmProgService(RaidStatsDb db)
+    private readonly IncludedPlayerService _includedPlayerService;
+
+    public HtcmProgService(RaidStatsDb db, IncludedPlayerService includedPlayerService)
     {
         _db = db;
+        _includedPlayerService = includedPlayerService;
     }
 
     /// <summary>
@@ -264,7 +279,7 @@ public class HtcmProgService
             .ToListAsync(ct);
 
         var sessions = encounters
-            .GroupBy(e => e.EncounterTime.Date)
+            .GroupBy(e => GetSessionDate(e.EncounterTime))
             .Select(g =>
             {
                 // Use canonical phase ordering to determine best progression
@@ -293,8 +308,13 @@ public class HtcmProgService
     /// </summary>
     public async Task<HtcmSessionDetail?> GetSessionDetailAsync(DateTime date, CancellationToken ct = default)
     {
-        var startOfDay = new DateTimeOffset(date.Date, TimeSpan.Zero);
-        var endOfDay = startOfDay.AddDays(1);
+        // The incoming date is a raid-night date in SessionTimeZone; convert its midnight
+        // boundaries to UTC instants for the DB range filter (DST-safe via ConvertTimeToUtc).
+        var localMidnight = DateTime.SpecifyKind(date.Date, DateTimeKind.Unspecified);
+        var startOfDay = new DateTimeOffset(
+            TimeZoneInfo.ConvertTimeToUtc(localMidnight, SessionTimeZone), TimeSpan.Zero);
+        var endOfDay = new DateTimeOffset(
+            TimeZoneInfo.ConvertTimeToUtc(localMidnight.AddDays(1), SessionTimeZone), TimeSpan.Zero);
 
         // Get all encounters for this session
         var encounters = await _db.Encounters
@@ -736,7 +756,7 @@ public class HtcmProgService
 
         // Build session-level progression (using canonical phase ordering)
         var sessionPoints = encounters
-            .GroupBy(e => e.EncounterTime.Date)
+            .GroupBy(e => GetSessionDate(e.EncounterTime))
             .OrderBy(g => g.Key)
             .Select((g, i) =>
             {
@@ -817,14 +837,14 @@ public class HtcmProgService
         // Get all HTCM encounters with their dates
         var encounters = await _db.Encounters
             .Where(e => e.TriggerId == HtcmTriggerId && e.IsCM && e.DurationMs >= MinDurationMs)
-            .Select(e => new { e.Id, SessionDate = e.EncounterTime.Date })
+            .Select(e => new { e.Id, e.EncounterTime })
             .ToListAsync(ct);
 
         if (encounters.Count == 0)
             return new List<HtcmPhaseDpsTrend>();
 
         var encounterIds = encounters.Select(e => e.Id).ToList();
-        var encounterDates = encounters.ToDictionary(e => e.Id, e => e.SessionDate);
+        var encounterDates = encounters.ToDictionary(e => e.Id, e => GetSessionDate(e.EncounterTime));
 
         // Get all phase stats (exclude "Full Fight" phase index 0)
         var phaseStats = await _db.EncounterPhaseStats
@@ -893,28 +913,35 @@ public class HtcmProgService
     /// </summary>
     public async Task<List<HtcmMechanicTrend>> GetMechanicTrendsAsync(CancellationToken ct = default)
     {
-        // Get all HTCM encounter IDs grouped by session
-        var sessions = await _db.Encounters
+        // Get all HTCM encounters, then group into sessions in memory so the session
+        // date uses the raid-night timezone rather than the DB server's date().
+        var encounterRows = await _db.Encounters
             .Where(e => e.TriggerId == HtcmTriggerId && e.IsCM && e.DurationMs >= MinDurationMs)
-            .GroupBy(e => e.EncounterTime.Date)
-            .Select(g => new { Date = g.Key, EncounterIds = g.Select(e => e.Id).ToList() })
-            .OrderBy(s => s.Date)
+            .Select(e => new { e.Id, e.EncounterTime })
             .ToListAsync(ct);
 
-        if (sessions.Count == 0)
+        if (encounterRows.Count == 0)
             return new List<HtcmMechanicTrend>();
 
-        var allEncounterIds = sessions.SelectMany(s => s.EncounterIds).ToList();
+        var sessionDateByEncounter = encounterRows.ToDictionary(e => e.Id, e => GetSessionDate(e.EncounterTime));
+        var sessions = encounterRows
+            .GroupBy(e => GetSessionDate(e.EncounterTime))
+            .Select(g => new { Date = g.Key, EncounterIds = g.Select(e => e.Id).ToList() })
+            .OrderBy(s => s.Date)
+            .ToList();
+
+        var allEncounterIds = encounterRows.Select(e => e.Id).ToList();
 
         // Get mechanic events per session (with ICD for grouping)
-        var mechanicsBySession = await _db.MechanicEvents
-            .InnerJoin(_db.Encounters, (m, e) => m.EncounterId == e.Id, (m, e) => new { m, e })
-            .InnerJoin(_db.Players, (x, p) => x.m.PlayerId == p.Id, (x, p) => new { x.m, x.e, p })
+        var mechanicsBySession = (await _db.MechanicEvents
+            .InnerJoin(_db.Players, (m, p) => m.PlayerId == p.Id, (m, p) => new { m, p })
             .Where(x => allEncounterIds.Contains(x.m.EncounterId) &&
                         TrackedMechanics.Contains(x.m.MechanicName))
             .OrderBy(x => x.m.EventTimeMs)
-            .Select(x => new { x.m.MechanicName, x.p.AccountName, x.m.EventTimeMs, SessionDate = x.e.EncounterTime.Date })
-            .ToListAsync(ct);
+            .Select(x => new { x.m.MechanicName, x.p.AccountName, x.m.EventTimeMs, x.m.EncounterId })
+            .ToListAsync(ct))
+            .Select(x => new { x.MechanicName, x.AccountName, x.EventTimeMs, SessionDate = sessionDateByEncounter[x.EncounterId] })
+            .ToList();
 
         // Build trends with ICD grouping
         var trends = TrackedMechanics.Select(mechanic =>
@@ -942,6 +969,64 @@ public class HtcmProgService
         }).ToList();
 
         return trends;
+    }
+
+    /// <summary>
+    /// Per-guild-member HTCM attendance: nights (distinct raid-night dates, not logs)
+    /// and how many pulls they were in that reached at least Giants / Saltspray /
+    /// Soo-Won, judged by the pull's furthest phase on the canonical ordering.
+    /// </summary>
+    public async Task<HtcmAttendance> GetAttendanceAsync(CancellationToken ct = default)
+    {
+        var encounters = await _db.Encounters
+            .Where(e => e.TriggerId == HtcmTriggerId && e.IsCM && e.DurationMs >= MinDurationMs)
+            .Select(e => new { e.Id, e.EncounterTime, e.FurthestPhase })
+            .ToListAsync(ct);
+
+        if (encounters.Count == 0)
+            return new HtcmAttendance(0, new List<HtcmAttendanceRow>());
+
+        var encounterInfo = encounters.ToDictionary(
+            e => e.Id,
+            e => (Date: GetSessionDate(e.EncounterTime), Phase: GetCanonicalPhaseIndex(e.FurthestPhase)));
+        var totalNights = encounterInfo.Values.Select(v => v.Date).Distinct().Count();
+
+        var encounterIds = encounters.Select(e => e.Id).ToList();
+        var participants = await _db.PlayerEncounters
+            .InnerJoin(_db.Players, (pe, p) => pe.PlayerId == p.Id,
+                (pe, p) => new { pe.EncounterId, p.AccountName })
+            .Where(x => encounterIds.Contains(x.EncounterId))
+            .ToListAsync(ct);
+
+        var included = await _includedPlayerService.GetIncludedAccountNamesAsync(ct);
+
+        // "Reached at least X" thresholds on the canonical phase ordering. Giants uses
+        // the per-giant index so pulls from older EI versions ("Void Giant 1") count.
+        var giantsIndex = GetCanonicalPhaseIndex("Void Giant 1");
+        var saltsprayIndex = GetCanonicalPhaseIndex("Void Saltspray Dragon");
+        var sooWonIndex = GetCanonicalPhaseIndex("Soo-Won 1");
+
+        var rows = participants
+            .Where(p => included.Contains(p.AccountName))
+            .GroupBy(p => p.AccountName)
+            .Select(g =>
+            {
+                var pulls = g.Select(p => encounterInfo[p.EncounterId]).ToList();
+                return new HtcmAttendanceRow(
+                    g.Key,
+                    Nights: pulls.Select(p => p.Date).Distinct().Count(),
+                    Pulls: pulls.Count,
+                    GiantsPulls: pulls.Count(p => p.Phase >= giantsIndex),
+                    SaltsprayPulls: pulls.Count(p => p.Phase >= saltsprayIndex),
+                    SooWonPulls: pulls.Count(p => p.Phase >= sooWonIndex),
+                    LastNight: pulls.Max(p => p.Date));
+            })
+            .OrderByDescending(r => r.Nights)
+            .ThenByDescending(r => r.Pulls)
+            .ThenBy(r => r.AccountName)
+            .ToList();
+
+        return new HtcmAttendance(totalNights, rows);
     }
 }
 
@@ -1108,4 +1193,19 @@ public record HtcmMechanicInfo(
     string FullName,
     string Description,
     int Count
+);
+
+// TotalNights is the number of distinct raid-night dates with HTCM attempts, the
+// denominator for each row's Nights. The *Pulls columns count pulls the player was in
+// whose furthest phase reached at least that milestone.
+public record HtcmAttendance(int TotalNights, List<HtcmAttendanceRow> Rows);
+
+public record HtcmAttendanceRow(
+    string AccountName,
+    int Nights,
+    int Pulls,
+    int GiantsPulls,
+    int SaltsprayPulls,
+    int SooWonPulls,
+    DateTime LastNight
 );

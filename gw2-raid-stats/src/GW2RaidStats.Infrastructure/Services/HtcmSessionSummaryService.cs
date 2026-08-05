@@ -99,7 +99,8 @@ public class HtcmSessionSummaryService
             .Select(e => new { e.Id, e.EncounterTime, e.FurthestPhase })
             .ToListAsync(ct);
 
-        var sessionDateByEncounter = allEncounters.ToDictionary(e => e.Id, e => e.EncounterTime.Date);
+        var sessionDateByEncounter = allEncounters.ToDictionary(
+            e => e.Id, e => HtcmProgService.GetSessionDate(e.EncounterTime));
         var allEncounterIds = allEncounters.Select(e => e.Id).ToList();
         if (allEncounterIds.Count == 0) return null;
 

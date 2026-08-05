@@ -62,7 +62,7 @@ public class AdminDiscordController : ControllerBase
                 .FirstOrDefaultAsync(ct);
 
             await QueueAsync("htcm_session_summary",
-                JsonSerializer.Serialize(new { SessionDate = htcmSessionDate.Date }), ct);
+                JsonSerializer.Serialize(new { SessionDate = HtcmProgService.GetSessionDate(htcmSessionDate) }), ct);
             htcmQueued = true;
         }
 
@@ -118,7 +118,7 @@ public class AdminDiscordController : ControllerBase
             return Ok(new { success = false, message = "No HTCM attempts found" });
         }
 
-        var sessionDate = latestHtcm.Date;
+        var sessionDate = HtcmProgService.GetSessionDate(latestHtcm);
         await QueueAsync("htcm_session_summary",
             JsonSerializer.Serialize(new { SessionDate = sessionDate }), ct);
 

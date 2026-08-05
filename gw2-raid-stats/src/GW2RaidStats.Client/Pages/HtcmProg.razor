@@ -91,415 +91,559 @@ else
         </MudGrid>
     </MudPaper>
 
-    <!-- Session Selector and Stats -->
-    <MudGrid>
-        <MudItem xs="12" lg="8">
-            <MudPaper Class="pa-4 mb-4" Elevation="2">
-                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
-                    <MudText Typo="Typo.h6">Session Details</MudText>
-                    <MudSelect T="DateTime?"
-                               Value="_selectedSessionDate"
-                               ValueChanged="OnSessionChanged"
-                               Label="Select Session"
-                               Variant="Variant.Outlined"
-                               Dense="true"
-                               Style="max-width: 250px;">
-                        @foreach (var session in _sessions)
+    <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4" Class="mb-4">
+        <!-- ============ SESSION TAB ============ -->
+        <MudTabPanel Text="Session" Icon="@Icons.Material.Filled.QueryStats">
+            <MudGrid>
+                <MudItem xs="12" lg="8">
+                    <MudPaper Class="pa-4 mb-4" Elevation="2">
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+                            <MudText Typo="Typo.h6">Session Details</MudText>
+                            <MudSelect T="DateTime?"
+                                       Value="_selectedSessionDate"
+                                       ValueChanged="OnSessionChanged"
+                                       Label="Select Session"
+                                       Variant="Variant.Outlined"
+                                       Dense="true"
+                                       Style="max-width: 250px;">
+                                @foreach (var session in _sessions)
+                                {
+                                    <MudSelectItem T="DateTime?" Value="@session.Date">
+                                        @session.Date.ToString("MMM d, yyyy") (@session.PullCount pulls)
+                                    </MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudStack>
+
+                        @if (_sessionDetail != null)
                         {
-                            <MudSelectItem T="DateTime?" Value="@session.Date">
-                                @session.Date.ToString("MMM d, yyyy") (@session.PullCount pulls)
-                            </MudSelectItem>
-                        }
-                    </MudSelect>
-                </MudStack>
-
-                @if (_sessionDetail != null)
-                {
-                    <MudGrid>
-                        <MudItem xs="6" sm="4" lg="4" xl="2">
-                            <MudStack Spacing="0">
-                                <MudText Typo="Typo.h5">@_sessionDetail.PullCount</MudText>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">Pulls</MudText>
-                            </MudStack>
-                        </MudItem>
-                        <MudItem xs="6" sm="4" lg="4" xl="2">
-                            <MudStack Spacing="0">
-                                <MudTooltip Text="@_sessionDetail.BestPhase" Arrow="true">
-                                    <MudText Typo="Typo.h5" Style="white-space: nowrap;">
-                                        @ShortenPhaseName(_sessionDetail.BestPhase ?? "")
-                                    </MudText>
-                                </MudTooltip>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">Best Phase</MudText>
-                            </MudStack>
-                        </MudItem>
-                        <MudItem xs="6" sm="4" lg="4" xl="2">
-                            <MudStack Spacing="0">
-                                <MudText Typo="Typo.h5">@_sessionDetail.BestBossHpRemaining.ToString("F1")%</MudText>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">Best HP Left</MudText>
-                            </MudStack>
-                        </MudItem>
-                        <MudItem xs="6" sm="4" lg="4" xl="2">
-                            <MudStack Spacing="0">
-                                <MudText Typo="Typo.h5">@FormatDuration(_sessionDetail.TotalTime)</MudText>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">Total Time</MudText>
-                            </MudStack>
-                        </MudItem>
-                        <MudItem xs="6" sm="4" lg="4" xl="2">
-                            <MudStack Spacing="0">
-                                <MudText Typo="Typo.h5">@((_sessionDetail.AverageSquadDps / 1000.0).ToString("F1"))k</MudText>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">Avg Squad DPS</MudText>
-                            </MudStack>
-                        </MudItem>
-                        <MudItem xs="6" sm="4" lg="4" xl="2">
-                            <MudStack Spacing="0">
-                                <MudText Typo="Typo.h5">@_sessionDetail.TotalDeaths</MudText>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">Deaths</MudText>
-                            </MudStack>
-                        </MudItem>
-                    </MudGrid>
-
-                    <!-- Pulls Table -->
-                    <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Pulls</MudText>
-                    <div style="overflow-x: auto;">
-                    <MudTable Items="@_sessionDetail.Pulls" Dense="true" Hover="true" Striped="true"
-                              OnRowClick="@((TableRowClickEventArgs<HtcmPullDto> args) => { if (args.Item != null) TogglePullExpansion(args.Item.PullNumber); })">
-                        <HeaderContent>
-                            <MudTh Style="width: 30px;"></MudTh>
-                            <MudTh Style="width: 50px;">#</MudTh>
-                            <MudTh>Time</MudTh>
-                            <MudTh>Duration</MudTh>
-                            <MudTh>Phase</MudTh>
-                            <MudTh>HP Left</MudTh>
-                            <MudTh>Squad DPS</MudTh>
-                            <MudTh>First Death</MudTh>
-                            <MudTh Style="width: 60px;"></MudTh>
-                        </HeaderContent>
-                        <RowTemplate>
-                            <MudTd>
-                                @if (context.PhaseStats.Count > 0)
-                                {
-                                    <MudIconButton Icon="@(_expandedPulls.Contains(context.PullNumber) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
-                                                   Size="Size.Small"
-                                                   OnClick="@(() => TogglePullExpansion(context.PullNumber))"
-                                                   OnClick:stopPropagation="true" />
-                                }
-                            </MudTd>
-                            <MudTd DataLabel="#">
-                                @if (context.Success)
-                                {
-                                    <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Color="Color.Success" Size="Size.Small" />
-                                }
-                                else
-                                {
-                                    @context.PullNumber
-                                }
-                            </MudTd>
-                            <MudTd DataLabel="Time">@context.Time.ToLocalTime().ToString("HH:mm")</MudTd>
-                            <MudTd DataLabel="Duration">@FormatDuration(context.Duration)</MudTd>
-                            <MudTd DataLabel="Phase">@context.FurthestPhase</MudTd>
-                            <MudTd DataLabel="HP Left">
-                                <MudProgressLinear Color="@GetHpColor(context.BossHpRemaining)"
-                                                   Value="@((double)context.BossHpRemaining)"
-                                                   Style="height: 18px; border-radius: 4px;">
-                                    <MudText Typo="Typo.caption" Style="position: absolute; width: 100%; text-align: center; color: white;">
-                                        @context.BossHpRemaining.ToString("F1")%
-                                    </MudText>
-                                </MudProgressLinear>
-                            </MudTd>
-                            <MudTd DataLabel="Squad DPS">@((context.SquadDps / 1000.0).ToString("F1"))k</MudTd>
-                            <MudTd DataLabel="First Death">
-                                @if (!string.IsNullOrEmpty(context.FirstDeathPlayer))
-                                {
+                            <MudGrid>
+                                <MudItem xs="6" sm="4" lg="4" xl="2">
                                     <MudStack Spacing="0">
-                                        <MudText Typo="Typo.caption">@FormatAccountName(context.FirstDeathPlayer)</MudText>
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@FormatDuration(context.FirstDeathTime ?? TimeSpan.Zero)</MudText>
+                                        <MudText Typo="Typo.h5">@_sessionDetail.PullCount</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Pulls</MudText>
                                     </MudStack>
-                                }
-                                else
-                                {
-                                    <MudText Typo="Typo.caption" Color="Color.Success">None</MudText>
-                                }
-                            </MudTd>
-                            <MudTd>
-                                <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
-                                               Size="Size.Small"
-                                               Href="@($"/api/reports/{context.EncounterId}/view")"
-                                               Target="_blank"
-                                               Title="View HTML Report"
-                                               OnClick:stopPropagation="true" />
-                            </MudTd>
-                        </RowTemplate>
-                        <ChildRowContent>
-                            @if (_expandedPulls.Contains(context.PullNumber) && context.PhaseStats.Count > 0)
+                                </MudItem>
+                                <MudItem xs="6" sm="4" lg="4" xl="2">
+                                    <MudStack Spacing="0">
+                                        <MudTooltip Text="@_sessionDetail.BestPhase" Arrow="true">
+                                            <MudText Typo="Typo.h5" Style="white-space: nowrap;">
+                                                @ShortenPhaseName(_sessionDetail.BestPhase ?? "")
+                                            </MudText>
+                                        </MudTooltip>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Best Phase</MudText>
+                                    </MudStack>
+                                </MudItem>
+                                <MudItem xs="6" sm="4" lg="4" xl="2">
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.h5">@_sessionDetail.BestBossHpRemaining.ToString("F1")%</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Best HP Left</MudText>
+                                    </MudStack>
+                                </MudItem>
+                                <MudItem xs="6" sm="4" lg="4" xl="2">
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.h5">@FormatDuration(_sessionDetail.TotalTime)</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Total Time</MudText>
+                                    </MudStack>
+                                </MudItem>
+                                <MudItem xs="6" sm="4" lg="4" xl="2">
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.h5">@((_sessionDetail.AverageSquadDps / 1000.0).ToString("F1"))k</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Avg Squad DPS</MudText>
+                                    </MudStack>
+                                </MudItem>
+                                <MudItem xs="6" sm="4" lg="4" xl="2">
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.h5">@_sessionDetail.TotalDeaths</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Deaths</MudText>
+                                    </MudStack>
+                                </MudItem>
+                            </MudGrid>
+
+                            <!-- Burst tiles — tonight's squad DPS in the three burst windows vs the
+                                 guild's targets, mirroring the Discord summary header. -->
+                            @if (_sessionDetail.SessionBurstAverages != null && HasBurstData(_sessionDetail.SessionBurstAverages))
                             {
-                                <MudTr>
-                                    <td colspan="9" style="padding: 0;">
-                                        <MudPaper Class="pa-2 ma-2" Elevation="0" Style="background-color: var(--mud-palette-background-grey);">
-                                            <MudText Typo="Typo.caption" Class="mb-2"><strong>Phase Breakdown</strong></MudText>
-                                            <MudSimpleTable Dense="true" Hover="false" Style="background-color: transparent;">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Phase</th>
-                                                        <th style="text-align: right;">Duration</th>
-                                                        <th style="text-align: right;">Squad DPS</th>
-                                                        <th>Debilitated</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    @foreach (var phase in context.PhaseStats)
-                                                    {
-                                                        <tr>
-                                                            <td>@phase.PhaseName</td>
-                                                            <td style="text-align: right;">@FormatDuration(phase.Duration)</td>
-                                                            <td style="text-align: right;">
-                                                                <MudStack Row="true" Justify="Justify.FlexEnd" AlignItems="AlignItems.Center" Spacing="1">
-                                                                    <span>@((phase.SquadDps / 1000.0).ToString("F1"))k</span>
-                                                                    <MudProgressLinear Color="@GetDpsColor(phase.SquadDps)"
-                                                                                       Value="@GetDpsBarValue(phase.SquadDps)"
-                                                                                       Style="width: 60px; height: 8px; border-radius: 2px;" />
-                                                                </MudStack>
-                                                            </td>
-                                                            <td>
-                                                                @if (phase.PlayerDebil is { Count: > 0 })
-                                                                {
-                                                                    <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
-                                                                        @foreach (var entry in phase.PlayerDebil)
-                                                                        {
-                                                                            <MudChip T="string" Size="Size.Small" Color="@GetDebilColor(entry.UptimePct)" Variant="Variant.Filled">
-                                                                                @($"{entry.AccountName} ") @FormatDebilPctWithStacks(entry.UptimePct, entry.Stacks)
-                                                                            </MudChip>
-                                                                        }
-                                                                    </MudStack>
-                                                                }
-                                                                else
-                                                                {
-                                                                    <span>—</span>
-                                                                }
-                                                            </td>
-                                                        </tr>
-                                                    }
-                                                </tbody>
-                                            </MudSimpleTable>
-
-                                            @if (HasBurstData(context.BurstGroups))
-                                            {
-                                                <MudText Typo="Typo.caption" Class="mt-3 mb-2"><strong>Burst Comparison</strong></MudText>
-                                                <MudSimpleTable Dense="true" Style="background-color: transparent;">
-                                                    <thead>
-                                                        <tr>
-                                                            <th></th>
-                                                            <th style="text-align: right;">Timecaster</th>
-                                                            <th style="text-align: right;">Giants</th>
-                                                            <th style="text-align: right;">Saltspray</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        <tr>
-                                                            <td><em>Duration</em></td>
-                                                            <td style="text-align: right;">@FormatBurstDuration(context.BurstGroups?.Timecaster)</td>
-                                                            <td style="text-align: right;">@FormatBurstDuration(context.BurstGroups?.Giants)</td>
-                                                            <td style="text-align: right;">@FormatBurstDuration(context.BurstGroups?.Saltspray)</td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td><strong>Squad DPS</strong></td>
-                                                            <td style="text-align: right;">@FormatBurstDps(context.BurstGroups?.Timecaster)</td>
-                                                            <td style="text-align: right;">@FormatBurstDps(context.BurstGroups?.Giants)</td>
-                                                            <td style="text-align: right;">@FormatBurstDps(context.BurstGroups?.Saltspray)</td>
-                                                        </tr>
-                                                        @foreach (var account in UnionBurstPlayers(context.BurstGroups))
-                                                        {
-                                                            <tr>
-                                                                <td style="padding-left: 1.5em;">@account</td>
-                                                                <td style="text-align: right;">@FormatPlayerBurst(context.BurstGroups?.Timecaster, account)</td>
-                                                                <td style="text-align: right;">@FormatPlayerBurst(context.BurstGroups?.Giants, account)</td>
-                                                                <td style="text-align: right;">@FormatPlayerBurst(context.BurstGroups?.Saltspray, account)</td>
-                                                            </tr>
-                                                        }
-                                                    </tbody>
-                                                </MudSimpleTable>
-                                            }
-                                        </MudPaper>
-                                    </td>
-                                </MudTr>
-                            }
-                        </ChildRowContent>
-                    </MudTable>
-                    </div>
-
-                    <!-- Session Burst Averages — same table shape as a single pull's
-                         burst comparison but aggregated across every pull in the session,
-                         so the per-pull numbers can be eyeballed against typical performance. -->
-                    @if (_sessionDetail.SessionBurstAverages != null && HasBurstData(_sessionDetail.SessionBurstAverages))
-                    {
-                        <MudExpansionPanels Class="mt-4">
-                            <MudExpansionPanel Class="htcm-insight-panel" Text="Session Burst Averages — Timecaster / Giants / Saltspray">
-                                <MudSimpleTable Dense="true" Style="background-color: transparent; overflow-x: auto;">
-                                    <thead>
-                                        <tr>
-                                            <th></th>
-                                            <th style="text-align: right;">Timecaster</th>
-                                            <th style="text-align: right;">Giants</th>
-                                            <th style="text-align: right;">Saltspray</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td><em>Avg duration / pull</em></td>
-                                            <td style="text-align: right;">@FormatBurstDuration(_sessionDetail.SessionBurstAverages.Timecaster)</td>
-                                            <td style="text-align: right;">@FormatBurstDuration(_sessionDetail.SessionBurstAverages.Giants)</td>
-                                            <td style="text-align: right;">@FormatBurstDuration(_sessionDetail.SessionBurstAverages.Saltspray)</td>
-                                        </tr>
-                                        <tr>
-                                            <td><strong>Squad DPS (avg)</strong></td>
-                                            <td style="text-align: right;">@FormatBurstDps(_sessionDetail.SessionBurstAverages.Timecaster)</td>
-                                            <td style="text-align: right;">@FormatBurstDps(_sessionDetail.SessionBurstAverages.Giants)</td>
-                                            <td style="text-align: right;">@FormatBurstDps(_sessionDetail.SessionBurstAverages.Saltspray)</td>
-                                        </tr>
-                                        @foreach (var account in UnionBurstPlayers(_sessionDetail.SessionBurstAverages))
-                                        {
-                                            <tr>
-                                                <td style="padding-left: 1.5em;">@account</td>
-                                                <td style="text-align: right;">@FormatPlayerBurst(_sessionDetail.SessionBurstAverages.Timecaster, account)</td>
-                                                <td style="text-align: right;">@FormatPlayerBurst(_sessionDetail.SessionBurstAverages.Giants, account)</td>
-                                                <td style="text-align: right;">@FormatPlayerBurst(_sessionDetail.SessionBurstAverages.Saltspray, account)</td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </MudSimpleTable>
-                            </MudExpansionPanel>
-                        </MudExpansionPanels>
-                    }
-
-                    <!-- Phase Insights — per-player deaths & debilitated per burst phase group -->
-                    @if (_sessionDetail.PlayerPhaseStats is { Count: > 0 })
-                    {
-                        <MudExpansionPanels Class="mt-4">
-                            <MudExpansionPanel Class="htcm-insight-panel" Text="Phase Insights — Deaths & Debilitated (Timecaster / Giants / Saltspray)">
-                                <MudSimpleTable Dense="true" Hover="true" Style="overflow-x: auto;">
-                                    <thead>
-                                        <tr>
-                                            <th rowspan="2">Player</th>
-                                            <th colspan="3" style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Timecaster</th>
-                                            <th colspan="3" style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Giants</th>
-                                            <th colspan="3" style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Saltspray</th>
-                                        </tr>
-                                        <tr>
-                                            <th style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Deaths</th>
-                                            <th style="text-align:center;">Dead at start</th>
-                                            <th style="text-align:center;">Debil %</th>
-                                            <th style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Deaths</th>
-                                            <th style="text-align:center;">Dead at start</th>
-                                            <th style="text-align:center;">Debil %</th>
-                                            <th style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Deaths</th>
-                                            <th style="text-align:center;">Dead at start</th>
-                                            <th style="text-align:center;">Debil %</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (var p in _sessionDetail.PlayerPhaseStats)
-                                        {
-                                            <tr>
-                                                <td>@p.AccountName</td>
-                                                <td style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">@FormatCount(p.Timecaster.Deaths)</td>
-                                                <td style="text-align:center;">@FormatCount(p.Timecaster.DeadAtPhaseStart)</td>
-                                                <td style="text-align:center;">@FormatDebilPctWithStacks(p.Timecaster.DebilUptimeAvgPct, p.Timecaster.DebilStacks)</td>
-                                                <td style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">@FormatCount(p.Giants.Deaths)</td>
-                                                <td style="text-align:center;">@FormatCount(p.Giants.DeadAtPhaseStart)</td>
-                                                <td style="text-align:center;">@FormatDebilPctWithStacks(p.Giants.DebilUptimeAvgPct, p.Giants.DebilStacks)</td>
-                                                <td style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">@FormatCount(p.Saltspray.Deaths)</td>
-                                                <td style="text-align:center;">@FormatCount(p.Saltspray.DeadAtPhaseStart)</td>
-                                                <td style="text-align:center;">@FormatDebilPctWithStacks(p.Saltspray.DebilUptimeAvgPct, p.Saltspray.DebilStacks)</td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </MudSimpleTable>
-                            </MudExpansionPanel>
-                        </MudExpansionPanels>
-                    }
-
-                    <!-- Player Mechanics -->
-                    @if (_sessionDetail.PlayerMechanics.Count > 0)
-                    {
-                        <MudExpansionPanels Class="mt-4">
-                            <MudExpansionPanel Class="htcm-insight-panel" Text="Player Mechanics Breakdown">
-                                <MudTable Items="@_sessionDetail.PlayerMechanics" Dense="true" Hover="true">
-                                    <HeaderContent>
-                                        <MudTh>Player</MudTh>
-                                        @foreach (var mechanic in TrackedMechanics)
-                                        {
-                                            <MudTh Style="text-align: center; font-size: 0.75rem;">@GetMechanicDisplayName(mechanic)</MudTh>
-                                        }
-                                    </HeaderContent>
-                                    <RowTemplate>
-                                        <MudTd DataLabel="Player">@context.AccountName</MudTd>
-                                        @foreach (var mechanic in TrackedMechanics)
-                                        {
-                                            <MudTd DataLabel="@GetMechanicDisplayName(mechanic)" Style="text-align: center;">
-                                                @if (context.MechanicCounts.TryGetValue(mechanic, out var count) && count > 0)
+                                <MudGrid Class="mt-1">
+                                    @foreach (var tile in BurstTiles(_sessionDetail.SessionBurstAverages))
+                                    {
+                                        <MudItem xs="12" sm="4">
+                                            <MudPaper Class="pa-3" Elevation="0" Style="background-color: rgba(128, 128, 128, 0.08); border-radius: 6px;">
+                                                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                                                    <MudText Typo="Typo.subtitle2">@tile.Name</MudText>
+                                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                        @(tile.Group == null
+                                                            ? "not reached"
+                                                            : $"{tile.Group.PullCount}/{_sessionDetail.PullCount} pulls · {FormatBurstDuration(tile.Group)}")
+                                                    </MudText>
+                                                </MudStack>
+                                                @if (tile.Group != null)
                                                 {
-                                                    <MudChip T="string" Size="Size.Small" Color="@GetMechanicColor(count)">@count</MudChip>
+                                                    <MudStack Row="true" AlignItems="AlignItems.Baseline" Spacing="2">
+                                                        <MudText Typo="Typo.h5" Color="@GetTargetColor(tile.Group.SquadDps, tile.Target)">
+                                                            @((tile.Group.SquadDps / 1000.0).ToString("F0"))k
+                                                        </MudText>
+                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                            target @((tile.Target / 1000.0).ToString("F0"))k
+                                                        </MudText>
+                                                    </MudStack>
                                                 }
                                                 else
                                                 {
-                                                    <span>-</span>
+                                                    <MudText Typo="Typo.h5" Color="Color.Secondary">—</MudText>
                                                 }
-                                            </MudTd>
-                                        }
-                                    </RowTemplate>
-                                </MudTable>
-                            </MudExpansionPanel>
-                        </MudExpansionPanels>
-                    }
-                }
-                else if (_selectedSessionDate.HasValue)
-                {
-                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
-                }
-            </MudPaper>
-        </MudItem>
+                                            </MudPaper>
+                                        </MudItem>
+                                    }
+                                </MudGrid>
+                            }
 
-        <!-- Phase DPS Chart -->
-        <MudItem xs="12" lg="4">
-            <MudPaper Class="pa-4 mb-4" Elevation="2">
-                <MudText Typo="Typo.h6" Class="mb-3">Phase DPS (Session Avg)</MudText>
-                @if (_sessionDetail != null && _phaseTableRows.Count > 0)
-                {
+                            <!-- Pulls Table -->
+                            <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Pulls</MudText>
+                            <div style="overflow-x: auto;">
+                            <MudTable Items="@_sessionDetail.Pulls" Dense="true" Hover="true" Striped="true"
+                                      OnRowClick="@((TableRowClickEventArgs<HtcmPullDto> args) => { if (args.Item != null) TogglePullExpansion(args.Item.PullNumber); })">
+                                <HeaderContent>
+                                    <MudTh Style="width: 30px;"></MudTh>
+                                    <MudTh Style="width: 50px;">#</MudTh>
+                                    <MudTh>Time</MudTh>
+                                    <MudTh>Duration</MudTh>
+                                    <MudTh>Phase</MudTh>
+                                    <MudTh>HP Left</MudTh>
+                                    <MudTh>Squad DPS</MudTh>
+                                    <MudTh>First Death</MudTh>
+                                    <MudTh Style="width: 60px;"></MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd>
+                                        @if (context.PhaseStats.Count > 0)
+                                        {
+                                            <MudIconButton Icon="@(_expandedPulls.Contains(context.PullNumber) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                                                           Size="Size.Small"
+                                                           OnClick="@(() => TogglePullExpansion(context.PullNumber))"
+                                                           OnClick:stopPropagation="true" />
+                                        }
+                                    </MudTd>
+                                    <MudTd DataLabel="#">
+                                        @if (context.Success)
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Color="Color.Success" Size="Size.Small" />
+                                        }
+                                        else
+                                        {
+                                            @context.PullNumber
+                                        }
+                                    </MudTd>
+                                    <MudTd DataLabel="Time">@context.Time.ToLocalTime().ToString("HH:mm")</MudTd>
+                                    <MudTd DataLabel="Duration">@FormatDuration(context.Duration)</MudTd>
+                                    <MudTd DataLabel="Phase">@context.FurthestPhase</MudTd>
+                                    <MudTd DataLabel="HP Left">
+                                        <MudProgressLinear Color="@GetHpColor(context.BossHpRemaining)"
+                                                           Value="@((double)context.BossHpRemaining)"
+                                                           Style="height: 18px; border-radius: 4px;">
+                                            <MudText Typo="Typo.caption" Style="position: absolute; width: 100%; text-align: center; color: white;">
+                                                @context.BossHpRemaining.ToString("F1")%
+                                            </MudText>
+                                        </MudProgressLinear>
+                                    </MudTd>
+                                    <MudTd DataLabel="Squad DPS">@((context.SquadDps / 1000.0).ToString("F1"))k</MudTd>
+                                    <MudTd DataLabel="First Death">
+                                        @if (!string.IsNullOrEmpty(context.FirstDeathPlayer))
+                                        {
+                                            <MudStack Spacing="0">
+                                                <MudText Typo="Typo.caption">@FormatAccountName(context.FirstDeathPlayer)</MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">@FormatDuration(context.FirstDeathTime ?? TimeSpan.Zero)</MudText>
+                                            </MudStack>
+                                        }
+                                        else
+                                        {
+                                            <MudText Typo="Typo.caption" Color="Color.Success">None</MudText>
+                                        }
+                                    </MudTd>
+                                    <MudTd>
+                                        <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                       Size="Size.Small"
+                                                       Href="@($"/api/reports/{context.EncounterId}/view")"
+                                                       Target="_blank"
+                                                       Title="View HTML Report"
+                                                       OnClick:stopPropagation="true" />
+                                    </MudTd>
+                                </RowTemplate>
+                                <ChildRowContent>
+                                    @if (_expandedPulls.Contains(context.PullNumber) && context.PhaseStats.Count > 0)
+                                    {
+                                        <MudTr>
+                                            <td colspan="9" style="padding: 0;">
+                                                <MudPaper Class="pa-2 ma-2" Elevation="0" Style="background-color: var(--mud-palette-background-grey);">
+                                                    <MudText Typo="Typo.caption" Class="mb-2"><strong>Phase Breakdown</strong></MudText>
+                                                    <MudSimpleTable Dense="true" Hover="false" Style="background-color: transparent;">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Phase</th>
+                                                                <th style="text-align: right;">Duration</th>
+                                                                <th style="text-align: right;">Squad DPS</th>
+                                                                <th>Debilitated</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            @foreach (var phase in context.PhaseStats)
+                                                            {
+                                                                <tr>
+                                                                    <td>@phase.PhaseName</td>
+                                                                    <td style="text-align: right;">@FormatDuration(phase.Duration)</td>
+                                                                    <td style="text-align: right;">
+                                                                        <MudStack Row="true" Justify="Justify.FlexEnd" AlignItems="AlignItems.Center" Spacing="1">
+                                                                            <span>@((phase.SquadDps / 1000.0).ToString("F1"))k</span>
+                                                                            <MudProgressLinear Color="@GetDpsColor(phase.SquadDps)"
+                                                                                               Value="@GetDpsBarValue(phase.SquadDps)"
+                                                                                               Style="width: 60px; height: 8px; border-radius: 2px;" />
+                                                                        </MudStack>
+                                                                    </td>
+                                                                    <td>
+                                                                        @if (phase.PlayerDebil is { Count: > 0 })
+                                                                        {
+                                                                            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                                                                                @foreach (var entry in phase.PlayerDebil)
+                                                                                {
+                                                                                    <MudChip T="string" Size="Size.Small" Color="@GetDebilColor(entry.UptimePct)" Variant="Variant.Filled">
+                                                                                        @($"{entry.AccountName} ") @FormatDebilPctWithStacks(entry.UptimePct, entry.Stacks)
+                                                                                    </MudChip>
+                                                                                }
+                                                                            </MudStack>
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            <span>—</span>
+                                                                        }
+                                                                    </td>
+                                                                </tr>
+                                                            }
+                                                        </tbody>
+                                                    </MudSimpleTable>
+
+                                                    @if (HasBurstData(context.BurstGroups))
+                                                    {
+                                                        <MudText Typo="Typo.caption" Class="mt-3 mb-2"><strong>Burst Comparison</strong></MudText>
+                                                        <MudSimpleTable Dense="true" Style="background-color: transparent;">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th></th>
+                                                                    <th style="text-align: right;">Timecaster</th>
+                                                                    <th style="text-align: right;">Giants</th>
+                                                                    <th style="text-align: right;">Saltspray</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                <tr>
+                                                                    <td><em>Duration</em></td>
+                                                                    <td style="text-align: right;">@FormatBurstDuration(context.BurstGroups?.Timecaster)</td>
+                                                                    <td style="text-align: right;">@FormatBurstDuration(context.BurstGroups?.Giants)</td>
+                                                                    <td style="text-align: right;">@FormatBurstDuration(context.BurstGroups?.Saltspray)</td>
+                                                                </tr>
+                                                                <tr>
+                                                                    <td><strong>Squad DPS</strong></td>
+                                                                    <td style="text-align: right;">@FormatBurstDps(context.BurstGroups?.Timecaster)</td>
+                                                                    <td style="text-align: right;">@FormatBurstDps(context.BurstGroups?.Giants)</td>
+                                                                    <td style="text-align: right;">@FormatBurstDps(context.BurstGroups?.Saltspray)</td>
+                                                                </tr>
+                                                                @foreach (var account in UnionBurstPlayers(context.BurstGroups))
+                                                                {
+                                                                    <tr>
+                                                                        <td style="padding-left: 1.5em;">@account</td>
+                                                                        <td style="text-align: right;">@FormatPlayerBurst(context.BurstGroups?.Timecaster, account)</td>
+                                                                        <td style="text-align: right;">@FormatPlayerBurst(context.BurstGroups?.Giants, account)</td>
+                                                                        <td style="text-align: right;">@FormatPlayerBurst(context.BurstGroups?.Saltspray, account)</td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </MudSimpleTable>
+                                                    }
+                                                </MudPaper>
+                                            </td>
+                                        </MudTr>
+                                    }
+                                </ChildRowContent>
+                            </MudTable>
+                            </div>
+
+                            <!-- Session Burst Averages — same table shape as a single pull's
+                                 burst comparison but aggregated across every pull in the session,
+                                 so the per-pull numbers can be eyeballed against typical performance. -->
+                            @if (_sessionDetail.SessionBurstAverages != null && HasBurstData(_sessionDetail.SessionBurstAverages))
+                            {
+                                <MudExpansionPanels Class="mt-4">
+                                    <MudExpansionPanel Class="htcm-insight-panel" Text="Session Burst Averages — Timecaster / Giants / Saltspray">
+                                        <MudSimpleTable Dense="true" Style="background-color: transparent; overflow-x: auto;">
+                                            <thead>
+                                                <tr>
+                                                    <th></th>
+                                                    <th style="text-align: right;">Timecaster</th>
+                                                    <th style="text-align: right;">Giants</th>
+                                                    <th style="text-align: right;">Saltspray</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td><em>Avg duration / pull</em></td>
+                                                    <td style="text-align: right;">@FormatBurstDuration(_sessionDetail.SessionBurstAverages.Timecaster)</td>
+                                                    <td style="text-align: right;">@FormatBurstDuration(_sessionDetail.SessionBurstAverages.Giants)</td>
+                                                    <td style="text-align: right;">@FormatBurstDuration(_sessionDetail.SessionBurstAverages.Saltspray)</td>
+                                                </tr>
+                                                <tr>
+                                                    <td><strong>Squad DPS (avg)</strong></td>
+                                                    <td style="text-align: right;">@FormatBurstDps(_sessionDetail.SessionBurstAverages.Timecaster)</td>
+                                                    <td style="text-align: right;">@FormatBurstDps(_sessionDetail.SessionBurstAverages.Giants)</td>
+                                                    <td style="text-align: right;">@FormatBurstDps(_sessionDetail.SessionBurstAverages.Saltspray)</td>
+                                                </tr>
+                                                @foreach (var account in UnionBurstPlayers(_sessionDetail.SessionBurstAverages))
+                                                {
+                                                    <tr>
+                                                        <td style="padding-left: 1.5em;">@account</td>
+                                                        <td style="text-align: right;">@FormatPlayerBurst(_sessionDetail.SessionBurstAverages.Timecaster, account)</td>
+                                                        <td style="text-align: right;">@FormatPlayerBurst(_sessionDetail.SessionBurstAverages.Giants, account)</td>
+                                                        <td style="text-align: right;">@FormatPlayerBurst(_sessionDetail.SessionBurstAverages.Saltspray, account)</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </MudSimpleTable>
+                                    </MudExpansionPanel>
+                                </MudExpansionPanels>
+                            }
+
+                            <!-- Phase Insights — per-player deaths & debilitated per burst phase group -->
+                            @if (_sessionDetail.PlayerPhaseStats is { Count: > 0 })
+                            {
+                                <MudExpansionPanels Class="mt-4">
+                                    <MudExpansionPanel Class="htcm-insight-panel" Text="Phase Insights — Deaths & Debilitated (Timecaster / Giants / Saltspray)">
+                                        <MudSimpleTable Dense="true" Hover="true" Style="overflow-x: auto;">
+                                            <thead>
+                                                <tr>
+                                                    <th rowspan="2">Player</th>
+                                                    <th colspan="3" style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Timecaster</th>
+                                                    <th colspan="3" style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Giants</th>
+                                                    <th colspan="3" style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Saltspray</th>
+                                                </tr>
+                                                <tr>
+                                                    <th style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Deaths</th>
+                                                    <th style="text-align:center;">Dead at start</th>
+                                                    <th style="text-align:center;">Debil %</th>
+                                                    <th style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Deaths</th>
+                                                    <th style="text-align:center;">Dead at start</th>
+                                                    <th style="text-align:center;">Debil %</th>
+                                                    <th style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">Deaths</th>
+                                                    <th style="text-align:center;">Dead at start</th>
+                                                    <th style="text-align:center;">Debil %</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var p in _sessionDetail.PlayerPhaseStats)
+                                                {
+                                                    <tr>
+                                                        <td>@p.AccountName</td>
+                                                        <td style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">@FormatCount(p.Timecaster.Deaths)</td>
+                                                        <td style="text-align:center;">@FormatCount(p.Timecaster.DeadAtPhaseStart)</td>
+                                                        <td style="text-align:center;">@FormatDebilPctWithStacks(p.Timecaster.DebilUptimeAvgPct, p.Timecaster.DebilStacks)</td>
+                                                        <td style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">@FormatCount(p.Giants.Deaths)</td>
+                                                        <td style="text-align:center;">@FormatCount(p.Giants.DeadAtPhaseStart)</td>
+                                                        <td style="text-align:center;">@FormatDebilPctWithStacks(p.Giants.DebilUptimeAvgPct, p.Giants.DebilStacks)</td>
+                                                        <td style="text-align:center; border-left:1px solid var(--mud-palette-table-lines);">@FormatCount(p.Saltspray.Deaths)</td>
+                                                        <td style="text-align:center;">@FormatCount(p.Saltspray.DeadAtPhaseStart)</td>
+                                                        <td style="text-align:center;">@FormatDebilPctWithStacks(p.Saltspray.DebilUptimeAvgPct, p.Saltspray.DebilStacks)</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </MudSimpleTable>
+                                    </MudExpansionPanel>
+                                </MudExpansionPanels>
+                            }
+
+                            <!-- Player Mechanics -->
+                            @if (_sessionDetail.PlayerMechanics.Count > 0)
+                            {
+                                <MudExpansionPanels Class="mt-4">
+                                    <MudExpansionPanel Class="htcm-insight-panel" Text="Player Mechanics Breakdown">
+                                        <MudTable Items="@_sessionDetail.PlayerMechanics" Dense="true" Hover="true">
+                                            <HeaderContent>
+                                                <MudTh>Player</MudTh>
+                                                @foreach (var mechanic in TrackedMechanics)
+                                                {
+                                                    <MudTh Style="text-align: center; font-size: 0.75rem;">@GetMechanicDisplayName(mechanic)</MudTh>
+                                                }
+                                            </HeaderContent>
+                                            <RowTemplate>
+                                                <MudTd DataLabel="Player">@context.AccountName</MudTd>
+                                                @foreach (var mechanic in TrackedMechanics)
+                                                {
+                                                    <MudTd DataLabel="@GetMechanicDisplayName(mechanic)" Style="text-align: center;">
+                                                        @if (context.MechanicCounts.TryGetValue(mechanic, out var count) && count > 0)
+                                                        {
+                                                            <MudChip T="string" Size="Size.Small" Color="@GetMechanicColor(count)">@count</MudChip>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>-</span>
+                                                        }
+                                                    </MudTd>
+                                                }
+                                            </RowTemplate>
+                                        </MudTable>
+                                    </MudExpansionPanel>
+                                </MudExpansionPanels>
+                            }
+                        }
+                        else if (_selectedSessionDate.HasValue)
+                        {
+                            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                        }
+                    </MudPaper>
+                </MudItem>
+
+                <MudItem xs="12" lg="4">
+                    <!-- Phase DPS Chart -->
+                    <MudPaper Class="pa-4 mb-4" Elevation="2">
+                        <MudText Typo="Typo.h6" Class="mb-3">Phase DPS (Session Avg)</MudText>
+                        @if (_sessionDetail != null && _phaseTableRows.Count > 0)
+                        {
+                            <MudSimpleTable Dense="true" Hover="true" Style="overflow-x: auto;">
+                                <thead>
+                                    <tr>
+                                        <th>Phase</th>
+                                        <th style="text-align: right;">This Session</th>
+                                        <th style="text-align: right;">All-Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in _phaseTableRows)
+                                    {
+                                        var deltaPct = row.AllTimeDps > 0
+                                            ? (row.SessionDps - row.AllTimeDps) / (double)row.AllTimeDps * 100
+                                            : 0;
+                                        var sessionColor = row.AllTimeDps > 0
+                                            ? GetDeltaColor(deltaPct)
+                                            : Color.Default;
+                                        <tr>
+                                            <td style="white-space: nowrap;" title="@row.PhaseName">@ShortenPhaseName(row.PhaseName)</td>
+                                            <td style="text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;">
+                                                <MudText Inline="true" Color="@sessionColor"><strong>@row.SessionDpsK.ToString("F1")k</strong></MudText>
+                                                @if (row.AllTimeDps > 0)
+                                                {
+                                                    <MudText Inline="true" Color="@sessionColor" Typo="Typo.caption" Class="ml-2">
+                                                        @(deltaPct >= 0 ? "+" : "")@deltaPct.ToString("F1")%
+                                                    </MudText>
+                                                }
+                                            </td>
+                                            <td style="text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;">
+                                                @if (row.AllTimeDps > 0)
+                                                {
+                                                    <span>@row.AllTimeDpsK.ToString("F1")k</span>
+                                                }
+                                                else
+                                                {
+                                                    <span style="color: var(--mud-palette-text-secondary);">—</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                                Session avg coloured against the all-time avg per phase.
+                            </MudText>
+                        }
+                        else
+                        {
+                            <MudAlert Severity="Severity.Info">Select a session to see phase DPS breakdown.</MudAlert>
+                        }
+                    </MudPaper>
+
+                    <!-- Sessions List -->
+                    <MudPaper Class="pa-4" Elevation="2">
+                        <MudText Typo="Typo.h6" Class="mb-3">All Sessions</MudText>
+                        <MudList T="DateTime" Dense="true" DisableGutters="true">
+                            @foreach (var session in _sessions.Take(10))
+                            {
+                                <MudListItem @onclick="@(() => SelectSession(session.Date))">
+                                    <MudStack Row="true" Justify="Justify.SpaceBetween" Style="width: 100%;">
+                                        <MudStack Spacing="0">
+                                            <MudText Typo="Typo.body2">@session.Date.ToString("MMM d, yyyy")</MudText>
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                @session.PullCount pulls - @session.BestPhase
+                                            </MudText>
+                                        </MudStack>
+                                        <MudStack Spacing="0" AlignItems="AlignItems.End">
+                                            @if (session.HasKill)
+                                            {
+                                                <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Color="Color.Success" Size="Size.Small" />
+                                            }
+                                            else
+                                            {
+                                                <MudText Typo="Typo.body2" Color="@GetHpTextColor(session.BestBossHpRemaining)">
+                                                    @session.BestBossHpRemaining.ToString("F1")%
+                                                </MudText>
+                                            }
+                                        </MudStack>
+                                    </MudStack>
+                                </MudListItem>
+                            }
+                        </MudList>
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+        </MudTabPanel>
+
+        <!-- ============ TRENDS TAB ============ -->
+        <MudTabPanel Text="Trends" Icon="@Icons.Material.Filled.TrendingUp">
+            @if (_phaseDpsTrends.Count > 0 && _sessions.Count > 1)
+            {
+                <MudPaper Class="pa-4 mb-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-3">Phase DPS Trends (k)</MudText>
                     <MudSimpleTable Dense="true" Hover="true" Style="overflow-x: auto;">
                         <thead>
                             <tr>
                                 <th>Phase</th>
-                                <th style="text-align: right;">This Session</th>
-                                <th style="text-align: right;">All-Time</th>
+                                @foreach (var session in _sessions.OrderBy(s => s.Date).TakeLast(6))
+                                {
+                                    <th style="text-align: center;">@session.Date.ToString("M/d")</th>
+                                }
+                                <th style="text-align: center;">Trend</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var row in _phaseTableRows)
+                            @foreach (var phase in _phaseDpsTrends)
                             {
-                                var deltaPct = row.AllTimeDps > 0
-                                    ? (row.SessionDps - row.AllTimeDps) / (double)row.AllTimeDps * 100
-                                    : 0;
-                                var sessionColor = row.AllTimeDps > 0
-                                    ? GetDeltaColor(deltaPct)
-                                    : Color.Default;
                                 <tr>
-                                    <td style="white-space: nowrap;" title="@row.PhaseName">@ShortenPhaseName(row.PhaseName)</td>
-                                    <td style="text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;">
-                                        <MudText Inline="true" Color="@sessionColor"><strong>@row.SessionDpsK.ToString("F1")k</strong></MudText>
-                                        @if (row.AllTimeDps > 0)
-                                        {
-                                            <MudText Inline="true" Color="@sessionColor" Typo="Typo.caption" Class="ml-2">
-                                                @(deltaPct >= 0 ? "+" : "")@deltaPct.ToString("F1")%
-                                            </MudText>
+                                    <td>@ShortenPhaseName(phase.PhaseName)</td>
+                                    @foreach (var session in _sessions.OrderBy(s => s.Date).TakeLast(6))
+                                    {
+                                        var sessionAvg = phase.SessionAverages.FirstOrDefault(s => s.Date == session.Date);
+                                        <td style="text-align: center;">
+                                            @if (sessionAvg != null)
+                                            {
+                                                <span style="color: @GetDpsTrendColor(phase, sessionAvg.AverageDps)">
+                                                    @((sessionAvg.AverageDps / 1000.0).ToString("F0"))
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span>-</span>
+                                            }
+                                        </td>
+                                    }
+                                    <td style="text-align: center;">
+                                        @{
+                                            var dpsTrend = GetPhaseDpsTrend(phase);
                                         }
-                                    </td>
-                                    <td style="text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;">
-                                        @if (row.AllTimeDps > 0)
+                                        @if (dpsTrend > 0)
                                         {
-                                            <span>@row.AllTimeDpsK.ToString("F1")k</span>
+                                            <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Color="Color.Success" Size="Size.Small" />
+                                        }
+                                        else if (dpsTrend < 0)
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.TrendingDown" Color="Color.Error" Size="Size.Small" />
                                         }
                                         else
                                         {
-                                            <span style="color: var(--mud-palette-text-secondary);">—</span>
+                                            <MudIcon Icon="@Icons.Material.Filled.TrendingFlat" Color="Color.Default" Size="Size.Small" />
                                         }
                                     </td>
                                 </tr>
@@ -507,164 +651,113 @@ else
                         </tbody>
                     </MudSimpleTable>
                     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
-                        Session avg coloured against the all-time avg per phase.
+                        Average squad DPS per phase across sessions (higher is better)
                     </MudText>
-                }
-                else
-                {
-                    <MudAlert Severity="Severity.Info">Select a session to see phase DPS breakdown.</MudAlert>
-                }
-            </MudPaper>
+                </MudPaper>
+            }
 
-            <!-- Sessions List -->
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.h6" Class="mb-3">All Sessions</MudText>
-                <MudList T="DateTime" Dense="true" DisableGutters="true">
-                    @foreach (var session in _sessions.Take(10))
-                    {
-                        <MudListItem @onclick="@(() => SelectSession(session.Date))">
-                            <MudStack Row="true" Justify="Justify.SpaceBetween" Style="width: 100%;">
-                                <MudStack Spacing="0">
-                                    <MudText Typo="Typo.body2">@session.Date.ToString("MMM d, yyyy")</MudText>
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        @session.PullCount pulls - @session.BestPhase
-                                    </MudText>
-                                </MudStack>
-                                <MudStack Spacing="0" AlignItems="AlignItems.End">
-                                    @if (session.HasKill)
-                                    {
-                                        <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Color="Color.Success" Size="Size.Small" />
-                                    }
-                                    else
-                                    {
-                                        <MudText Typo="Typo.body2" Color="@GetHpTextColor(session.BestBossHpRemaining)">
-                                            @session.BestBossHpRemaining.ToString("F1")%
-                                        </MudText>
-                                    }
-                                </MudStack>
-                            </MudStack>
-                        </MudListItem>
-                    }
-                </MudList>
-            </MudPaper>
-        </MudItem>
-    </MudGrid>
-
-    <!-- Phase DPS Trends -->
-    @if (_phaseDpsTrends.Count > 0 && _sessions.Count > 1)
-    {
-        <MudPaper Class="pa-4 mb-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-3">Phase DPS Trends (k)</MudText>
-            <MudSimpleTable Dense="true" Hover="true" Style="overflow-x: auto;">
-                <thead>
-                    <tr>
-                        <th>Phase</th>
-                        @foreach (var session in _sessions.OrderBy(s => s.Date).TakeLast(6))
-                        {
-                            <th style="text-align: center;">@session.Date.ToString("M/d")</th>
-                        }
-                        <th style="text-align: center;">Trend</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var phase in _phaseDpsTrends)
-                    {
-                        <tr>
-                            <td>@ShortenPhaseName(phase.PhaseName)</td>
+            @if (_mechanicTrends.Count > 0 && _sessions.Count > 1)
+            {
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-3">Mechanic Trends</MudText>
+                    <MudTable Items="@_mechanicTrends" Dense="true" Hover="true">
+                        <HeaderContent>
+                            <MudTh>Mechanic</MudTh>
                             @foreach (var session in _sessions.OrderBy(s => s.Date).TakeLast(6))
                             {
-                                var sessionAvg = phase.SessionAverages.FirstOrDefault(s => s.Date == session.Date);
-                                <td style="text-align: center;">
-                                    @if (sessionAvg != null)
+                                <MudTh Style="text-align: center;">@session.Date.ToString("M/d")</MudTh>
+                            }
+                            <MudTh Style="text-align: center;">Trend</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Mechanic">@GetMechanicDisplayName(context.MechanicName)</MudTd>
+                            @foreach (var session in _sessions.OrderBy(s => s.Date).TakeLast(6))
+                            {
+                                var sessionCount = context.SessionCounts.FirstOrDefault(c => c.Date == session.Date);
+                                <MudTd DataLabel="@session.Date.ToString("M/d")" Style="text-align: center;">
+                                    @if (sessionCount != null)
                                     {
-                                        <span style="color: @GetDpsTrendColor(phase, sessionAvg.AverageDps)">
-                                            @((sessionAvg.AverageDps / 1000.0).ToString("F0"))
-                                        </span>
+                                        <span>@sessionCount.Count</span>
                                     }
                                     else
                                     {
                                         <span>-</span>
                                     }
-                                </td>
+                                </MudTd>
                             }
-                            <td style="text-align: center;">
+                            <MudTd DataLabel="Trend" Style="text-align: center;">
                                 @{
-                                    var dpsTrend = GetPhaseDpsTrend(phase);
+                                    var trend = GetTrend(context);
                                 }
-                                @if (dpsTrend > 0)
+                                @if (trend < 0)
                                 {
-                                    <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Color="Color.Success" Size="Size.Small" />
+                                    <MudIcon Icon="@Icons.Material.Filled.TrendingDown" Color="Color.Success" Size="Size.Small" />
                                 }
-                                else if (dpsTrend < 0)
+                                else if (trend > 0)
                                 {
-                                    <MudIcon Icon="@Icons.Material.Filled.TrendingDown" Color="Color.Error" Size="Size.Small" />
+                                    <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Color="Color.Error" Size="Size.Small" />
                                 }
                                 else
                                 {
                                     <MudIcon Icon="@Icons.Material.Filled.TrendingFlat" Color="Color.Default" Size="Size.Small" />
                                 }
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </MudSimpleTable>
-            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
-                Average squad DPS per phase across sessions (higher is better)
-            </MudText>
-        </MudPaper>
-    }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </MudPaper>
+            }
 
-    <!-- Mechanic Trends -->
-    @if (_mechanicTrends.Count > 0 && _sessions.Count > 1)
-    {
-        <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-3">Mechanic Trends</MudText>
-            <MudTable Items="@_mechanicTrends" Dense="true" Hover="true">
-                <HeaderContent>
-                    <MudTh>Mechanic</MudTh>
-                    @foreach (var session in _sessions.OrderBy(s => s.Date).TakeLast(6))
-                    {
-                        <MudTh Style="text-align: center;">@session.Date.ToString("M/d")</MudTh>
-                    }
-                    <MudTh Style="text-align: center;">Trend</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Mechanic">@GetMechanicDisplayName(context.MechanicName)</MudTd>
-                    @foreach (var session in _sessions.OrderBy(s => s.Date).TakeLast(6))
-                    {
-                        var sessionCount = context.SessionCounts.FirstOrDefault(c => c.Date == session.Date);
-                        <MudTd DataLabel="@session.Date.ToString("M/d")" Style="text-align: center;">
-                            @if (sessionCount != null)
-                            {
-                                <span>@sessionCount.Count</span>
-                            }
-                            else
-                            {
-                                <span>-</span>
-                            }
-                        </MudTd>
-                    }
-                    <MudTd DataLabel="Trend" Style="text-align: center;">
-                        @{
-                            var trend = GetTrend(context);
-                        }
-                        @if (trend < 0)
-                        {
-                            <MudIcon Icon="@Icons.Material.Filled.TrendingDown" Color="Color.Success" Size="Size.Small" />
-                        }
-                        else if (trend > 0)
-                        {
-                            <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Color="Color.Error" Size="Size.Small" />
-                        }
-                        else
-                        {
-                            <MudIcon Icon="@Icons.Material.Filled.TrendingFlat" Color="Color.Default" Size="Size.Small" />
-                        }
-                    </MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudPaper>
-    }
+            @if ((_phaseDpsTrends.Count == 0 && _mechanicTrends.Count == 0) || _sessions.Count <= 1)
+            {
+                <MudAlert Severity="Severity.Info">Trends appear once there are at least two sessions.</MudAlert>
+            }
+        </MudTabPanel>
+
+        <!-- ============ ATTENDANCE TAB ============ -->
+        <MudTabPanel Text="Attendance" Icon="@Icons.Material.Filled.Groups">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-1">Attendance</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
+                    Nights = prog nights attended (out of @(_attendance?.TotalNights ?? 0) total).
+                    Giants / Saltspray / Soo-Won count the pulls a player was in that reached at least that phase.
+                </MudText>
+                @if (_attendance == null || _attendance.Rows.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">No attendance data yet.</MudAlert>
+                }
+                else
+                {
+                    <div style="overflow-x: auto;">
+                    <MudTable Items="@_attendance.Rows" Dense="true" Hover="true" Striped="true">
+                        <HeaderContent>
+                            <MudTh>Player</MudTh>
+                            <MudTh Style="text-align: right;">Nights</MudTh>
+                            <MudTh Style="text-align: right;">Pulls</MudTh>
+                            <MudTh Style="text-align: right;">Giants</MudTh>
+                            <MudTh Style="text-align: right;">Saltspray</MudTh>
+                            <MudTh Style="text-align: right;">Soo-Won</MudTh>
+                            <MudTh Style="text-align: right;">Last Night</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Player">@context.AccountName</MudTd>
+                            <MudTd DataLabel="Nights" Style="text-align: right; font-variant-numeric: tabular-nums;">
+                                <strong>@context.Nights</strong>
+                                <MudText Inline="true" Typo="Typo.caption" Color="Color.Secondary" Class="ml-1">
+                                    (@FormatNightsPct(context.Nights))
+                                </MudText>
+                            </MudTd>
+                            <MudTd DataLabel="Pulls" Style="text-align: right; font-variant-numeric: tabular-nums;">@context.Pulls</MudTd>
+                            <MudTd DataLabel="Giants" Style="text-align: right; font-variant-numeric: tabular-nums;">@FormatCount(context.GiantsPulls)</MudTd>
+                            <MudTd DataLabel="Saltspray" Style="text-align: right; font-variant-numeric: tabular-nums;">@FormatCount(context.SaltsprayPulls)</MudTd>
+                            <MudTd DataLabel="Soo-Won" Style="text-align: right; font-variant-numeric: tabular-nums;">@FormatCount(context.SooWonPulls)</MudTd>
+                            <MudTd DataLabel="Last Night" Style="text-align: right; white-space: nowrap;">@context.LastNight.ToString("MMM d")</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                    </div>
+                }
+            </MudPaper>
+        </MudTabPanel>
+    </MudTabs>
 }
 
 @code {
@@ -675,8 +768,15 @@ else
     private List<HtcmPhaseDpsAverageDto> _overallPhaseDps = new();
     private List<HtcmPhaseDpsTrendDto> _phaseDpsTrends = new();
     private HtcmSessionDetailDto? _sessionDetail;
+    private HtcmAttendanceDto? _attendance;
     private DateTime? _selectedSessionDate;
     private HashSet<int> _expandedPulls = new();
+
+    // Squad DPS targets per burst window. Mirrors the constants in
+    // HtcmSessionSummaryService (the client can't reference Infrastructure) — keep in sync.
+    private const int TimecasterSquadTarget = 175_000;
+    private const int GiantsSquadTarget = 310_000;
+    private const int SaltspraySquadTarget = 170_000;
 
     // Phase DPS rows for the per-phase comparison table
     private record PhaseDpsRow(string PhaseName, int SessionDps, int AllTimeDps)
@@ -754,14 +854,16 @@ else
             var mechanicsTask = Http.GetFromJsonAsync<List<HtcmMechanicTrendDto>>("api/htcmprog/mechanics");
             var phaseDpsTask = Http.GetFromJsonAsync<List<HtcmPhaseDpsAverageDto>>("api/htcmprog/phase-dps");
             var phaseDpsTrendsTask = Http.GetFromJsonAsync<List<HtcmPhaseDpsTrendDto>>("api/htcmprog/phase-dps-trends");
+            var attendanceTask = Http.GetFromJsonAsync<HtcmAttendanceDto>("api/htcmprog/attendance");
 
-            await Task.WhenAll(sessionsTask, progressionTask, mechanicsTask, phaseDpsTask, phaseDpsTrendsTask);
+            await Task.WhenAll(sessionsTask, progressionTask, mechanicsTask, phaseDpsTask, phaseDpsTrendsTask, attendanceTask);
 
             _sessions = sessionsTask.Result ?? new();
             _progressionData = progressionTask.Result;
             _mechanicTrends = mechanicsTask.Result ?? new();
             _overallPhaseDps = phaseDpsTask.Result ?? new();
             _phaseDpsTrends = phaseDpsTrendsTask.Result ?? new();
+            _attendance = attendanceTask.Result;
 
             // Auto-select most recent session
             if (_sessions.Count > 0)
@@ -777,6 +879,7 @@ else
             _mechanicTrends = new();
             _overallPhaseDps = new();
             _phaseDpsTrends = new();
+            _attendance = null;
         }
         finally
         {
@@ -885,6 +988,29 @@ else
 
     private static bool HasBurstData(HtcmRunBurstGroupsDto? groups)
         => groups != null && (groups.Timecaster != null || groups.Giants != null || groups.Saltspray != null);
+
+    // The three burst tiles shown above the pulls table: window name, tonight's
+    // session-average burst for it (null when never reached), and the squad target.
+    private static IEnumerable<(string Name, HtcmPhaseGroupBurstDto? Group, int Target)> BurstTiles(HtcmRunBurstGroupsDto groups)
+    {
+        yield return ("Timecaster", groups.Timecaster, TimecasterSquadTarget);
+        yield return ("Giants", groups.Giants, GiantsSquadTarget);
+        yield return ("Saltspray", groups.Saltspray, SaltspraySquadTarget);
+    }
+
+    // Tile colour vs target: green at/above, amber within 10% below, red beyond.
+    private static Color GetTargetColor(int dps, int target)
+    {
+        if (dps >= target) return Color.Success;
+        if (dps >= target * 0.9) return Color.Warning;
+        return Color.Error;
+    }
+
+    private string FormatNightsPct(int nights)
+    {
+        var total = _attendance?.TotalNights ?? 0;
+        return total > 0 ? $"{nights * 100.0 / total:F0}%" : "—";
+    }
 
     private static string FormatBurstDps(HtcmPhaseGroupBurstDto? group)
         => group == null ? "—" : $"{(group.SquadDps / 1000.0):F1}k";
@@ -1203,5 +1329,17 @@ else
         DateTime Date,
         int AverageDps,
         int PullCount
+    );
+
+    public record HtcmAttendanceDto(int TotalNights, List<HtcmAttendanceRowDto> Rows);
+
+    public record HtcmAttendanceRowDto(
+        string AccountName,
+        int Nights,
+        int Pulls,
+        int GiantsPulls,
+        int SaltsprayPulls,
+        int SooWonPulls,
+        DateTime LastNight
     );
 }

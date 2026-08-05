@@ -77,6 +77,16 @@ public class HtcmProgController : ControllerBase
     }
 
     /// <summary>
+    /// Get per-guild-member attendance: nights attended and pulls reaching key phases
+    /// </summary>
+    [HttpGet("attendance")]
+    public async Task<ActionResult<HtcmAttendance>> GetAttendance(CancellationToken ct)
+    {
+        var attendance = await _htcmProgService.GetAttendanceAsync(ct);
+        return Ok(attendance);
+    }
+
+    /// <summary>
     /// Get all unique mechanics from HTCM encounters (for discovery/debugging)
     /// </summary>
     [HttpGet("all-mechanics")]
