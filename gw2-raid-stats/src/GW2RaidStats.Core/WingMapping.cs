@@ -198,6 +198,22 @@ public static class WingMapping
         26774 or 26867 => 2,  // Decima NM / Godsquall Decima CM
         26712 => 3,  // Ura (NM and CM)
 
+        // Strikes (release order; matches AllBosses Order values)
+        22154 => 1,   // Shiverpeaks Pass
+        22343 => 2,   // Voice & Claw
+        22492 => 3,   // Fraenir of Jormag
+        22521 => 4,   // Boneskinner
+        22711 => 5,   // Whisper of Jormag
+        22836 => 6,   // Cold War
+        24033 => 7,   // Aetherblade Hideout
+        23957 => 8,   // Xunlai Jade Junkyard
+        24485 => 9,   // Kaineng Overlook
+        24375 => 10,  // Harvest Temple
+        25413 => 11,  // Old Lion's Court
+        25705 => 12,  // Cosmic Observatory
+        25989 => 13,  // Temple of Febe
+        27124 => 14,  // Guardian's Glade
+
         _ => 999     // Unknown encounters sort last
     };
 
@@ -278,9 +294,25 @@ public static class WingMapping
         new BossInfo(26774, "Decima", 8, 2),
         new BossInfo(26712, "Ura", 8, 3),
 
-        // Strikes (no wing — StrikeWing sentinel). "Kela" is the in-game name; Elite Insights
-        // reports it as "Guardian's Glade" (renamed in EI v3.18.1.0).
-        new BossInfo(27124, "Guardian's Glade", StrikeWing, 1),
+        // Strikes (no wing — StrikeWing sentinel). Trigger IDs are the Elite Insights
+        // normal-mode encounter triggers. Order groups by expansion: IBS 1-6, EoD 7-10,
+        // SotO 11-13, JW 14 (the Squad Builder picker groups on these ranges).
+        new BossInfo(22154, "Shiverpeaks Pass", StrikeWing, 1),
+        new BossInfo(22343, "Voice & Claw", StrikeWing, 2),         // Kodan Brothers
+        new BossInfo(22492, "Fraenir of Jormag", StrikeWing, 3),
+        new BossInfo(22521, "Boneskinner", StrikeWing, 4),
+        new BossInfo(22711, "Whisper of Jormag", StrikeWing, 5),
+        new BossInfo(22836, "Cold War", StrikeWing, 6),
+        new BossInfo(24033, "Aetherblade Hideout", StrikeWing, 7),
+        new BossInfo(23957, "Xunlai Jade Junkyard", StrikeWing, 8),
+        new BossInfo(24485, "Kaineng Overlook", StrikeWing, 9),
+        new BossInfo(24375, "Harvest Temple", StrikeWing, 10),
+        new BossInfo(25413, "Old Lion's Court", StrikeWing, 11),
+        new BossInfo(25705, "Cosmic Observatory", StrikeWing, 12),
+        new BossInfo(25989, "Temple of Febe", StrikeWing, 13),
+        // "Kela" is the in-game name; Elite Insights reports it as "Guardian's Glade"
+        // (renamed in EI v3.18.1.0).
+        new BossInfo(27124, "Guardian's Glade", StrikeWing, 14),
     };
 }
 

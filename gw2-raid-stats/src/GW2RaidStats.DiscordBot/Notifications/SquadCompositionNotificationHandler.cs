@@ -91,6 +91,11 @@ public class SquadCompositionNotificationHandler : INotificationHandler
                 {
                     nameField = MentionOrName(slot.PlayerId, slot.AccountName);
                 }
+                else if (!string.IsNullOrEmpty(slot.AccountName))
+                {
+                    // Named non-guildie ("guest") — no PlayerId, so no mention to resolve
+                    nameField = slot.AccountName;
+                }
                 else if (slot.IsPug)
                 {
                     nameField = "*PUG*";

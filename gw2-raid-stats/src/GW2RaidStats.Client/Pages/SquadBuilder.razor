@@ -94,11 +94,37 @@
                                  Margin="Margin.Dense"
                                  Class="@StepClass(1)"
                                  Min="0"
-                                 Max="@(10 - _selectedPlayerIds.Count)" />
+                                 Max="@(Math.Max(0, 10 - _selectedPlayerIds.Count - _guestNames.Count))" />
             </MudItem>
             <MudItem xs="12" md="4">
+                <MudStack Spacing="1">
+                    <MudTextField T="string" @bind-Value="_guestNameInput"
+                                  Label="Non-guildie name"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Class="@StepClass(1)"
+                                  Immediate="true"
+                                  OnKeyDown="@OnGuestKeyDown"
+                                  Adornment="Adornment.End"
+                                  AdornmentIcon="@Icons.Material.Filled.PersonAdd"
+                                  OnAdornmentClick="@AddGuest"
+                                  HelperText="Named guest — takes a DPS slot like a pug" />
+                    @if (_guestNames.Count > 0)
+                    {
+                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                            @foreach (var g in _guestNames)
+                            {
+                                var captureGuest = g;
+                                <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Outlined"
+                                         OnClose="@(() => RemoveGuest(captureGuest))">@captureGuest</MudChip>
+                            }
+                        </MudStack>
+                    }
+                </MudStack>
+            </MudItem>
+            <MudItem xs="12">
                 <MudText Typo="Typo.caption" Color="Color.Secondary">
-                    @_selectedPlayerIds.Count guildie(s) + @_pugCount pug(s) = @(_selectedPlayerIds.Count + _pugCount) / 10 slots
+                    @_selectedPlayerIds.Count guildie(s) + @_guestNames.Count guest(s) + @_pugCount pug(s) = @TotalSlots / 10 slots
                 </MudText>
             </MudItem>
 
@@ -131,7 +157,7 @@
                                            SelectedValues="@_randomWings"
                                            SelectedValuesChanged="@(v => _randomWings = v.ToHashSet())"
                                            MultiSelection="true"
-                                           Label="Wings (none = all)"
+                                           Label="Wings (none = all raids)"
                                            Variant="Variant.Outlined"
                                            Margin="Margin.Dense"
                                            MultiSelectionTextFunc="@WingsLabel">
@@ -140,6 +166,7 @@
                                         var captureW = w;
                                         <MudSelectItem T="int" Value="@captureW">W@(captureW) — @WingMapping.GetWingName(captureW)</MudSelectItem>
                                     }
+                                    <MudSelectItem T="int" Value="@WingMapping.StrikeWing">Strikes</MudSelectItem>
                                 </MudSelect>
                                 <MudSwitch T="bool" @bind-Value="_randomReplace" Color="Color.Primary"
                                            Label="Replace current selection" />
@@ -163,20 +190,31 @@
                 }
                 else
                 {
-                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
-                        @foreach (var boss in _allBosses)
+                    <MudStack Spacing="2">
+                        @foreach (var group in BossGroups())
                         {
-                            var isSelected = _selectedBossOrder.Contains(boss.TriggerId);
-                            <MudChip T="string"
-                                     OnClick="@(() => ToggleBoss(boss.TriggerId))"
-                                     Color="@(isSelected ? Color.Primary : Color.Default)"
-                                     Variant="@(isSelected ? Variant.Filled : Variant.Outlined)">
-                                @WingMapping.WingShortLabel(boss.TriggerId) @boss.Name
-                                @if (isSelected)
-                                {
-                                    <span style="margin-left: 6px; opacity: 0.8;">#@(_selectedBossOrder.IndexOf(boss.TriggerId) + 1)</span>
-                                }
-                            </MudChip>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Style="min-width: 220px;">
+                                    <strong>@group.Label</strong>
+                                </MudText>
+                                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1" Style="flex: 1;">
+                                    @foreach (var boss in group.Bosses)
+                                    {
+                                        var isSelected = _selectedBossOrder.Contains(boss.TriggerId);
+                                        <MudChip T="string"
+                                                 Size="Size.Small"
+                                                 OnClick="@(() => ToggleBoss(boss.TriggerId))"
+                                                 Color="@(isSelected ? Color.Primary : Color.Default)"
+                                                 Variant="@(isSelected ? Variant.Filled : Variant.Outlined)">
+                                            @boss.Name
+                                            @if (isSelected)
+                                            {
+                                                <span style="margin-left: 6px; opacity: 0.8;">#@(_selectedBossOrder.IndexOf(boss.TriggerId) + 1)</span>
+                                            }
+                                        </MudChip>
+                                    }
+                                </MudStack>
+                            </MudStack>
                         }
                     </MudStack>
                 }
@@ -188,7 +226,7 @@
                                Color="Color.Primary"
                                StartIcon="@Icons.Material.Filled.Shuffle"
                                Class="@(CurrentStep == 3 ? "squad-builder-pulse-strong" : "")"
-                               Disabled="@(_building || (_selectedPlayerIds.Count == 0 && _pugCount == 0) || _selectedBossOrder.Count == 0)"
+                               Disabled="@(_building || TotalSlots == 0 || _selectedBossOrder.Count == 0)"
                                OnClick="@(() => RandomizeAsync(respectLocks: false))">
                         @if (_building)
                         {
@@ -307,6 +345,10 @@
                                                     {
                                                         <strong>@slot.AccountName</strong>
                                                     }
+                                                    else if (slot.IsGuest && !string.IsNullOrEmpty(slot.AccountName))
+                                                    {
+                                                        <strong>@slot.AccountName</strong><span style="margin-left: 6px; opacity: 0.6; font-size: 0.75rem;">guest</span>
+                                                    }
                                                     else if (slot.IsPug)
                                                     {
                                                         <MudText Typo="Typo.body2" Color="Color.Secondary">PUG</MudText>
@@ -329,6 +371,21 @@
                                                         </MudStack>
                                                     </MudMenuItem>
                                                 }
+                                                @{ var unplacedGuests = UnplacedGuests(captureSlot); }
+                                                @if (unplacedGuests.Count > 0)
+                                                {
+                                                    <MudDivider />
+                                                    @foreach (var guest in unplacedGuests)
+                                                    {
+                                                        var captureGuest = guest;
+                                                        <MudMenuItem OnClick="@(() => AssignGuestToSlot(captureSlot, captureGuest))">
+                                                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                                                <MudChip T="string" Size="Size.Small" Color="Color.Secondary">Guest</MudChip>
+                                                                <MudText>@captureGuest</MudText>
+                                                            </MudStack>
+                                                        </MudMenuItem>
+                                                    }
+                                                }
                                                 @if (slot.Kind == "Dps")
                                                 {
                                                     <MudDivider />
@@ -336,7 +393,7 @@
                                                         <MudText Color="Color.Secondary">Mark as PUG</MudText>
                                                     </MudMenuItem>
                                                 }
-                                                @if (slot.PlayerId.HasValue || slot.IsPug)
+                                                @if (slot.PlayerId.HasValue || slot.IsPug || slot.IsGuest)
                                                 {
                                                     <MudDivider />
                                                     <MudMenuItem OnClick="@(() => ClearSlot(captureSlot))">
@@ -462,6 +519,13 @@
     private HashSet<Guid> _selectedPlayerIds = new();
     private int _pugCount = 0;
 
+    // Named non-guildies ("guests"). The randomizer treats them as pugs (it can't know
+    // their capabilities), but they keep their name in the grid and the Discord post.
+    private List<string> _guestNames = new();
+    private string _guestNameInput = "";
+
+    private int TotalSlots => _selectedPlayerIds.Count + _guestNames.Count + _pugCount;
+
     // Seed-from-event support — populated alongside players in OnInitializedAsync.
     private List<RecentEventDto> _recentEvents = new();
     private Guid? _seedEventId;
@@ -477,9 +541,11 @@
 
     private string WingsLabel(List<string> selectedValues)
     {
-        if (selectedValues.Count == 0) return "All wings";
-        if (selectedValues.Count > 3) return $"{selectedValues.Count} wings selected";
-        return string.Join(", ", _randomWings.OrderBy(w => w).Select(w => $"W{w}"));
+        if (selectedValues.Count == 0) return "All raid wings";
+        if (selectedValues.Count > 3) return $"{selectedValues.Count} selected";
+        return string.Join(", ", _randomWings
+            .OrderBy(w => w == WingMapping.StrikeWing ? 99 : w)
+            .Select(w => w == WingMapping.StrikeWing ? "Strikes" : $"W{w}"));
     }
 
     // Capability data — keyed by player id, used for the per-slot picker UI
@@ -559,7 +625,7 @@
         get
         {
             if (_grid.Count > 0) return 0;
-            if (_selectedPlayerIds.Count == 0 && _pugCount == 0) return 1;
+            if (TotalSlots == 0) return 1;
             if (_selectedBossOrder.Count == 0) return 2;
             return 3;
         }
@@ -567,7 +633,7 @@
 
     private StepHint? CurrentStepHint() => CurrentStep switch
     {
-        1 => new StepHint(1, "Start by picking players from the dropdown (and/or set Pug DPS count)."),
+        1 => new StepHint(1, "Start by picking players from the dropdown (and/or add non-guildies by name / set Pug DPS count)."),
         2 => new StepHint(2, "Now pick bosses — click chips below, or hit Random Bosses to roll a list."),
         3 => new StepHint(3, "All set — click Randomize to build the squad."),
         _ => null
@@ -626,19 +692,121 @@
         return string.Join(", ", names);
     }
 
+    // --- Guests (named non-guildies) ---
+
+    private void OnGuestKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AddGuest();
+    }
+
+    private void AddGuest()
+    {
+        var name = _guestNameInput.Trim();
+        if (string.IsNullOrEmpty(name)) return;
+        if (TotalSlots >= 10)
+        {
+            Snackbar.Add("Squad is full (10 slots)", Severity.Warning);
+            return;
+        }
+        if (_guestNames.Contains(name, StringComparer.OrdinalIgnoreCase)
+            || _allPlayers.Any(p => string.Equals(p.AccountName, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            Snackbar.Add($"'{name}' is already a guildie or guest — pick them from the list instead", Severity.Info);
+            return;
+        }
+        _guestNames.Add(name);
+        _guestNameInput = "";
+    }
+
+    private void RemoveGuest(string name)
+    {
+        _guestNames.Remove(name);
+        foreach (var slot in _grid.SelectMany(s => s.Slots))
+        {
+            if (slot.IsGuest && string.Equals(slot.AccountName, name, StringComparison.OrdinalIgnoreCase))
+            {
+                ClearSlot(slot);
+            }
+        }
+    }
+
+    private List<string> UnplacedGuests(GridSlot slot)
+    {
+        var placed = _grid.SelectMany(s => s.Slots)
+            .Where(s => s != slot && s.IsGuest && !string.IsNullOrEmpty(s.AccountName))
+            .Select(s => s.AccountName!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return _guestNames.Where(g => !placed.Contains(g)).ToList();
+    }
+
+    private void AssignGuestToSlot(GridSlot slot, string name)
+    {
+        // Move semantics: drop the guest from any other slot first.
+        foreach (var s in _grid.SelectMany(g => g.Slots))
+        {
+            if (s != slot && s.IsGuest && string.Equals(s.AccountName, name, StringComparison.OrdinalIgnoreCase))
+            {
+                ClearSlot(s);
+            }
+        }
+        slot.PlayerId = null;
+        slot.AccountName = name;
+        slot.Role = null;
+        slot.IsGuest = true;
+        slot.IsPug = false;
+    }
+
+    // --- Boss picker ---
+
     private void ToggleBoss(int triggerId)
     {
         if (_selectedBossOrder.Contains(triggerId)) _selectedBossOrder.Remove(triggerId);
         else _selectedBossOrder.Add(triggerId);
     }
 
+    private record BossGroupView(string Label, List<BossOption> Bosses);
+
+    // Strike EncounterOrder ranges by expansion — must match the Order values assigned
+    // to strikes in WingMapping.AllBosses.
+    private static readonly (string Label, int FromOrder, int ToOrder)[] StrikeGroupRanges =
+    {
+        ("Strikes · Icebrood Saga", 1, 6),
+        ("Strikes · End of Dragons", 7, 10),
+        ("Strikes · Secrets of the Obscure", 11, 13),
+        ("Strikes · Janthir Wilds", 14, 14),
+    };
+
+    private List<BossGroupView> BossGroups()
+    {
+        var groups = _allBosses
+            .Where(b => b.Wing != WingMapping.StrikeWing)
+            .GroupBy(b => b.Wing)
+            .OrderBy(g => g.Key)
+            .Select(g => new BossGroupView(
+                $"W{g.Key} · {WingMapping.GetWingName(g.Key)}",
+                g.OrderBy(b => b.EncounterOrder).ToList()))
+            .ToList();
+
+        var strikes = _allBosses.Where(b => b.Wing == WingMapping.StrikeWing).ToList();
+        foreach (var (label, from, to) in StrikeGroupRanges)
+        {
+            var subset = strikes
+                .Where(b => b.EncounterOrder >= from && b.EncounterOrder <= to)
+                .OrderBy(b => b.EncounterOrder)
+                .ToList();
+            if (subset.Count > 0) groups.Add(new BossGroupView(label, subset));
+        }
+        return groups;
+    }
+
     private void RollRandomBosses()
     {
-        // Pool of candidate bosses; empty wing set means all wings. Strikes (StrikeWing
-        // sentinel) are excluded from random rolls — add them manually via the chips.
+        // Pool of candidate bosses. Empty wing set means all raid wings; strikes only
+        // roll when the "Strikes" entry (StrikeWing sentinel) is explicitly selected.
         var pool = _allBosses
-            .Where(b => b.Wing != WingMapping.StrikeWing)
-            .Where(b => _randomWings.Count == 0 || _randomWings.Contains(b.Wing))
+            .Where(b => _randomWings.Count == 0
+                ? b.Wing != WingMapping.StrikeWing
+                : _randomWings.Contains(b.Wing))
             .ToList();
 
         if (pool.Count == 0)
@@ -797,9 +965,9 @@
 
     private async Task RandomizeAsync(bool respectLocks)
     {
-        if (_selectedPlayerIds.Count + _pugCount > 10)
+        if (TotalSlots > 10)
         {
-            Snackbar.Add("Players + pugs cannot exceed 10", Severity.Warning);
+            Snackbar.Add("Players + guests + pugs cannot exceed 10", Severity.Warning);
             return;
         }
 
@@ -808,10 +976,12 @@
         _building = true;
         try
         {
+            // Guests are sent as extra pugs — the server can't reason about their
+            // capabilities. BuildGrid re-attaches their names to the pug DPS slots.
             var resp = await Http.PostAsJsonAsync("api/squad/build", new SquadBuildRequest(
                 _selectedPlayerIds.ToList(),
                 _selectedBossOrder.ToList(),
-                _pugCount,
+                _pugCount + _guestNames.Count,
                 locks,
                 null,
                 null));
@@ -844,7 +1014,10 @@
     private List<GridSubGroup> BuildGrid(SquadAssignmentDto assignment, Dictionary<Guid, GenericRole>? lockSet)
     {
         var grid = new List<GridSubGroup>();
+        // The server's PugDpsCount covers guests too (they're sent as pugs); seat the
+        // named guests into the filler DPS slots first, anonymous PUGs after.
         var pugsRemaining = assignment.PugDpsCount;
+        var guestQueue = new Queue<string>(_guestNames);
         foreach (var sub in assignment.SubGroups)
         {
             var gs = new GridSubGroup { Index = sub.Index, HealFlavor = sub.HealFlavor, Slots = new() };
@@ -852,17 +1025,23 @@
             {
                 var s = sub.Slots[i];
                 var hasPlayer = s.PlayerId.HasValue && !string.IsNullOrEmpty(s.AccountName);
-                var isPug = !hasPlayer && pugsRemaining > 0 && s.Kind == "Dps";
-                if (isPug) pugsRemaining--;
+                var isFiller = !hasPlayer && pugsRemaining > 0 && s.Kind == "Dps";
+                string? guestName = null;
+                if (isFiller)
+                {
+                    pugsRemaining--;
+                    if (guestQueue.Count > 0) guestName = guestQueue.Dequeue();
+                }
                 var locked = lockSet != null && s.PlayerId.HasValue && lockSet.ContainsKey(s.PlayerId.Value);
                 gs.Slots.Add(new GridSlot
                 {
                     Index = i,
                     Kind = s.Kind,
                     PlayerId = hasPlayer ? s.PlayerId : null,
-                    AccountName = hasPlayer ? s.AccountName : null,
+                    AccountName = hasPlayer ? s.AccountName : guestName,
                     Role = s.Role,
-                    IsPug = isPug,
+                    IsGuest = guestName != null,
+                    IsPug = isFiller && guestName == null,
                     IsLocked = locked
                 });
             }
@@ -992,6 +1171,7 @@
         slot.PlayerId = playerId;
         slot.AccountName = name;
         slot.Role = chosen;
+        slot.IsGuest = false;
         slot.IsPug = false;
     }
 
@@ -1001,6 +1181,7 @@
         slot.PlayerId = null;
         slot.AccountName = null;
         slot.Role = null;
+        slot.IsGuest = false;
         slot.IsPug = true;
         slot.IsLocked = false;
     }
@@ -1010,6 +1191,7 @@
         slot.PlayerId = null;
         slot.AccountName = null;
         slot.Role = null;
+        slot.IsGuest = false;
         slot.IsPug = false;
         slot.IsLocked = false;
     }
@@ -1042,7 +1224,7 @@
             var resp = await Http.PostAsJsonAsync("api/squad/build", new SquadBuildRequest(
                 _selectedPlayerIds.ToList(),
                 tail,
-                _pugCount,
+                _pugCount + _guestNames.Count,
                 null,
                 forceCoverableMechanicId,
                 null));
@@ -1410,6 +1592,7 @@
         public Guid? PlayerId { get; set; }
         public string? AccountName { get; set; }
         public GenericRole? Role { get; set; }
+        public bool IsGuest { get; set; }
         public bool IsPug { get; set; }
         public bool IsLocked { get; set; }
     }
