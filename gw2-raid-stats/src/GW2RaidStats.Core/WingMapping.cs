@@ -213,6 +213,7 @@ public static class WingMapping
         25705 => 12,  // Cosmic Observatory
         25989 => 13,  // Temple of Febe
         27124 => 14,  // Guardian's Glade
+        28106 => 15,  // Vloxx (Nexus of Eternity)
 
         _ => 999     // Unknown encounters sort last
     };
@@ -296,7 +297,7 @@ public static class WingMapping
 
         // Strikes (no wing — StrikeWing sentinel). Trigger IDs are the Elite Insights
         // normal-mode encounter triggers. Order groups by expansion: IBS 1-6, EoD 7-10,
-        // SotO 11-13, JW 14 (the Squad Builder picker groups on these ranges).
+        // SotO 11-13, VoE 14-15 (the Squad Builder picker groups on these ranges).
         new BossInfo(22154, "Shiverpeaks Pass", StrikeWing, 1),
         new BossInfo(22343, "Voice & Claw", StrikeWing, 2),         // Kodan Brothers
         new BossInfo(22492, "Fraenir of Jormag", StrikeWing, 3),
@@ -313,6 +314,8 @@ public static class WingMapping
         // "Kela" is the in-game name; Elite Insights reports it as "Guardian's Glade"
         // (renamed in EI v3.18.1.0).
         new BossInfo(27124, "Guardian's Glade", StrikeWing, 14),
+        // Nexus of Eternity (Visions of Eternity raid encounter); EI names the log "Vloxx".
+        new BossInfo(28106, "Vloxx", StrikeWing, 15),
     };
 }
 
