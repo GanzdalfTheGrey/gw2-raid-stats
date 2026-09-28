@@ -350,8 +350,13 @@ public class SquadRandomizerService
         foreach (var (playerId, lockedRole) in locks)
         {
             if (!unassigned.Contains(playerId)) continue;
-            // Find the first slot whose role list includes lockedRole
-            var idx = slotDefs.FindIndex(s => s.AcceptsRole(lockedRole) && !lockedSlotIndices.Contains(slotDefs.IndexOf(s)));
+            // Find the first free slot whose role list includes lockedRole. Index-based on purpose:
+            // SlotDef is a record, so IndexOf would match the first value-equal (e.g. Dps) def.
+            var idx = -1;
+            for (int i = 0; i < slotDefs.Count; i++)
+            {
+                if (slotDefs[i].AcceptsRole(lockedRole) && !lockedSlotIndices.Contains(i)) { idx = i; break; }
+            }
             if (idx < 0) continue;
             assignments.Add((slotDefs[idx], playerId, lockedRole));
             lockedSlotIndices.Add(idx);
@@ -418,9 +423,11 @@ public class SquadRandomizerService
             }
         }
 
-        // Build sub-groups
+        // Build sub-groups. Locks were pre-applied ahead of everything else, so order by kind
+        // (Heal, BoonDps, Dps) to keep a sub's layout stable across re-rolls. OrderBy is stable,
+        // so same-kind slots keep their assignment order.
         var subGroups = new[] { new SubGroupBuilder(1), new SubGroupBuilder(2) };
-        foreach (var (def, playerId, role) in assignments)
+        foreach (var (def, playerId, role) in assignments.OrderBy(a => KindOrder(a.Def.Kind)))
         {
             var sub = subGroups[def.SubGroup - 1];
             sub.Slots.Add(new SlotAssignmentDto(
@@ -537,6 +544,13 @@ public class SquadRandomizerService
     }
 
     // --- Helpers ---
+
+    private static int KindOrder(string kind) => kind switch
+    {
+        "Heal" => 0,
+        "BoonDps" => 1,
+        _ => 2
+    };
 
     private record SlotDef(int SubGroup, string Kind, GenericRole[] AcceptedRoles)
     {
