@@ -121,7 +121,7 @@ public class SquadRandomizerService
 
         // Solve base roles (locks honored, hardest-first greedy with random tie-break)
         var (subGroups, leftoverPlayers, baseMaybes) = SolveBaseRoles(
-            req.PlayerIds, capability, locks, nameById, rng);
+            req.PlayerIds, capability, locks, req.PinnedSlots ?? new(), req.HealFlavors, nameById, rng);
 
         var pugDpsCount = Math.Min(req.PugCount, 10 - req.PlayerIds.Count + leftoverPlayers.Count);
 
@@ -277,43 +277,46 @@ public class SquadRandomizerService
         List<Guid> playerIds,
         CapabilityIndex capability,
         Dictionary<Guid, GenericRole> locks,
+        List<SquadSlotPin> pins,
+        List<string?>? healFlavors,
         Dictionary<Guid, string> nameById,
         Random rng)
     {
         // Each sub group needs both Alac and Quick uptime. There are two equivalent compositions
-        // per sub: AlacHeal + QuickBoonDps, OR QuickHeal + AlacBoonDps. Pick each sub's flavor
-        // independently per attempt — across the 20 attempts every (Alac/Quick) × (Alac/Quick)
-        // squad-wide pattern gets sampled, so the scorer compares all four configurations.
-        //
-        // Locks constrain the choice: an AlacHeal/QuickBoonDps lock requires the sub to be Alac-heal;
-        // a QuickHeal/AlacBoonDps lock requires Quick-heal. Conflicting locks (2 Alac, 2 Quick when
-        // there are only 2 subs) fall back to a balanced pattern and let the lock-application step
-        // drop the conflict.
-        int alacPressure = locks.Values.Count(r =>
-            r == GenericRole.AlacHeal
-            || r == GenericRole.QuickDpsPower
-            || r == GenericRole.QuickDpsCondi);
-        int quickPressure = locks.Values.Count(r =>
-            r == GenericRole.QuickHeal
-            || r == GenericRole.AlacDpsPower
-            || r == GenericRole.AlacDpsCondi);
-
-        int minAlacSubs = Math.Min(alacPressure, 2);
-        int minQuickSubs = Math.Min(quickPressure, 2);
-        if (minAlacSubs + minQuickSubs > 2)
+        // per sub: AlacHeal + QuickBoonDps, OR QuickHeal + AlacBoonDps. A sub's flavor is fixed by
+        // the user's choice (healFlavors), else implied by a heal/boon-DPS pin in that sub, else
+        // picked per attempt — across the 20 attempts every (Alac/Quick) × (Alac/Quick) pattern
+        // gets sampled, so the scorer compares all four configurations.
+        var fixedAlac = new bool?[2];
+        for (int sub = 0; sub < 2; sub++)
         {
-            // Over-constrained — fall back to balanced; conflicting locks will be silently dropped.
-            minAlacSubs = 1;
-            minQuickSubs = 1;
+            fixedAlac[sub] = healFlavors?.ElementAtOrDefault(sub) switch
+            {
+                "Alac" => true,
+                "Quick" => false,
+                _ => null
+            };
         }
-        int maxAlacSubs = 2 - minQuickSubs;
-        int alacSubs = rng.Next(minAlacSubs, maxAlacSubs + 1);
+        foreach (var pin in pins)
+        {
+            var sub = pin.SubGroup - 1;
+            if (sub is < 0 or > 1 || fixedAlac[sub].HasValue) continue;
+            fixedAlac[sub] = ImpliesAlacHeal(pin.Role);
+        }
 
-        bool sub1IsAlacHeal;
-        bool sub2IsAlacHeal;
-        if (alacSubs == 0) { sub1IsAlacHeal = false; sub2IsAlacHeal = false; }
-        else if (alacSubs == 2) { sub1IsAlacHeal = true; sub2IsAlacHeal = true; }
-        else { sub1IsAlacHeal = rng.Next(2) == 0; sub2IsAlacHeal = !sub1IsAlacHeal; }
+        // Sub-less locks (force-coverage) constrain the free subs: an AlacHeal/QuickBoonDps lock
+        // needs an Alac-heal sub, a QuickHeal/AlacBoonDps lock a Quick-heal one. Locks that can't
+        // be satisfied are dropped by the lock-application step below.
+        int alacPressure = locks.Values.Count(r => ImpliesAlacHeal(r) == true);
+        int quickPressure = locks.Values.Count(r => ImpliesAlacHeal(r) == false);
+        var freeSubs = Enumerable.Range(0, 2).Where(i => !fixedAlac[i].HasValue).OrderBy(_ => rng.Next()).ToList();
+        int minAlac = Math.Min(Math.Max(0, Math.Min(alacPressure, 2) - fixedAlac.Count(f => f == true)), freeSubs.Count);
+        int minQuick = Math.Min(Math.Max(0, Math.Min(quickPressure, 2) - fixedAlac.Count(f => f == false)), freeSubs.Count - minAlac);
+        int alacCount = rng.Next(minAlac, freeSubs.Count - minQuick + 1);
+        for (int i = 0; i < freeSubs.Count; i++) fixedAlac[freeSubs[i]] = i < alacCount;
+
+        bool sub1IsAlacHeal = fixedAlac[0]!.Value;
+        bool sub2IsAlacHeal = fixedAlac[1]!.Value;
 
         GenericRole HealRole(bool alac) => alac ? GenericRole.AlacHeal : GenericRole.QuickHeal;
         GenericRole[] BoonRoles(bool alacHeal) => alacHeal
@@ -345,8 +348,22 @@ public class SquadRandomizerService
         var unassigned = new HashSet<Guid>(playerIds);
         var maybeFallbacks = 0;
 
-        // Pre-apply locks
+        // Pre-apply pins (a specific sub), then sub-less locks (first matching slot in any sub)
         var lockedSlotIndices = new HashSet<int>();
+        foreach (var pin in pins)
+        {
+            if (!unassigned.Contains(pin.PlayerId)) continue;
+            var idx = -1;
+            for (int i = 0; i < slotDefs.Count; i++)
+            {
+                if (slotDefs[i].SubGroup == pin.SubGroup && slotDefs[i].AcceptsRole(pin.Role)
+                    && !lockedSlotIndices.Contains(i)) { idx = i; break; }
+            }
+            if (idx < 0) continue;
+            assignments.Add((slotDefs[idx], pin.PlayerId, pin.Role));
+            lockedSlotIndices.Add(idx);
+            unassigned.Remove(pin.PlayerId);
+        }
         foreach (var (playerId, lockedRole) in locks)
         {
             if (!unassigned.Contains(playerId)) continue;
@@ -545,6 +562,14 @@ public class SquadRandomizerService
 
     // --- Helpers ---
 
+    // true = role belongs in an Alac-heal sub, false = a Quick-heal sub, null = plain DPS.
+    private static bool? ImpliesAlacHeal(GenericRole r) => r switch
+    {
+        GenericRole.AlacHeal or GenericRole.QuickDpsPower or GenericRole.QuickDpsCondi => true,
+        GenericRole.QuickHeal or GenericRole.AlacDpsPower or GenericRole.AlacDpsCondi => false,
+        _ => null
+    };
+
     private static int KindOrder(string kind) => kind switch
     {
         "Heal" => 0,
@@ -598,7 +623,12 @@ public record SquadBuildRequest(
     int PugCount,
     Dictionary<Guid, GenericRole>? Locks = null,
     Guid? ForceCoverableMechanicId = null,
-    int? Seed = null);
+    int? Seed = null,
+    List<SquadSlotPin>? PinnedSlots = null,
+    List<string?>? HealFlavors = null);
+
+/// <summary>A player placed into a specific sub + role before randomizing.</summary>
+public record SquadSlotPin(Guid PlayerId, int SubGroup, GenericRole Role);
 
 public record SquadBuildResult(
     SquadAssignmentDto Assignment,

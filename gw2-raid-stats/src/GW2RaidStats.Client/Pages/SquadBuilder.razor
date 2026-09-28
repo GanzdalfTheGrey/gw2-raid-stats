@@ -30,7 +30,7 @@
         <MudStack Spacing="0">
             <MudText Typo="Typo.h4">Squad Builder</MudText>
             <MudText Typo="Typo.body2" Color="Color.Secondary">
-                Pick players and bosses, randomize roles, manual-tweak as needed, post to Discord.
+                Pick players and bosses, optionally pre-place people and pick each sub's boons, randomize the rest, manual-tweak as needed, post to Discord.
             </MudText>
         </MudStack>
     </MudStack>
@@ -227,7 +227,7 @@
                                StartIcon="@Icons.Material.Filled.Shuffle"
                                Class="@(CurrentStep == 3 ? "squad-builder-pulse-strong" : "")"
                                Disabled="@(_building || TotalSlots == 0 || _selectedBossOrder.Count == 0)"
-                               OnClick="@(() => RandomizeAsync(respectLocks: false))">
+                               OnClick="@(() => RandomizeAsync(respectLocks: !HasBuilt))">
                         @if (_building)
                         {
                             <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
@@ -237,7 +237,7 @@
                     <MudButton Variant="Variant.Outlined"
                                Color="Color.Primary"
                                StartIcon="@Icons.Material.Filled.LockReset"
-                               Disabled="@(_building || _grid.Count == 0)"
+                               Disabled="@(_building || !HasBuilt)"
                                OnClick="@(() => RandomizeAsync(respectLocks: true))">
                         Re-randomize unlocked
                     </MudButton>
@@ -250,7 +250,7 @@
                     <MudButton Variant="Variant.Filled"
                                Color="Color.Tertiary"
                                StartIcon="@Icons.Material.Filled.Send"
-                               Disabled="@(_grid.Count == 0 || _publishing)"
+                               Disabled="@(!HasBuilt || _publishing)"
                                OnClick="@PublishAsync">
                         @if (_publishing)
                         {
@@ -264,7 +264,7 @@
     </MudPaper>
 
     @* Result *@
-    @if (_grid.Count > 0)
+    @if (HasBuilt)
     {
         @* Warnings *@
         @foreach (var w in _warnings)
@@ -320,7 +320,9 @@
             </MudAlert>
         }
 
-        @* Squad grid *@
+    }
+
+    @* Squad grid — shown before the first build too, so players can be pre-placed *@
         <MudPaper Class="pa-4 mb-4" Elevation="2">
             <MudText Typo="Typo.h6" Class="mb-3">Squad</MudText>
             <MudGrid>
@@ -328,7 +330,18 @@
                 {
                     <MudItem xs="12" md="6">
                         <MudPaper Class="pa-3" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
-                            <MudText Typo="Typo.subtitle1" Class="mb-2"><strong>Sub @sub.Index</strong></MudText>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2" Wrap="Wrap.Wrap">
+                                <MudText Typo="Typo.subtitle1"><strong>Sub @sub.Index</strong></MudText>
+                                @{ var captureSub = sub; }
+                                <MudSelect T="string" Value="@(_healFlavorPrefs[sub.Index - 1] ?? AutoFlavor)"
+                                           ValueChanged="@(v => SetHealFlavor(captureSub, v == AutoFlavor ? null : v))"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                           Label="Boons" Style="max-width: 230px;">
+                                    <MudSelectItem T="string" Value="@AutoFlavor">Random</MudSelectItem>
+                                    <MudSelectItem T="string" Value="@("Alac")">Alac heal + Quick DPS</MudSelectItem>
+                                    <MudSelectItem T="string" Value="@("Quick")">Quick heal + Alac DPS</MudSelectItem>
+                                </MudSelect>
+                            </MudStack>
                             <MudStack Spacing="1">
                                 @foreach (var slot in sub.Slots)
                                 {
@@ -371,7 +384,7 @@
                                                         </MudStack>
                                                     </MudMenuItem>
                                                 }
-                                                @{ var unplacedGuests = UnplacedGuests(captureSlot); }
+                                                @{ var unplacedGuests = HasBuilt ? UnplacedGuests(captureSlot) : new(); }
                                                 @if (unplacedGuests.Count > 0)
                                                 {
                                                     <MudDivider />
@@ -386,7 +399,7 @@
                                                         </MudMenuItem>
                                                     }
                                                 }
-                                                @if (slot.Kind == "Dps")
+                                                @if (HasBuilt && slot.Kind == "Dps")
                                                 {
                                                     <MudDivider />
                                                     <MudMenuItem OnClick="@(() => MarkSlotPug(captureSlot))">
@@ -415,6 +428,8 @@
             </MudGrid>
         </MudPaper>
 
+    @if (HasBuilt)
+    {
         @* Mechanics list — segment-aware *@
         @if (_selectedBossOrder.Count > 0)
         {
@@ -436,8 +451,7 @@
                                 @* Manual cut line: re-randomize from this boss onward so roles can fully
                                    switch (e.g. a different comp for a strike). Not shown on the first boss
                                    (that's the base squad) or once a cut already covers this point. *@
-                                @if (_grid.Count > 0
-                                     && _selectedBossOrder.IndexOf(triggerId) >= 1
+                                @if (_selectedBossOrder.IndexOf(triggerId) >= 1
                                      && CanResetFromBoss(triggerId))
                                 {
                                     <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning"
@@ -558,8 +572,16 @@
     // the affected bosses, on a cut/reset.
     private Dictionary<(int TriggerId, Guid MechanicId), List<Guid?>> _mechanicOverrides = new();
 
-    // Mutable squad grid (state of truth after manual edits)
+    // Mutable squad grid (state of truth after manual edits). Before the first build it's an
+    // empty skeleton that players can be pre-placed into; locked placements become pins.
     private List<GridSubGroup> _grid = new();
+
+    // Per-sub boon choice: "Alac" (Alac heal + Quick boon DPS), "Quick" (the inverse), or null
+    // to let the randomizer pick. Sent with every build and kept across Clear.
+    private readonly string?[] _healFlavorPrefs = new string?[2];
+    private const string AutoFlavor = "Auto";
+
+    private bool HasBuilt => _baseAssignment != null;
     private SquadAssignmentDto? _baseAssignment;       // last full build (for diff)
     private List<SquadConflictDto> _baseConflicts = new();
     private List<string> _warnings = new();
@@ -570,6 +592,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _grid = EmptyGrid();
         await Task.WhenAll(LoadPlayersAsync(), LoadMechanicsAsync(), LoadRecentEventsAsync());
     }
 
@@ -624,7 +647,7 @@
     {
         get
         {
-            if (_grid.Count > 0) return 0;
+            if (HasBuilt) return 0;
             if (TotalSlots == 0) return 1;
             if (_selectedBossOrder.Count == 0) return 2;
             return 3;
@@ -635,7 +658,7 @@
     {
         1 => new StepHint(1, "Start by picking players from the dropdown (and/or add non-guildies by name / set Pug DPS count)."),
         2 => new StepHint(2, "Now pick bosses — click chips below, or hit Random Bosses to roll a list."),
-        3 => new StepHint(3, "All set — click Randomize to build the squad."),
+        3 => new StepHint(3, "All set — optionally place players into slots below and pick each sub's boons, then click Randomize to fill the rest."),
         _ => null
     };
 
@@ -971,7 +994,7 @@
             return;
         }
 
-        var locks = respectLocks ? CollectLocksFromGrid() : null;
+        var pins = respectLocks ? CollectPinsFromGrid() : null;
 
         _building = true;
         try
@@ -982,9 +1005,11 @@
                 _selectedPlayerIds.ToList(),
                 _selectedBossOrder.ToList(),
                 _pugCount + _guestNames.Count,
-                locks,
                 null,
-                null));
+                null,
+                null,
+                pins,
+                _healFlavorPrefs.ToList()));
 
             if (resp.IsSuccessStatusCode)
             {
@@ -994,7 +1019,7 @@
                 _baseConflicts = result.Conflicts;
                 _warnings = result.Warnings;
                 _pugDpsCount = result.Assignment.PugDpsCount;
-                _grid = BuildGrid(result.Assignment, locks);
+                _grid = BuildGrid(result.Assignment, pins);
                 _resetSegments.Clear();
                 _mechanicOverrides.Clear();
                 Snackbar.Add(respectLocks ? "Re-rolled unlocked slots" : "Squad randomized", Severity.Success);
@@ -1011,8 +1036,9 @@
         }
     }
 
-    private List<GridSubGroup> BuildGrid(SquadAssignmentDto assignment, Dictionary<Guid, GenericRole>? lockSet)
+    private List<GridSubGroup> BuildGrid(SquadAssignmentDto assignment, List<SquadSlotPin>? pins)
     {
+        var pinnedIds = pins?.Select(p => p.PlayerId).ToHashSet() ?? new();
         var grid = new List<GridSubGroup>();
         // The server's PugDpsCount covers guests too (they're sent as pugs); seat the
         // named guests into the filler DPS slots first, anonymous PUGs after.
@@ -1032,7 +1058,7 @@
                     pugsRemaining--;
                     if (guestQueue.Count > 0) guestName = guestQueue.Dequeue();
                 }
-                var locked = lockSet != null && s.PlayerId.HasValue && lockSet.ContainsKey(s.PlayerId.Value);
+                var locked = s.PlayerId.HasValue && pinnedIds.Contains(s.PlayerId.Value);
                 gs.Slots.Add(new GridSlot
                 {
                     Index = i,
@@ -1050,25 +1076,36 @@
         return grid;
     }
 
-    private Dictionary<Guid, GenericRole>? CollectLocksFromGrid()
+    private List<SquadSlotPin>? CollectPinsFromGrid()
     {
-        var locks = new Dictionary<Guid, GenericRole>();
+        var pins = new List<SquadSlotPin>();
         foreach (var sub in _grid)
         {
             foreach (var slot in sub.Slots)
             {
                 if (slot.IsLocked && slot.PlayerId.HasValue && slot.Role.HasValue)
                 {
-                    locks[slot.PlayerId.Value] = slot.Role.Value;
+                    pins.Add(new SquadSlotPin(slot.PlayerId.Value, sub.Index, slot.Role.Value));
                 }
             }
         }
-        return locks.Count == 0 ? null : locks;
+        return pins.Count == 0 ? null : pins;
     }
+
+    private List<GridSubGroup> EmptyGrid() => Enumerable.Range(1, 2)
+        .Select(i => new GridSubGroup
+        {
+            Index = i,
+            HealFlavor = _healFlavorPrefs[i - 1] ?? AnyFlavor,
+            Slots = new[] { "Heal", "BoonDps", "Dps", "Dps", "Dps" }
+                .Select((kind, idx) => new GridSlot { Index = idx, Kind = kind })
+                .ToList()
+        })
+        .ToList();
 
     private void Clear()
     {
-        _grid = new();
+        _grid = EmptyGrid();
         _baseAssignment = null;
         _baseConflicts = new();
         _warnings = new();
@@ -1124,15 +1161,75 @@
     }
 
     // A sub with HealFlavor "Alac" has an AlacHeal player + Quick boon-DPS. "Quick" is the inverse.
+    // "Any" is a not-yet-built sub with no boon choice: its first heal/boon placement decides it.
+    private const string AnyFlavor = "Any";
+
     private static GenericRole[] AcceptedRolesFor(string kind, string healFlavor) => (kind, healFlavor) switch
     {
         ("Heal", "Alac") => new[] { GenericRole.AlacHeal },
         ("Heal", "Quick") => new[] { GenericRole.QuickHeal },
         ("BoonDps", "Alac") => new[] { GenericRole.QuickDpsPower, GenericRole.QuickDpsCondi },
         ("BoonDps", "Quick") => new[] { GenericRole.AlacDpsPower, GenericRole.AlacDpsCondi },
+        ("Heal", AnyFlavor) => new[] { GenericRole.AlacHeal, GenericRole.QuickHeal },
+        ("BoonDps", AnyFlavor) => new[] { GenericRole.QuickDpsPower, GenericRole.QuickDpsCondi,
+                                          GenericRole.AlacDpsPower, GenericRole.AlacDpsCondi },
         ("Dps", _) => new[] { GenericRole.DpsPower, GenericRole.DpsCondi },
         _ => Array.Empty<GenericRole>()
     };
+
+    // "Alac" / "Quick" for a sub-defining heal or boon-DPS role, null for plain DPS.
+    private static string? FlavorImpliedBy(GenericRole role) => role switch
+    {
+        GenericRole.AlacHeal or GenericRole.QuickDpsPower or GenericRole.QuickDpsCondi => "Alac",
+        GenericRole.QuickHeal or GenericRole.AlacDpsPower or GenericRole.AlacDpsCondi => "Quick",
+        _ => null
+    };
+
+    // The best role variant from `roles` for this player: first Can/Maybe, else the first role.
+    private GenericRole? BestRoleFor(Guid playerId, GenericRole[] roles)
+    {
+        var caps = _genericCaps.GetValueOrDefault(playerId) ?? new();
+        foreach (var r in roles)
+        {
+            if (caps.TryGetValue((int)r, out var st)
+                && (st == RoleCapabilityStatus.Can || st == RoleCapabilityStatus.Maybe))
+            {
+                return r;
+            }
+        }
+        return roles.Length > 0 ? roles[0] : null;
+    }
+
+    private void SetHealFlavor(GridSubGroup sub, string? flavor)
+    {
+        _healFlavorPrefs[sub.Index - 1] = flavor;
+        if (flavor == null)
+        {
+            // Back to random: a built squad keeps what it rolled; the skeleton re-derives it.
+            if (!HasBuilt) RefreshInferredFlavors();
+            return;
+        }
+        sub.HealFlavor = flavor;
+        // Re-map anyone already in the heal / boon-DPS slot to the new flavor's role.
+        foreach (var slot in sub.Slots.Where(s => s.PlayerId.HasValue && s.Kind != "Dps"))
+        {
+            slot.Role = BestRoleFor(slot.PlayerId!.Value, AcceptedRolesFor(slot.Kind, flavor));
+        }
+    }
+
+    // Skeleton only: a sub with no boon choice takes its flavor from whoever is placed in its
+    // heal / boon-DPS slot, and goes back to "Any" once those are empty.
+    private void RefreshInferredFlavors()
+    {
+        foreach (var sub in _grid)
+        {
+            if (_healFlavorPrefs[sub.Index - 1] != null) continue;
+            sub.HealFlavor = sub.Slots
+                .Where(s => s.PlayerId.HasValue && s.Role.HasValue)
+                .Select(s => FlavorImpliedBy(s.Role!.Value))
+                .FirstOrDefault(f => f != null) ?? AnyFlavor;
+        }
+    }
 
     private void AssignPlayerToSlot(GridSlot slot, Guid playerId)
     {
@@ -1152,20 +1249,7 @@
         }
 
         var owningSub = _grid.First(s => s.Slots.Contains(slot));
-        var roles = AcceptedRolesFor(slot.Kind, owningSub.HealFlavor);
-        var caps = _genericCaps.GetValueOrDefault(playerId) ?? new();
-        // Pick the role variant with the best capability for this player
-        GenericRole? chosen = null;
-        foreach (var r in roles)
-        {
-            if (caps.TryGetValue((int)r, out var st)
-                && (st == RoleCapabilityStatus.Can || st == RoleCapabilityStatus.Maybe))
-            {
-                chosen = r;
-                break;
-            }
-        }
-        chosen ??= roles.FirstOrDefault();
+        var chosen = BestRoleFor(playerId, AcceptedRolesFor(slot.Kind, owningSub.HealFlavor));
 
         var name = _allPlayers.FirstOrDefault(p => p.Id == playerId)?.AccountName ?? "?";
         slot.PlayerId = playerId;
@@ -1173,6 +1257,13 @@
         slot.Role = chosen;
         slot.IsGuest = false;
         slot.IsPug = false;
+
+        if (!HasBuilt)
+        {
+            // Pre-placing someone means "keep them here" — lock it so the build pins them.
+            slot.IsLocked = true;
+            RefreshInferredFlavors();
+        }
     }
 
     private void MarkSlotPug(GridSlot slot)
@@ -1194,6 +1285,7 @@
         slot.IsGuest = false;
         slot.IsPug = false;
         slot.IsLocked = false;
+        if (!HasBuilt) RefreshInferredFlavors();
     }
 
     private void ToggleLock(GridSlot slot)
@@ -1227,7 +1319,9 @@
                 _pugCount + _guestNames.Count,
                 null,
                 forceCoverableMechanicId,
-                null));
+                null,
+                null,
+                _healFlavorPrefs.ToList()));
 
             if (!resp.IsSuccessStatusCode)
             {
@@ -1470,7 +1564,7 @@
 
     private async Task PublishAsync()
     {
-        if (_grid.Count == 0) return;
+        if (!HasBuilt) return;
         _publishing = true;
         try
         {
@@ -1620,7 +1714,11 @@
         int PugCount,
         Dictionary<Guid, GenericRole>? Locks,
         Guid? ForceCoverableMechanicId,
-        int? Seed);
+        int? Seed,
+        List<SquadSlotPin>? PinnedSlots,
+        List<string?>? HealFlavors);
+
+    public record SquadSlotPin(Guid PlayerId, int SubGroup, GenericRole Role);
 
     public record SquadBuildResult(
         SquadAssignmentDto Assignment,

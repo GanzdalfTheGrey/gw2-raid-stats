@@ -5,6 +5,15 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Squad Builder: build the squad before randomizing.** The squad grid now shows as soon as the page loads, so you can place players into specific slots first. Placed players are locked, and Randomize fills in everyone else around them.
+- **Squad Builder: pick each sub's boons.** Each sub has a Boons picker (Random / Alac heal + Quick DPS / Quick heal + Alac DPS). Randomize, Re-randomize unlocked and "Cut roles here" all follow it. Changing it after a build updates the heal and boon DPS roles in that sub.
+
+### Changed
+- **Squad Builder: locked players stay in their sub on re-randomize.** Before, a lock only kept the role, so a locked DPS could move to the other sub.
+
 ## [1.18.0] - 2026-09-28
 
 ### Fixed
