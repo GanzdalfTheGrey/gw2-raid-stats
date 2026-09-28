@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using GW2RaidStats.Infrastructure.Configuration;
@@ -76,9 +77,13 @@ public class LogUploadController : ControllerBase
                 var destFileName = $"{timestamp}_{uniqueId}_{safeFileName}";
                 var destPath = Path.Combine(_storageOptions.PendingPath, destFileName);
 
-                // Save file
-                await using var stream = new FileStream(destPath, FileMode.Create);
-                await file.CopyToAsync(stream, ct);
+                // Save under a temp name, then rename into place so the processor never sees a partial file
+                var tempPath = destPath + ".uploading";
+                await using (var stream = new FileStream(tempPath, FileMode.Create))
+                {
+                    await file.CopyToAsync(stream, ct);
+                }
+                System.IO.File.Move(tempPath, destPath);
 
                 _logger.LogInformation("Accepted file for processing: {FileName} -> {DestPath}", file.FileName, destFileName);
                 accepted++;
@@ -132,6 +137,99 @@ public class LogUploadController : ControllerBase
     }
 
     /// <summary>
+    /// List failed logs with the reason recorded in their .error.txt, newest first
+    /// </summary>
+    [HttpGet("queue/failed")]
+    public ActionResult<List<FailedLogResponse>> GetFailedLogs()
+    {
+        _storageOptions.EnsureDirectoriesExist();
+
+        var failed = Directory.GetFiles(_storageOptions.FailedPath)
+            .Where(f => SupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+            .Select(f =>
+            {
+                var errorPath = f + ".error.txt";
+                var error = System.IO.File.Exists(errorPath)
+                    ? ReadFailureReason(System.IO.File.ReadAllText(errorPath))
+                    : "(no error file)";
+                var failedAt = System.IO.File.GetLastWriteTimeUtc(System.IO.File.Exists(errorPath) ? errorPath : f);
+                return new FailedLogResponse(Path.GetFileName(f), failedAt, error);
+            })
+            .OrderByDescending(f => f.FailedAt)
+            .ToList();
+
+        return Ok(failed);
+    }
+
+    /// <summary>
+    /// Move a failed log back to pending under its original name and delete its .error.txt
+    /// </summary>
+    [HttpPost("queue/failed/retry")]
+    public ActionResult RetryFailedLog([FromBody] RetryFailedLogRequest request)
+    {
+        var fileName = Path.GetFileName(request.FileName);
+        if (fileName != request.FileName)
+        {
+            return BadRequest("Invalid file name");
+        }
+
+        var failedPath = Path.Combine(_storageOptions.FailedPath, fileName);
+        if (!System.IO.File.Exists(failedPath))
+        {
+            return NotFound();
+        }
+
+        return RequeueFailedLog(failedPath) ? Ok() : Conflict($"{fileName} is already pending");
+    }
+
+    /// <summary>
+    /// Move every failed log back to pending and delete their .error.txt files
+    /// </summary>
+    [HttpPost("queue/failed/retry-all")]
+    public ActionResult<RetryAllFailedResponse> RetryAllFailedLogs()
+    {
+        var failedFiles = Directory.GetFiles(_storageOptions.FailedPath)
+            .Where(f => SupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+            .ToList();
+
+        var requeued = failedFiles.Count(RequeueFailedLog);
+        _logger.LogInformation("Retry all: {Requeued} of {Total} failed logs re-queued", requeued, failedFiles.Count);
+
+        return Ok(new RetryAllFailedResponse(requeued, failedFiles.Count - requeued));
+    }
+
+    // Returns false when a file with the same name is already pending
+    private bool RequeueFailedLog(string failedPath)
+    {
+        var fileName = Path.GetFileName(failedPath);
+
+        // Failed files are named "{yyyyMMdd-HHmmss}_{original}"; strip it so retries don't stack prefixes
+        var match = FailedPrefixRegex.Match(fileName);
+        var pendingName = match.Success ? match.Groups[1].Value : fileName;
+        var pendingPath = Path.Combine(_storageOptions.PendingPath, pendingName);
+        if (System.IO.File.Exists(pendingPath))
+        {
+            return false;
+        }
+
+        System.IO.File.Move(failedPath, pendingPath);
+        System.IO.File.Delete(failedPath + ".error.txt");
+
+        _logger.LogInformation("Retrying failed log {FileName} as {PendingName}", fileName, pendingName);
+        return true;
+    }
+
+    private static readonly Regex FailedPrefixRegex = new(@"^\d{8}-\d{6}_(.+)$");
+
+    // .error.txt is "Error: {reason}\nTimestamp: ...\nOriginal file: ..."; the reason may span lines
+    private static string ReadFailureReason(string text)
+    {
+        var end = text.IndexOf("\nTimestamp: ", StringComparison.Ordinal);
+        var reason = end >= 0 ? text[..end] : text;
+        return reason.StartsWith("Error: ") ? reason["Error: ".Length..].Trim() : reason.Trim();
+    }
+
+    /// <summary>
     /// Scan a server directory for log files and queue them for processing
     /// </summary>
     [HttpPost("scan-directory")]
@@ -181,8 +279,10 @@ public class LogUploadController : ControllerBase
                         continue;
                     }
 
-                    // Copy file to pending folder
-                    System.IO.File.Copy(file, destPath);
+                    // Copy under a temp name, then rename into place so the processor never sees a partial file
+                    var tempPath = destPath + ".uploading";
+                    System.IO.File.Copy(file, tempPath);
+                    System.IO.File.Move(tempPath, destPath);
                     queued++;
 
                     _logger.LogInformation("Queued file from scan: {Source} -> {Dest}", file, destFileName);
@@ -242,3 +342,13 @@ public record QueueStatusResponse(
     List<string> PendingFiles,
     List<string> ProcessingFiles
 );
+
+public record FailedLogResponse(
+    string FileName,
+    DateTime FailedAt,
+    string Error
+);
+
+public record RetryFailedLogRequest(string FileName);
+
+public record RetryAllFailedResponse(int Requeued, int AlreadyPending);

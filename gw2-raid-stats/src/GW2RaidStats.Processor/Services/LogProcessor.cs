@@ -1,6 +1,9 @@
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using GW2RaidStats.Core;
 using GW2RaidStats.Infrastructure.Configuration;
+using GW2RaidStats.Infrastructure.Database.Entities;
 using GW2RaidStats.Infrastructure.Services.Import;
 using GW2RaidStats.Infrastructure.Database;
 using LinqToDB;
@@ -34,11 +37,13 @@ public class LogProcessor
     {
         var fileName = Path.GetFileName(filePath);
         var processingPath = Path.Combine(_storageOptions.ProcessingPath, fileName);
+        var claimed = false;
 
         try
         {
             // Move to processing folder
             File.Move(filePath, processingPath, overwrite: true);
+            claimed = true;
             _logger.LogInformation("Processing {FileName}", fileName);
 
             // Create temp directory for GW2EI output
@@ -48,6 +53,11 @@ public class LogProcessor
             {
                 // Run GW2EI
                 var gw2EiResult = await _gw2EiRunner.ProcessLogAsync(processingPath, tempOutputDir, ct);
+
+                if (gw2EiResult.TooShortDurationMs is { } tooShortMs)
+                {
+                    return await RecordTooShortAsync(processingPath, fileName, tooShortMs, gw2EiResult.Error!, ct);
+                }
 
                 if (!gw2EiResult.Success || gw2EiResult.JsonPath == null)
                 {
@@ -59,6 +69,13 @@ public class LogProcessor
                 // Import the JSON to database
                 await using var jsonStream = File.OpenRead(gw2EiResult.JsonPath);
                 var importResult = await _importService.ImportLogAsync(jsonStream, fileName, ct);
+
+                if (importResult.WasSkipped)
+                {
+                    _logger.LogInformation("Deleting skipped {FileName}: {Reason}", fileName, importResult.Error);
+                    File.Delete(processingPath);
+                    return new ProcessResult(true, fileName, null, importResult.Error);
+                }
 
                 if (!importResult.Success)
                 {
@@ -125,12 +142,17 @@ public class LogProcessor
                 }
             }
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Shutting down - leave the file in processing/ so startup recovery re-queues it
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing {FileName}", fileName);
 
-            // Try to move to failed
-            if (File.Exists(processingPath))
+            // Try to move to failed - only a file this call claimed, never one another run owns
+            if (claimed && File.Exists(processingPath))
             {
                 await MoveToFailedAsync(processingPath, fileName, ex.Message);
             }
@@ -141,6 +163,70 @@ public class LogProcessor
 
             return new ProcessResult(false, fileName, null, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// EI refuses logs under 2.2s, so there is no report to import. Record the pull as a failed
+    /// encounter from the raw log header (boss + start time) and drop the log itself.
+    /// </summary>
+    private async Task<ProcessResult> RecordTooShortAsync(
+        string processingPath, string fileName, int durationMs, string eiStatus, CancellationToken ct)
+    {
+        var header = EvtcHeaderReader.Read(processingPath);
+        var boss = WingMapping.AllBosses.FirstOrDefault(b => b.TriggerId == header.TriggerId);
+
+        if (boss == null)
+        {
+            var error = $"{eiStatus} - not recorded, trigger {header.TriggerId} is not a known raid boss";
+            _logger.LogWarning("Too-short log {FileName}: {Error}", fileName, error);
+            await MoveToFailedAsync(processingPath, fileName, error);
+            return new ProcessResult(false, fileName, null, error);
+        }
+
+        // Dedupe on the raw log bytes (json_hash holds 64-char SHA-256 hex for both kinds)
+        var hash = Convert.ToHexStringLower(SHA256.HashData(await File.ReadAllBytesAsync(processingPath, ct)));
+        var existingId = await _db.Encounters
+            .Where(e => e.JsonHash == hash)
+            .Select(e => (Guid?)e.Id)
+            .FirstOrDefaultAsync(ct);
+
+        if (existingId != null)
+        {
+            _logger.LogInformation("Skipping duplicate too-short log {FileName}", fileName);
+            File.Delete(processingPath);
+            return new ProcessResult(true, fileName, existingId, "Duplicate");
+        }
+
+        // EI decides CM from the parsed fight, which we don't have - inherit it from the previous
+        // log of the same boss, since a too-short pull is almost always a reset mid-session
+        var previous = await _db.Encounters
+            .Where(e => e.TriggerId == header.TriggerId && e.EncounterTime < header.LogStart)
+            .OrderByDescending(e => e.EncounterTime)
+            .Select(e => new { e.IsCM, e.IsLegendaryCM })
+            .FirstOrDefaultAsync(ct);
+
+        var encounter = new EncounterEntity
+        {
+            Id = Guid.NewGuid(),
+            TriggerId = header.TriggerId,
+            BossName = boss.Name,
+            Wing = WingMapping.GetWing(header.TriggerId),
+            IsCM = previous?.IsCM ?? false,
+            IsLegendaryCM = previous?.IsLegendaryCM ?? false,
+            Success = false,
+            DurationMs = durationMs,
+            EncounterTime = header.LogStart,
+            JsonHash = hash,
+            OriginalFilename = fileName,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        await _db.InsertAsync(encounter, token: ct);
+        File.Delete(processingPath);
+
+        _logger.LogInformation("Recorded too-short log {FileName} ({DurationMs} ms, {Boss}) as failed encounter {EncounterId}",
+            fileName, durationMs, boss.Name, encounter.Id);
+
+        return new ProcessResult(true, fileName, encounter.Id, null);
     }
 
     private async Task MoveToFailedAsync(string sourcePath, string fileName, string error)

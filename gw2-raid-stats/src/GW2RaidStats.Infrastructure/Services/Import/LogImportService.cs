@@ -76,13 +76,13 @@ public class LogImportService
             // Skip "late start" encounters - these are incomplete recordings
             if (log.FightName.Contains("Late start", StringComparison.OrdinalIgnoreCase))
             {
-                return new ImportResult(false, null, fileName, log.FightName, "Skipped: Late start encounter", WasDuplicate: false);
+                return new ImportResult(false, null, fileName, log.FightName, "Skipped: Late start encounter", WasDuplicate: false, WasSkipped: true);
             }
 
             // Skip ignored encounters (non-boss events like Spirit Race, Twisted Castle)
             if (WingMapping.IsIgnoredEncounter(log.FightName))
             {
-                return new ImportResult(false, null, fileName, log.FightName, "Skipped: Non-boss encounter", WasDuplicate: false);
+                return new ImportResult(false, null, fileName, log.FightName, "Skipped: Non-boss encounter", WasDuplicate: false, WasSkipped: true);
             }
 
             // Import the log

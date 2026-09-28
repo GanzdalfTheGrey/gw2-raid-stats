@@ -202,6 +202,44 @@
                 <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="mr-1">@file</MudChip>
             }
         }
+
+        @if (_failedLogs.Count > 0)
+        {
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-4 mb-1">
+                <MudText Typo="Typo.body2">Failed Logs:</MudText>
+                <MudSpacer />
+                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Replay"
+                           Disabled="@_isRetrying"
+                           OnClick="RetryAllFailedLogs">
+                    Retry All (@_failedLogs.Count)
+                </MudButton>
+            </MudStack>
+            <MudTable Items="_failedLogs" Dense="true" Striped="true" Hover="true" RowsPerPage="10" Elevation="0">
+                <HeaderContent>
+                    <MudTh>File</MudTh>
+                    <MudTh Style="width: 170px;">Failed</MudTh>
+                    <MudTh>Reason</MudTh>
+                    <MudTh Style="width: 110px;"></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd Style="word-break: break-all;">@context.FileName</MudTd>
+                    <MudTd>@context.FailedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudTd>
+                    <MudTd Style="white-space: pre-wrap; word-break: break-word;">@context.Error</MudTd>
+                    <MudTd>
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Replay"
+                                   Disabled="@_isRetrying"
+                                   OnClick="@(() => RetryFailedLog(context.FileName))">
+                            Retry
+                        </MudButton>
+                    </MudTd>
+                </RowTemplate>
+                <PagerContent>
+                    <MudTablePager />
+                </PagerContent>
+            </MudTable>
+        }
     }
     else
     {
@@ -650,6 +688,8 @@
     private RawUploadProgress? _rawUploadProgress;
     private QueueStatusResponse? _queueStatus;
     private bool _isLoadingQueue;
+    private List<FailedLogResponse> _failedLogs = new();
+    private bool _isRetrying;
 
     // Server directory scan fields
     private string _rawSourceDirectory = string.Empty;
@@ -896,6 +936,7 @@
         try
         {
             _queueStatus = await Http.GetFromJsonAsync<QueueStatusResponse>("api/logs/queue/status");
+            _failedLogs = await Http.GetFromJsonAsync<List<FailedLogResponse>>("api/logs/queue/failed") ?? new();
         }
         catch
         {
@@ -906,6 +947,56 @@
             _isLoadingQueue = false;
             StateHasChanged();
         }
+    }
+
+    private async Task RetryAllFailedLogs()
+    {
+        _isRetrying = true;
+        try
+        {
+            var response = await Http.PostAsync("api/logs/queue/failed/retry-all", null);
+            response.EnsureSuccessStatusCode();
+            var result = await response.Content.ReadFromJsonAsync<RetryAllFailedResponse>();
+            Snackbar.Add(result!.AlreadyPending > 0
+                    ? $"Re-queued {result.Requeued} logs ({result.AlreadyPending} already pending)"
+                    : $"Re-queued {result.Requeued} logs",
+                Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Retry all failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isRetrying = false;
+        }
+        await RefreshQueueStatus();
+    }
+
+    private async Task RetryFailedLog(string fileName)
+    {
+        _isRetrying = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/logs/queue/failed/retry", new RetryFailedLogRequest(fileName));
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Re-queued {fileName}", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Retry failed: {await response.Content.ReadAsStringAsync()}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Retry failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isRetrying = false;
+        }
+        await RefreshQueueStatus();
     }
 
     private static string FormatFileSize(long bytes)
@@ -1113,6 +1204,16 @@
         List<string> PendingFiles,
         List<string> ProcessingFiles
     );
+
+    public record FailedLogResponse(
+        string FileName,
+        DateTime FailedAt,
+        string Error
+    );
+
+    public record RetryFailedLogRequest(string FileName);
+
+    public record RetryAllFailedResponse(int Requeued, int AlreadyPending);
 
     public record RawUploadProgress(
         int FilesUploaded,

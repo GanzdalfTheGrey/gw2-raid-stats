@@ -6,7 +6,9 @@ public record ImportResult(
     string FileName,
     string? BossName,
     string? Error,
-    bool WasDuplicate
+    bool WasDuplicate,
+    // Deliberately not imported (late start, non-boss event) - not a failure worth keeping
+    bool WasSkipped = false
 );
 
 public record BulkImportResult(

@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using GW2RaidStats.Processor.Configuration;
@@ -10,6 +12,9 @@ public class Gw2EiRunner
     private readonly ProcessorOptions _options;
     private readonly ILogger<Gw2EiRunner> _logger;
     private readonly string _configPath;
+
+    // EI's status for logs under its 2.2s minimum, e.g. "Program: Log is too short: 478 ms < 2200 ms"
+    private static readonly Regex TooShortRegex = new(@"Log is too short: (\d+) ms");
 
     public Gw2EiRunner(
         IOptions<ProcessorOptions> options,
@@ -72,10 +77,13 @@ public class Gw2EiRunner
                 _logger.LogDebug("GW2EI stderr: {Error}", error);
             }
 
+            // EI writes its own run log next to the input; nothing reads it
+            File.Delete(Path.Combine(inputDirectory, inputFileNameWithoutExt + ".log"));
+
             if (process.ExitCode != 0)
             {
                 _logger.LogError("GW2EI failed with exit code {ExitCode}: {Error}", process.ExitCode, error);
-                return new Gw2EiResult(false, null, null, error);
+                return new Gw2EiResult(false, null, null, error, null);
             }
 
             // Find the generated files - GW2EI generates them next to the input file
@@ -95,8 +103,14 @@ public class Gw2EiRunner
 
             if (jsonFile == null)
             {
-                _logger.LogError("GW2EI did not generate JSON file. Output: {Output}", output);
-                return new Gw2EiResult(false, null, null, "No JSON file generated");
+                // EI exits 0 on a parse failure; the reason is only in its "Processed - {json}" summary line
+                var status = ReadEiStatus(output);
+                _logger.LogError("GW2EI did not generate JSON file: {Status}. Output: {Output}", status, output);
+
+                var tooShort = status == null ? Match.Empty : TooShortRegex.Match(status);
+                return new Gw2EiResult(false, null, null,
+                    status ?? "No JSON file generated",
+                    tooShort.Success ? int.Parse(tooShort.Groups[1].Value) : null);
             }
 
             // Move the generated files to the output directory
@@ -111,7 +125,7 @@ public class Gw2EiRunner
 
             _logger.LogInformation("GW2EI completed successfully. JSON: {Json}, HTML: {Html}", newJsonPath, newHtmlPath);
 
-            return new Gw2EiResult(true, newJsonPath, newHtmlPath, null);
+            return new Gw2EiResult(true, newJsonPath, newHtmlPath, null, null);
         }
         catch (OperationCanceledException)
         {
@@ -122,11 +136,24 @@ public class Gw2EiRunner
             throw;
         }
     }
+
+    private static string? ReadEiStatus(string output)
+    {
+        const string prefix = "Processed - ";
+        var line = output.Split('\n')
+            .Select(l => l.Trim())
+            .LastOrDefault(l => l.StartsWith(prefix));
+        if (line == null) return null;
+
+        using var doc = JsonDocument.Parse(line[prefix.Length..]);
+        return doc.RootElement.GetProperty("status").GetString();
+    }
 }
 
 public record Gw2EiResult(
     bool Success,
     string? JsonPath,
     string? HtmlPath,
-    string? Error
+    string? Error,
+    int? TooShortDurationMs
 );

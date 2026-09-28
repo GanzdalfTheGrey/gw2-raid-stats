@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -16,6 +17,8 @@ public class LogProcessingWorker : BackgroundService
     private readonly ProcessorOptions _processorOptions;
     private readonly ILogger<LogProcessingWorker> _logger;
     private readonly Channel<string> _fileQueue;
+    // Paths currently queued or being processed, shared across workers so a file is only handed out once
+    private readonly ConcurrentDictionary<string, byte> _queuedPaths = new();
 
     private static readonly string[] SupportedExtensions = [".zevtc", ".evtc", ".zevtc.zip"];
 
@@ -38,6 +41,9 @@ public class LogProcessingWorker : BackgroundService
 
         // Ensure directories exist
         _storageOptions.EnsureDirectoriesExist();
+
+        // Anything left in processing/ was orphaned by a previous run that was killed mid-parse
+        RecoverOrphanedFiles();
 
         _logger.LogInformation("Watching folder: {PendingPath}", _storageOptions.PendingPath);
         _logger.LogInformation("Max concurrent processing: {Max}", _processorOptions.MaxConcurrentProcessing);
@@ -66,14 +72,17 @@ public class LogProcessingWorker : BackgroundService
             EnableRaisingEvents = true
         };
 
-        watcher.Created += (_, e) =>
+        FileSystemEventHandler onNewFile = (_, e) =>
         {
             if (IsSupportedFile(e.FullPath))
             {
                 _logger.LogDebug("New file detected: {FileName}", e.Name);
-                _fileQueue.Writer.TryWrite(e.FullPath);
+                Enqueue(e.FullPath);
             }
         };
+        watcher.Created += onNewFile;
+        // Uploads land as a temp file and are renamed into place once fully written
+        watcher.Renamed += (sender, e) => onNewFile(sender, e);
 
         // Also poll periodically in case FileSystemWatcher misses something
         while (!ct.IsCancellationRequested)
@@ -103,8 +112,7 @@ public class LogProcessingWorker : BackgroundService
             {
                 if (ct.IsCancellationRequested) break;
 
-                // Only queue if not already queued
-                _fileQueue.Writer.TryWrite(file);
+                Enqueue(file);
             }
 
             if (files.Count > 0)
@@ -124,17 +132,13 @@ public class LogProcessingWorker : BackgroundService
     {
         _logger.LogDebug("Worker {WorkerId} starting", workerId);
 
-        var processedPaths = new HashSet<string>();
-
         await foreach (var filePath in _fileQueue.Reader.ReadAllAsync(ct))
         {
-            // Skip if already processed or file doesn't exist
-            if (processedPaths.Contains(filePath) || !File.Exists(filePath))
+            if (!File.Exists(filePath))
             {
+                _queuedPaths.TryRemove(filePath, out _);
                 continue;
             }
-
-            processedPaths.Add(filePath);
 
             // Small delay to ensure file is fully written
             await Task.Delay(500, ct);
@@ -166,11 +170,34 @@ public class LogProcessingWorker : BackgroundService
             {
                 _logger.LogError(ex, "[Worker {WorkerId}] Error processing file", workerId);
             }
-
-            // Clean up processed paths periodically
-            if (processedPaths.Count > 1000)
+            finally
             {
-                processedPaths.Clear();
+                _queuedPaths.TryRemove(filePath, out _);
+            }
+        }
+    }
+
+    private void Enqueue(string filePath)
+    {
+        if (_queuedPaths.TryAdd(filePath, 0))
+        {
+            _fileQueue.Writer.TryWrite(filePath);
+        }
+    }
+
+    private void RecoverOrphanedFiles()
+    {
+        foreach (var file in Directory.GetFiles(_storageOptions.ProcessingPath))
+        {
+            if (IsSupportedFile(file))
+            {
+                File.Move(file, Path.Combine(_storageOptions.PendingPath, Path.GetFileName(file)));
+                _logger.LogWarning("Recovered orphaned file {FileName} back to pending", Path.GetFileName(file));
+            }
+            else
+            {
+                // Partial GW2EI output from the killed run - would otherwise be picked up as this log's report
+                File.Delete(file);
             }
         }
     }
