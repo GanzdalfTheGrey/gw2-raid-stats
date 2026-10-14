@@ -5,10 +5,16 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.19.1] - 2026-10-14
 
 ### Added
-- **HTCM Prog: Timecaster, Giants and Saltspray tabs.** Each tab lists every pull of the selected night that reached that phase, with squad DPS (coloured against the squad target) and duration, then one row per player with their numbers in each pull next to their session figure. Switch between DPS, Debilitated and Deaths / Downs, and pick which players to show (the selection carries across all three tabs). In DPS view, each pull is coloured against that player's own session number, and a marker shows when they died or were already dead. Pull numbers link to the EI report.
+- **HTCM Prog: new Timecaster, Giants and Saltspray tabs.** See how the squad and each player did in these phases on every pull of the night.
+  - Each pull shows squad DPS (green when it hit the target) and how long the phase took.
+  - Below that, every player's numbers for each pull, next to their average for the night.
+  - Switch between **DPS**, **Debilitated** and **Deaths / Downs**.
+  - Pick which players to show. Your choice carries across all three tabs.
+  - In DPS view, each pull is coloured against that player's own average, so their best and worst pulls stand out. An icon shows when they died or were already dead.
+  - Click a pull number to open its full log.
 
 ## [1.19.0] - 2026-10-14
 
@@ -20,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Squad Builder: locked players stay in their sub on re-randomize.** Before, a lock only kept the role, so a locked DPS could move to the other sub.
 
 ### Fixed
-- **HTCM Prog: Soo-Won pulls no longer show 0% HP left.** The HP calculation treated every target with "Void" in its name as a dragon, so Void Time Caster, Void Saltspray Dragon and the other adds were counted too. Their HP pushed the total past all 6 dragons, and the result was clamped to 0. Now only the 6 dragon voids count, each as 1/6 of the fight. Run a rescan to fix existing logs.
+- **HTCM Prog: Soo-Won pulls no longer show 0% HP left.** Adds like Void Time Caster and Void Saltspray Dragon were wrongly counted as part of the boss HP. HP left now reflects the six dragons only.
 
 ## [1.18.0] - 2026-09-28
 
