@@ -1178,11 +1178,8 @@ else
                     @breakdown.Pulls.Count/@_sessionDetail.PullCount pulls reached @name ·
                     avg @FormatDuration(TimeSpan.FromMilliseconds(breakdown.AvgDurationMs)) ·
                     squad target @((target / 1000.0).ToString("F0"))k
-                    @if (_breakdownMetric == "dps")
-                    {
-                        <span> · pull cells coloured against the player's session number</span>
-                    }
                 </MudText>
+                @RenderBreakdownLegend(target)
 
                 <div style="overflow-x: auto;">
                     <MudSimpleTable Dense="true" Hover="true" Style="white-space: nowrap;">
@@ -1280,9 +1277,11 @@ else
                 var color = session is { Dps: > 0 }
                     ? GetDeltaColor((cell.Dps - session.Dps) / (double)session.Dps * 100)
                     : Color.Default;
-                <MudText Inline="true" Typo="Typo.body2" Color="@color">
-                    @if (session == null) { <strong>@FormatK(cell.Dps)</strong> } else { @FormatK(cell.Dps) }
-                </MudText>
+                <span title="@DpsCellTooltip(cell, session)">
+                    <MudText Inline="true" Typo="Typo.body2" Color="@color">
+                        @if (session == null) { <strong>@FormatK(cell.Dps)</strong> } else { @FormatK(cell.Dps) }
+                    </MudText>
+                </span>
                 @if (cell.Deaths > 0 || cell.DeadAtPhaseStart > 0)
                 {
                     <MudTooltip Text="Died during or was dead at the start of this phase">
@@ -1292,6 +1291,75 @@ else
                 break;
         }
     };
+
+    // Colour key for the active metric, plus the squad row's target colours.
+    private RenderFragment RenderBreakdownLegend(int target) => __builder =>
+    {
+        var targetK = $"{target / 1000.0:F0}k";
+        var targetLowK = $"{target * 0.9 / 1000.0:F0}k";
+        <MudPaper Elevation="0" Class="pa-2 mb-3" Style="background-color: rgba(128, 128, 128, 0.08); border-radius: 6px;">
+            <MudStack Spacing="1">
+                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="3">
+                    <MudText Typo="Typo.caption"><strong>Squad DPS</strong> vs @targetK target:</MudText>
+                    @LegendSwatch("success", $"at or above {targetK}")
+                    @LegendSwatch("warning", $"{targetLowK}–{targetK}")
+                    @LegendSwatch("error", $"below {targetLowK}")
+                </MudStack>
+                @switch (_breakdownMetric)
+                {
+                    case "debil":
+                        <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="3">
+                            <MudText Typo="Typo.caption"><strong>Debilitated</strong> (% of the phase, stacks in brackets):</MudText>
+                            @LegendSwatch("error", "50% or more")
+                            @LegendSwatch("warning", "25–50%")
+                            @LegendSwatch("text-primary", "under 25%")
+                        </MudStack>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Session column: average over the pulls where the player got Debilitated.</MudText>
+                        break;
+                    case "deaths":
+                        <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="3">
+                            <MudText Typo="Typo.caption"><strong>Deaths / Downs</strong>:</MudText>
+                            @LegendSwatch("error", "deaths")
+                            @LegendSwatch("warning", "downs")
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined">dead</MudChip>
+                            <MudText Typo="Typo.caption">already dead when the phase started</MudText>
+                        </MudStack>
+                        break;
+                    default:
+                        <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="3">
+                            <MudText Typo="Typo.caption"><strong>Player DPS</strong> vs <em>their own</em> session average (not vs other players):</MudText>
+                            @LegendSwatch("success", "10%+ above")
+                            @LegendSwatch("tertiary", "5–10% above")
+                            @LegendSwatch("text-primary", "within 5%")
+                            @LegendSwatch("warning", "5–10% below")
+                            @LegendSwatch("error", "10%+ below")
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                <MudIcon Icon="@Icons.Material.Filled.PersonOff" Color="Color.Error" Size="Size.Small" Style="font-size: 0.9rem;" />
+                                <MudText Typo="Typo.caption">died / was dead</MudText>
+                            </MudStack>
+                        </MudStack>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Hover a number to see the exact difference.</MudText>
+                        break;
+                }
+            </MudStack>
+        </MudPaper>
+    };
+
+    private static RenderFragment LegendSwatch(string paletteVar, string label) => __builder =>
+    {
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+            <span style="display: inline-block; width: 10px; height: 10px; border-radius: 2px; background-color: var(--mud-palette-@(paletteVar));"></span>
+            <MudText Typo="Typo.caption">@label</MudText>
+        </MudStack>
+    };
+
+    private static string DpsCellTooltip(HtcmPhaseBreakdownCellDto cell, HtcmPhaseBreakdownCellDto? session)
+    {
+        if (session == null) return "Session average for this phase";
+        if (session.Dps <= 0) return FormatK(cell.Dps);
+        var delta = (cell.Dps - session.Dps) / (double)session.Dps * 100;
+        return $"{FormatK(cell.Dps)} · {(delta >= 0 ? "+" : "")}{delta:F0}% vs their session avg ({FormatK(session.Dps)})";
+    }
 
     // Everyone who appears in any of the three breakdowns for the selected session.
     private IEnumerable<string> BreakdownPlayerOptions()
