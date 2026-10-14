@@ -512,6 +512,12 @@ public class HtcmProgService
                 Saltspray: ComputeGroupBurst(SaltsprayPhases, playerPhaseStatsAll, phaseStats));
         }
 
+        // Per-pull per-player tables for the Timecaster / Giants / Saltspray tabs.
+        var phaseBreakdowns = new HtcmPhaseBreakdowns(
+            Timecaster: BuildPhaseBreakdown(TimecasterPhases, TimecasterDebilPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey),
+            Giants: BuildPhaseBreakdown(GiantsPhases, GiantsDebilPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey),
+            Saltspray: BuildPhaseBreakdown(SaltsprayPhases, SaltsprayDebilPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey));
+
         // Build player mechanic breakdown
         var playerMechanics = mechanicCounts
             .GroupBy(m => m.AccountName)
@@ -549,8 +555,87 @@ public class HtcmProgService
             pulls,
             playerMechanics,
             playerPhaseSessionStats,
-            sessionBurstAverages
+            sessionBurstAverages,
+            phaseBreakdowns
         );
+    }
+
+    // One burst window broken out pull by pull: a column per pull that reached it
+    // (squad DPS + duration) and a row per player with their numbers in each pull,
+    // plus a session cell using the same maths as the Session tab's averages.
+    private static HtcmPhaseBreakdown? BuildPhaseBreakdown(
+        string[] mainPhases,
+        string[] debilPhases,
+        IReadOnlyList<HtcmPull> pulls,
+        Dictionary<Guid, List<PlayerPhaseRow>> playerPhaseByEncounter,
+        IReadOnlyList<Database.Entities.EncounterPhaseStatEntity> phaseStats,
+        Dictionary<(Guid EncounterId, string PhaseName), int> phaseDurationByKey)
+    {
+        var breakdownPulls = new List<HtcmPhaseBreakdownPull>();
+        var includedRows = new List<PlayerPhaseRow>();
+        var includedPhaseStats = new List<Database.Entities.EncounterPhaseStatEntity>();
+        var cellsByPlayer = new Dictionary<string, Dictionary<int, HtcmPhaseBreakdownCell>>();
+
+        foreach (var pull in pulls)
+        {
+            if (!playerPhaseByEncounter.TryGetValue(pull.EncounterId, out var rows)) continue;
+            var pullPhaseStats = phaseStats.Where(ps => ps.EncounterId == pull.EncounterId).ToList();
+            var burst = ComputeGroupBurst(mainPhases, rows, pullPhaseStats);
+            if (burst == null) continue;
+
+            breakdownPulls.Add(new HtcmPhaseBreakdownPull(
+                pull.PullNumber, pull.EncounterId, pull.Time, burst.DurationMs, burst.SquadDps,
+                pull.FurthestPhase, pull.Success));
+            includedRows.AddRange(rows);
+            includedPhaseStats.AddRange(pullPhaseStats);
+
+            var dpsByPlayer = burst.Players.ToDictionary(p => p.AccountName, p => p.Dps);
+            foreach (var g in rows.GroupBy(r => r.AccountName))
+            {
+                if (!g.Any(r => MatchesAny(r.Stats.PhaseName, mainPhases))) continue;
+                if (!cellsByPlayer.TryGetValue(g.Key, out var cells))
+                    cellsByPlayer[g.Key] = cells = new Dictionary<int, HtcmPhaseBreakdownCell>();
+                cells[pull.PullNumber] = BuildBreakdownCell(
+                    g, dpsByPlayer.GetValueOrDefault(g.Key), mainPhases, debilPhases, phaseDurationByKey);
+            }
+        }
+
+        if (breakdownPulls.Count == 0) return null;
+
+        var sessionBurst = ComputeGroupBurst(mainPhases, includedRows, includedPhaseStats);
+        var sessionDps = sessionBurst?.Players.ToDictionary(p => p.AccountName, p => p.Dps)
+                         ?? new Dictionary<string, int>();
+
+        var players = includedRows
+            .GroupBy(r => r.AccountName)
+            .Where(g => cellsByPlayer.ContainsKey(g.Key))
+            .Select(g => new HtcmPhaseBreakdownPlayer(
+                g.Key,
+                BuildBreakdownCell(g, sessionDps.GetValueOrDefault(g.Key), mainPhases, debilPhases, phaseDurationByKey),
+                cellsByPlayer[g.Key]))
+            .OrderByDescending(p => p.Session.Dps)
+            .ToList();
+
+        return new HtcmPhaseBreakdown(
+            sessionBurst?.SquadDps ?? 0,
+            sessionBurst?.DurationMs / breakdownPulls.Count ?? 0,
+            breakdownPulls,
+            players);
+    }
+
+    private static HtcmPhaseBreakdownCell BuildBreakdownCell(
+        IEnumerable<PlayerPhaseRow> rows,
+        int dps,
+        string[] mainPhases,
+        string[] debilPhases,
+        Dictionary<(Guid EncounterId, string PhaseName), int> phaseDurationByKey)
+    {
+        var rowList = rows.ToList();
+        var slice = ComputePlayerSlice(rowList, mainPhases, debilPhases, phaseDurationByKey);
+        // Same strict main-phase rule as deaths, so breakbar sub-phases don't double-count.
+        var downs = rowList.Where(r => MatchesAny(r.Stats.PhaseName, mainPhases)).Sum(r => r.Stats.DownCount);
+        return new HtcmPhaseBreakdownCell(
+            dps, downs, slice.Deaths, slice.DeadAtPhaseStart, slice.DebilUptimeAvgPct, slice.DebilStacks);
     }
 
     // Combined damage / combined duration across the phase-group's underlying phases
@@ -1055,8 +1140,46 @@ public record HtcmSessionDetail(
     List<HtcmPull> Pulls,
     List<HtcmPlayerMechanics> PlayerMechanics,
     List<HtcmPlayerPhaseSessionStat>? PlayerPhaseStats = null,
-    HtcmRunBurstGroups? SessionBurstAverages = null
+    HtcmRunBurstGroups? SessionBurstAverages = null,
+    HtcmPhaseBreakdowns? PhaseBreakdowns = null
 );
+
+// Per-pull breakdown of each burst window for the HTCM prog page's phase tabs.
+// A null window means no pull in the session reached it.
+public record HtcmPhaseBreakdowns(
+    HtcmPhaseBreakdown? Timecaster,
+    HtcmPhaseBreakdown? Giants,
+    HtcmPhaseBreakdown? Saltspray);
+
+// SquadDps / AvgDurationMs are session-wide (same as SessionBurstAverages).
+public record HtcmPhaseBreakdown(
+    int SquadDps,
+    int AvgDurationMs,
+    List<HtcmPhaseBreakdownPull> Pulls,
+    List<HtcmPhaseBreakdownPlayer> Players);
+
+public record HtcmPhaseBreakdownPull(
+    int PullNumber,
+    Guid EncounterId,
+    DateTimeOffset Time,
+    int DurationMs,
+    int SquadDps,
+    string FurthestPhase,
+    bool Success);
+
+// ByPull is keyed by PullNumber; a missing key means the player wasn't in that pull.
+public record HtcmPhaseBreakdownPlayer(
+    string AccountName,
+    HtcmPhaseBreakdownCell Session,
+    Dictionary<int, HtcmPhaseBreakdownCell> ByPull);
+
+public record HtcmPhaseBreakdownCell(
+    int Dps,
+    int Downs,
+    int Deaths,
+    int DeadAtPhaseStart,
+    decimal? DebilPct,
+    int? DebilStacks);
 
 public record HtcmPull(
     Guid EncounterId,

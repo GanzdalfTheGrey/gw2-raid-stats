@@ -99,20 +99,7 @@ else
                     <MudPaper Class="pa-4 mb-4" Elevation="2">
                         <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
                             <MudText Typo="Typo.h6">Session Details</MudText>
-                            <MudSelect T="DateTime?"
-                                       Value="_selectedSessionDate"
-                                       ValueChanged="OnSessionChanged"
-                                       Label="Select Session"
-                                       Variant="Variant.Outlined"
-                                       Dense="true"
-                                       Style="max-width: 250px;">
-                                @foreach (var session in _sessions)
-                                {
-                                    <MudSelectItem T="DateTime?" Value="@session.Date">
-                                        @session.Date.ToString("MMM d, yyyy") (@session.PullCount pulls)
-                                    </MudSelectItem>
-                                }
-                            </MudSelect>
+                            @SessionSelect
                         </MudStack>
 
                         @if (_sessionDetail != null)
@@ -589,6 +576,17 @@ else
                     </MudPaper>
                 </MudItem>
             </MudGrid>
+        </MudTabPanel>
+
+        <!-- ============ PHASE BREAKDOWN TABS ============ -->
+        <MudTabPanel Text="Timecaster" Icon="@Icons.Material.Filled.HourglassBottom">
+            @RenderPhaseBreakdown("Timecaster", _sessionDetail?.PhaseBreakdowns?.Timecaster, TimecasterSquadTarget)
+        </MudTabPanel>
+        <MudTabPanel Text="Giants" Icon="@Icons.Material.Filled.Groups3">
+            @RenderPhaseBreakdown("Giants", _sessionDetail?.PhaseBreakdowns?.Giants, GiantsSquadTarget)
+        </MudTabPanel>
+        <MudTabPanel Text="Saltspray" Icon="@Icons.Material.Filled.Waves">
+            @RenderPhaseBreakdown("Saltspray", _sessionDetail?.PhaseBreakdowns?.Saltspray, SaltspraySquadTarget)
         </MudTabPanel>
 
         <!-- ============ TRENDS TAB ============ -->
@@ -1102,6 +1100,213 @@ else
         return Color.Error;
     }
 
+    // ---- Phase breakdown tabs (Timecaster / Giants / Saltspray) ----
+    // Player filter and metric are shared across the three tabs so you pick your
+    // people once. An empty player selection means "everyone".
+    private IEnumerable<string> _breakdownPlayers = new HashSet<string>();
+    private string _breakdownMetric = "dps";
+
+    private RenderFragment SessionSelect => __builder =>
+    {
+        <MudSelect T="DateTime?"
+                   Value="_selectedSessionDate"
+                   ValueChanged="OnSessionChanged"
+                   Label="Select Session"
+                   Variant="Variant.Outlined"
+                   Dense="true"
+                   Style="max-width: 250px;">
+            @foreach (var session in _sessions)
+            {
+                <MudSelectItem T="DateTime?" Value="@session.Date">
+                    @session.Date.ToString("MMM d, yyyy") (@session.PullCount pulls)
+                </MudSelectItem>
+            }
+        </MudSelect>
+    };
+
+    private RenderFragment RenderPhaseBreakdown(string name, HtcmPhaseBreakdownDto? breakdown, int target) => __builder =>
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudStack Row="true" Wrap="Wrap.Wrap" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3" Spacing="2">
+                <MudText Typo="Typo.h6">@name Breakdown</MudText>
+                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="2">
+                    @SessionSelect
+                    <MudSelect T="string"
+                               MultiSelection="true"
+                               SelectedValues="_breakdownPlayers"
+                               SelectedValuesChanged="@(v => _breakdownPlayers = v.ToHashSet())"
+                               Label="@(_breakdownPlayers.Any() ? "Players" : "Players (all)")"
+                               Variant="Variant.Outlined"
+                               Dense="true"
+                               Clearable="true"
+                               Style="min-width: 220px; max-width: 320px;">
+                        @foreach (var account in BreakdownPlayerOptions())
+                        {
+                            <MudSelectItem T="string" Value="@account">@account</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudToggleGroup T="string" @bind-Value="_breakdownMetric" Size="Size.Small" Color="Color.Primary">
+                        <MudToggleItem Value="@("dps")" Text="DPS" />
+                        <MudToggleItem Value="@("debil")" Text="Debilitated" />
+                        <MudToggleItem Value="@("deaths")" Text="Deaths / Downs" />
+                    </MudToggleGroup>
+                </MudStack>
+            </MudStack>
+
+            @if (_sessionDetail == null)
+            {
+                @if (_selectedSessionDate.HasValue)
+                {
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info">Select a session.</MudAlert>
+                }
+            }
+            else if (breakdown == null)
+            {
+                <MudAlert Severity="Severity.Info">No pull reached @name this session.</MudAlert>
+            }
+            else
+            {
+                var players = breakdown.Players
+                    .Where(p => !_breakdownPlayers.Any() || _breakdownPlayers.Contains(p.AccountName))
+                    .ToList();
+
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2 d-block">
+                    @breakdown.Pulls.Count/@_sessionDetail.PullCount pulls reached @name ·
+                    avg @FormatDuration(TimeSpan.FromMilliseconds(breakdown.AvgDurationMs)) ·
+                    squad target @((target / 1000.0).ToString("F0"))k
+                    @if (_breakdownMetric == "dps")
+                    {
+                        <span> · pull cells coloured against the player's session number</span>
+                    }
+                </MudText>
+
+                <div style="overflow-x: auto;">
+                    <MudSimpleTable Dense="true" Hover="true" Style="white-space: nowrap;">
+                        <thead>
+                            <tr>
+                                <th>Player</th>
+                                <th style="text-align: right; border-right: 1px solid var(--mud-palette-table-lines);">Session</th>
+                                @foreach (var pull in breakdown.Pulls)
+                                {
+                                    <th style="text-align: right;">
+                                        <MudLink Href="@($"/api/reports/{pull.EncounterId}/view")" Target="_blank" Typo="Typo.body2">
+                                            #@pull.PullNumber
+                                        </MudLink>
+                                        <div style="font-weight: normal; font-size: 0.7rem; color: var(--mud-palette-text-secondary);">
+                                            @pull.Time.ToLocalTime().ToString("HH:mm") · @ShortenPhaseName(pull.FurthestPhase)
+                                        </div>
+                                    </th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Squad DPS</strong></td>
+                                <td style="text-align: right; border-right: 1px solid var(--mud-palette-table-lines);">
+                                    <MudText Inline="true" Color="@GetTargetColor(breakdown.SquadDps, target)"><strong>@FormatK(breakdown.SquadDps)</strong></MudText>
+                                </td>
+                                @foreach (var pull in breakdown.Pulls)
+                                {
+                                    <td style="text-align: right;">
+                                        <MudText Inline="true" Color="@GetTargetColor(pull.SquadDps, target)"><strong>@FormatK(pull.SquadDps)</strong></MudText>
+                                    </td>
+                                }
+                            </tr>
+                            <tr>
+                                <td><em>Duration</em></td>
+                                <td style="text-align: right; border-right: 1px solid var(--mud-palette-table-lines);">@FormatDuration(TimeSpan.FromMilliseconds(breakdown.AvgDurationMs))</td>
+                                @foreach (var pull in breakdown.Pulls)
+                                {
+                                    <td style="text-align: right;">@FormatDuration(TimeSpan.FromMilliseconds(pull.DurationMs))</td>
+                                }
+                            </tr>
+                            @foreach (var player in players)
+                            {
+                                <tr>
+                                    <td>@player.AccountName</td>
+                                    <td style="text-align: right; border-right: 1px solid var(--mud-palette-table-lines);">
+                                        @RenderBreakdownCell(player.Session, null)
+                                    </td>
+                                    @foreach (var pull in breakdown.Pulls)
+                                    {
+                                        <td style="text-align: right;">
+                                            @if (player.ByPull.TryGetValue(pull.PullNumber, out var cell))
+                                            {
+                                                @RenderBreakdownCell(cell, player.Session)
+                                            }
+                                            else
+                                            {
+                                                <span style="color: var(--mud-palette-text-disabled);">—</span>
+                                            }
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
+            }
+        </MudPaper>
+    };
+
+    // One cell in the active metric. `session` is the player's session cell, used to
+    // colour a pull's DPS against their own night; null when rendering the session cell.
+    private RenderFragment RenderBreakdownCell(HtcmPhaseBreakdownCellDto cell, HtcmPhaseBreakdownCellDto? session) => __builder =>
+    {
+        switch (_breakdownMetric)
+        {
+            case "debil":
+                var debil = FormatDebilPctWithStacks(cell.DebilPct, cell.DebilStacks);
+                <MudText Inline="true" Typo="Typo.body2" Color="@(cell.DebilPct is { } pct ? GetDebilColor(pct) : Color.Default)">@debil</MudText>
+                break;
+            case "deaths":
+                <span title="Deaths / Downs">
+                    <MudText Inline="true" Typo="Typo.body2" Color="@(cell.Deaths > 0 ? Color.Error : Color.Default)">@FormatCount(cell.Deaths)</MudText>
+                    <span style="color: var(--mud-palette-text-secondary);"> / </span>
+                    <MudText Inline="true" Typo="Typo.body2" Color="@(cell.Downs > 0 ? Color.Warning : Color.Default)">@FormatCount(cell.Downs)</MudText>
+                    @if (cell.DeadAtPhaseStart > 0)
+                    {
+                        <MudTooltip Text="@(session == null ? $"Already dead at the start in {cell.DeadAtPhaseStart} pull(s)" : "Already dead when the phase started")">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined" Class="ml-1">dead@(session == null ? $" ×{cell.DeadAtPhaseStart}" : "")</MudChip>
+                        </MudTooltip>
+                    }
+                </span>
+                break;
+            default:
+                var color = session is { Dps: > 0 }
+                    ? GetDeltaColor((cell.Dps - session.Dps) / (double)session.Dps * 100)
+                    : Color.Default;
+                <MudText Inline="true" Typo="Typo.body2" Color="@color">
+                    @if (session == null) { <strong>@FormatK(cell.Dps)</strong> } else { @FormatK(cell.Dps) }
+                </MudText>
+                @if (cell.Deaths > 0 || cell.DeadAtPhaseStart > 0)
+                {
+                    <MudTooltip Text="Died during or was dead at the start of this phase">
+                        <MudIcon Icon="@Icons.Material.Filled.PersonOff" Color="Color.Error" Size="Size.Small" Style="vertical-align: middle; font-size: 0.9rem;" Class="ml-1" />
+                    </MudTooltip>
+                }
+                break;
+        }
+    };
+
+    // Everyone who appears in any of the three breakdowns for the selected session.
+    private IEnumerable<string> BreakdownPlayerOptions()
+    {
+        var b = _sessionDetail?.PhaseBreakdowns;
+        if (b == null) return Enumerable.Empty<string>();
+        return new[] { b.Timecaster, b.Giants, b.Saltspray }
+            .Where(x => x != null)
+            .SelectMany(x => x!.Players.Select(p => p.AccountName))
+            .Distinct()
+            .OrderBy(a => a, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string FormatK(int dps) => $"{dps / 1000.0:F1}k";
+
     private void TogglePullExpansion(int pullNumber)
     {
         if (_expandedPulls.Contains(pullNumber))
@@ -1219,8 +1424,42 @@ else
         List<HtcmPullDto> Pulls,
         List<HtcmPlayerMechanicsDto> PlayerMechanics,
         List<HtcmPlayerPhaseSessionStatDto>? PlayerPhaseStats = null,
-        HtcmRunBurstGroupsDto? SessionBurstAverages = null
+        HtcmRunBurstGroupsDto? SessionBurstAverages = null,
+        HtcmPhaseBreakdownsDto? PhaseBreakdowns = null
     );
+
+    public record HtcmPhaseBreakdownsDto(
+        HtcmPhaseBreakdownDto? Timecaster,
+        HtcmPhaseBreakdownDto? Giants,
+        HtcmPhaseBreakdownDto? Saltspray);
+
+    public record HtcmPhaseBreakdownDto(
+        int SquadDps,
+        int AvgDurationMs,
+        List<HtcmPhaseBreakdownPullDto> Pulls,
+        List<HtcmPhaseBreakdownPlayerDto> Players);
+
+    public record HtcmPhaseBreakdownPullDto(
+        int PullNumber,
+        Guid EncounterId,
+        DateTimeOffset Time,
+        int DurationMs,
+        int SquadDps,
+        string FurthestPhase,
+        bool Success);
+
+    public record HtcmPhaseBreakdownPlayerDto(
+        string AccountName,
+        HtcmPhaseBreakdownCellDto Session,
+        Dictionary<int, HtcmPhaseBreakdownCellDto> ByPull);
+
+    public record HtcmPhaseBreakdownCellDto(
+        int Dps,
+        int Downs,
+        int Deaths,
+        int DeadAtPhaseStart,
+        decimal? DebilPct,
+        int? DebilStacks);
 
     public record HtcmPullDto(
         Guid EncounterId,

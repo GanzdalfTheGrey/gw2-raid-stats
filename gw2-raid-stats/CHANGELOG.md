@@ -5,6 +5,11 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **HTCM Prog: Timecaster, Giants and Saltspray tabs.** Each tab lists every pull of the selected night that reached that phase, with squad DPS (coloured against the squad target) and duration, then one row per player with their numbers in each pull next to their session figure. Switch between DPS, Debilitated and Deaths / Downs, and pick which players to show (the selection carries across all three tabs). In DPS view, each pull is coloured against that player's own session number, and a marker shows when they died or were already dead. Pull numbers link to the EI report.
+
 ## [1.19.0] - 2026-10-14
 
 ### Added
