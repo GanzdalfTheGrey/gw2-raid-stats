@@ -5,7 +5,7 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.19.0] - 2026-10-14
 
 ### Added
 - **Squad Builder: build the squad before randomizing.** The squad grid now shows as soon as the page loads, so you can place players into specific slots first. Placed players are locked, and Randomize fills in everyone else around them.
@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Squad Builder: locked players stay in their sub on re-randomize.** Before, a lock only kept the role, so a locked DPS could move to the other sub.
+
+### Fixed
+- **HTCM Prog: Soo-Won pulls no longer show 0% HP left.** The HP calculation treated every target with "Void" in its name as a dragon, so Void Time Caster, Void Saltspray Dragon and the other adds were counted too. Their HP pushed the total past all 6 dragons, and the result was clamped to 0. Now only the 6 dragon voids count, each as 1/6 of the fight. Run a rescan to fix existing logs.
 
 ## [1.18.0] - 2026-09-28
 
