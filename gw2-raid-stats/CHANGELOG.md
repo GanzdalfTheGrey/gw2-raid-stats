@@ -5,6 +5,14 @@ All notable changes to GW2 Raid Stats will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **HTCM Prog: choose which pulls count in the Timecaster, Giants and Saltspray tabs.** Tick or untick any pull to include it in, or leave it out of, the night's averages.
+
+### Changed
+- **HTCM Prog: wiped phases no longer drag the averages down.** If the squad wiped before finishing Timecaster, Giants or Saltspray, that pull is marked "wiped here" and left out of the averages. You can still tick it to count it.
+
 ## [1.19.1] - 2026-10-14
 
 ### Added

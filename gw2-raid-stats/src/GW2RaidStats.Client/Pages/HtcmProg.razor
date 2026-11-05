@@ -888,6 +888,7 @@ else
     private async Task LoadSessionDetailAsync(DateTime date)
     {
         _expandedPulls.Clear();
+        _pullIncludeOverrides.Clear();
         _phaseDpsChartSeries.Clear();
         _phaseDpsLabels = Array.Empty<string>();
 
@@ -1170,15 +1171,36 @@ else
             }
             else
             {
+                var included = breakdown.Pulls.Where(p => IsPullIncluded(name, p)).ToList();
+                var includedNumbers = included.Select(p => p.PullNumber).ToHashSet();
+                var squadMs = included.Sum(p => (long)p.DurationMs);
+                int? squadDps = squadMs > 0 ? (int)(included.Sum(p => p.SquadDamage) * 1000L / squadMs) : null;
+                var avgDurationMs = included.Count > 0 ? (int)(squadMs / included.Count) : 0;
+                var unfinished = breakdown.Pulls.Count(p => !p.Finished);
                 var players = breakdown.Players
                     .Where(p => !_breakdownPlayers.Any() || _breakdownPlayers.Contains(p.AccountName))
+                    .Select(p => (Player: p, Session: SessionCell(p, includedNumbers)))
+                    .OrderByDescending(x => x.Session?.Dps ?? -1)
                     .ToList();
+                const string dimmed = "opacity: 0.4;";
 
-                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2 d-block">
-                    @breakdown.Pulls.Count/@_sessionDetail.PullCount pulls reached @name ·
-                    avg @FormatDuration(TimeSpan.FromMilliseconds(breakdown.AvgDurationMs)) ·
-                    squad target @((target / 1000.0).ToString("F0"))k
-                </MudText>
+                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        @breakdown.Pulls.Count/@_sessionDetail.PullCount pulls reached @name ·
+                        <strong>@included.Count counted</strong> in the Session column
+                        @if (unfinished > 0)
+                        {
+                            <span> · @unfinished wiped before finishing @name, so left out unless you tick them</span>
+                        }
+                    </MudText>
+                    @if (HasPullOverrides(name))
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Undo" OnClick="@(() => ResetPullOverrides(name))">
+                            Reset
+                        </MudButton>
+                    }
+                </MudStack>
                 @RenderBreakdownLegend(target)
 
                 <div style="overflow-x: auto;">
@@ -1189,13 +1211,24 @@ else
                                 <th style="text-align: right; border-right: 1px solid var(--mud-palette-table-lines);">Session</th>
                                 @foreach (var pull in breakdown.Pulls)
                                 {
-                                    <th style="text-align: right;">
-                                        <MudLink Href="@($"/api/reports/{pull.EncounterId}/view")" Target="_blank" Typo="Typo.body2">
-                                            #@pull.PullNumber
-                                        </MudLink>
+                                    var on = includedNumbers.Contains(pull.PullNumber);
+                                    <th style="text-align: right; vertical-align: top;">
+                                        <MudStack Row="true" Justify="Justify.FlexEnd" AlignItems="AlignItems.Center" Spacing="0">
+                                            <MudTooltip Text="@(on ? "Counted in the Session column. Untick to ignore this pull." : "Ignored. Tick to count this pull.")">
+                                                <MudCheckBox T="bool" Value="@on" ValueChanged="@(v => SetPullIncluded(name, pull, v))"
+                                                             Size="Size.Small" Dense="true" Color="Color.Primary" />
+                                            </MudTooltip>
+                                            <MudLink Href="@($"/api/reports/{pull.EncounterId}/view")" Target="_blank" Typo="Typo.body2">
+                                                #@pull.PullNumber
+                                            </MudLink>
+                                        </MudStack>
                                         <div style="font-weight: normal; font-size: 0.7rem; color: var(--mud-palette-text-secondary);">
                                             @pull.Time.ToLocalTime().ToString("HH:mm") · @ShortenPhaseName(pull.FurthestPhase)
                                         </div>
+                                        @if (!pull.Finished)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined" Style="margin: 2px 0 0 0;">wiped here</MudChip>
+                                        }
                                     </th>
                                 }
                             </tr>
@@ -1204,36 +1237,52 @@ else
                             <tr>
                                 <td><strong>Squad DPS</strong></td>
                                 <td style="text-align: right; border-right: 1px solid var(--mud-palette-table-lines);">
-                                    <MudText Inline="true" Color="@GetTargetColor(breakdown.SquadDps, target)"><strong>@FormatK(breakdown.SquadDps)</strong></MudText>
+                                    @if (squadDps is { } sd)
+                                    {
+                                        <MudText Inline="true" Color="@GetTargetColor(sd, target)"><strong>@FormatK(sd)</strong></MudText>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
                                 </td>
                                 @foreach (var pull in breakdown.Pulls)
                                 {
-                                    <td style="text-align: right;">
+                                    <td style="text-align: right; @(includedNumbers.Contains(pull.PullNumber) ? "" : dimmed)">
                                         <MudText Inline="true" Color="@GetTargetColor(pull.SquadDps, target)"><strong>@FormatK(pull.SquadDps)</strong></MudText>
                                     </td>
                                 }
                             </tr>
                             <tr>
                                 <td><em>Duration</em></td>
-                                <td style="text-align: right; border-right: 1px solid var(--mud-palette-table-lines);">@FormatDuration(TimeSpan.FromMilliseconds(breakdown.AvgDurationMs))</td>
+                                <td style="text-align: right; border-right: 1px solid var(--mud-palette-table-lines);">
+                                    @(included.Count > 0 ? FormatDuration(TimeSpan.FromMilliseconds(avgDurationMs)) : "—")
+                                </td>
                                 @foreach (var pull in breakdown.Pulls)
                                 {
-                                    <td style="text-align: right;">@FormatDuration(TimeSpan.FromMilliseconds(pull.DurationMs))</td>
+                                    <td style="text-align: right; @(includedNumbers.Contains(pull.PullNumber) ? "" : dimmed)">@FormatDuration(TimeSpan.FromMilliseconds(pull.DurationMs))</td>
                                 }
                             </tr>
-                            @foreach (var player in players)
+                            @foreach (var (player, session) in players)
                             {
                                 <tr>
                                     <td>@player.AccountName</td>
                                     <td style="text-align: right; border-right: 1px solid var(--mud-palette-table-lines);">
-                                        @RenderBreakdownCell(player.Session, null)
+                                        @if (session != null)
+                                        {
+                                            @RenderBreakdownCell(session, null)
+                                        }
+                                        else
+                                        {
+                                            <span style="color: var(--mud-palette-text-disabled);">—</span>
+                                        }
                                     </td>
                                     @foreach (var pull in breakdown.Pulls)
                                     {
-                                        <td style="text-align: right;">
+                                        <td style="text-align: right; @(includedNumbers.Contains(pull.PullNumber) ? "" : dimmed)">
                                             @if (player.ByPull.TryGetValue(pull.PullNumber, out var cell))
                                             {
-                                                @RenderBreakdownCell(cell, player.Session)
+                                                @RenderBreakdownCell(cell, session)
                                             }
                                             else
                                             {
@@ -1314,7 +1363,7 @@ else
                             @LegendSwatch("warning", "25–50%")
                             @LegendSwatch("text-primary", "under 25%")
                         </MudStack>
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">Session column: average over the pulls where the player got Debilitated.</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Session column: average over the counted pulls where the player got Debilitated.</MudText>
                         break;
                     case "deaths":
                         <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="3">
@@ -1327,7 +1376,7 @@ else
                         break;
                     default:
                         <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="3">
-                            <MudText Typo="Typo.caption"><strong>Player DPS</strong> vs <em>their own</em> session average (not vs other players):</MudText>
+                            <MudText Typo="Typo.caption"><strong>Player DPS</strong> vs <em>their own</em> average over the counted pulls (not vs other players):</MudText>
                             @LegendSwatch("success", "10%+ above")
                             @LegendSwatch("tertiary", "5–10% above")
                             @LegendSwatch("text-primary", "within 5%")
@@ -1355,10 +1404,53 @@ else
 
     private static string DpsCellTooltip(HtcmPhaseBreakdownCellDto cell, HtcmPhaseBreakdownCellDto? session)
     {
-        if (session == null) return "Session average for this phase";
+        if (session == null) return "Average over the counted pulls";
         if (session.Dps <= 0) return FormatK(cell.Dps);
         var delta = (cell.Dps - session.Dps) / (double)session.Dps * 100;
         return $"{FormatK(cell.Dps)} · {(delta >= 0 ? "+" : "")}{delta:F0}% vs their session avg ({FormatK(session.Dps)})";
+    }
+
+    // Per-tab pull include/ignore choices for the selected session, keyed by tab name.
+    // Without a choice, a pull counts only if it finished that phase.
+    private readonly Dictionary<(string Window, Guid EncounterId), bool> _pullIncludeOverrides = new();
+
+    private bool IsPullIncluded(string window, HtcmPhaseBreakdownPullDto pull)
+        => _pullIncludeOverrides.TryGetValue((window, pull.EncounterId), out var on) ? on : pull.Finished;
+
+    private void SetPullIncluded(string window, HtcmPhaseBreakdownPullDto pull, bool on)
+    {
+        if (on == pull.Finished) _pullIncludeOverrides.Remove((window, pull.EncounterId));
+        else _pullIncludeOverrides[(window, pull.EncounterId)] = on;
+    }
+
+    private bool HasPullOverrides(string window) => _pullIncludeOverrides.Keys.Any(k => k.Window == window);
+
+    private void ResetPullOverrides(string window)
+    {
+        foreach (var key in _pullIncludeOverrides.Keys.Where(k => k.Window == window).ToList())
+            _pullIncludeOverrides.Remove(key);
+    }
+
+    // A player's session figure over the included pulls. Mirrors the server's session
+    // maths: DPS = total damage / total time, Debilitated = average over the pulls where
+    // they got it, counts summed. Null when they weren't in any included pull.
+    private static HtcmPhaseBreakdownCellDto? SessionCell(HtcmPhaseBreakdownPlayerDto player, HashSet<int> includedPulls)
+    {
+        var cells = player.ByPull.Where(kv => includedPulls.Contains(kv.Key)).Select(kv => kv.Value).ToList();
+        if (cells.Count == 0) return null;
+        var damage = cells.Sum(c => c.Damage);
+        var durationMs = cells.Sum(c => c.DurationMs);
+        var debil = cells.Where(c => c.DebilPct is > 0).Select(c => c.DebilPct!.Value).ToList();
+        var stacks = cells.Where(c => c.DebilStacks != null).ToList();
+        return new HtcmPhaseBreakdownCellDto(
+            Dps: durationMs > 0 ? (int)(damage * 1000L / durationMs) : 0,
+            Damage: damage,
+            DurationMs: durationMs,
+            Downs: cells.Sum(c => c.Downs),
+            Deaths: cells.Sum(c => c.Deaths),
+            DeadAtPhaseStart: cells.Sum(c => c.DeadAtPhaseStart),
+            DebilPct: debil.Count > 0 ? debil.Average() : null,
+            DebilStacks: stacks.Count > 0 ? stacks.Sum(c => c.DebilStacks!.Value) : null);
     }
 
     // Everyone who appears in any of the three breakdowns for the selected session.
@@ -1502,8 +1594,6 @@ else
         HtcmPhaseBreakdownDto? Saltspray);
 
     public record HtcmPhaseBreakdownDto(
-        int SquadDps,
-        int AvgDurationMs,
         List<HtcmPhaseBreakdownPullDto> Pulls,
         List<HtcmPhaseBreakdownPlayerDto> Players);
 
@@ -1513,16 +1603,19 @@ else
         DateTimeOffset Time,
         int DurationMs,
         int SquadDps,
+        long SquadDamage,
         string FurthestPhase,
-        bool Success);
+        bool Success,
+        bool Finished);
 
     public record HtcmPhaseBreakdownPlayerDto(
         string AccountName,
-        HtcmPhaseBreakdownCellDto Session,
         Dictionary<int, HtcmPhaseBreakdownCellDto> ByPull);
 
     public record HtcmPhaseBreakdownCellDto(
         int Dps,
+        long Damage,
+        int DurationMs,
         int Downs,
         int Deaths,
         int DeadAtPhaseStart,
