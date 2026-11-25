@@ -306,6 +306,7 @@ public class LogImportService
                     PhaseName = phase.Name,
                     SquadDps = squadDps,
                     DurationMs = phase.End - phase.Start,
+                    Completed = IsPhaseCompleted(phase, log),
                     CreatedAt = DateTimeOffset.UtcNow
                 };
 
@@ -672,6 +673,31 @@ public class LogImportService
         bossHpRemaining = CalculateBossHpRemaining(log);
 
         return (furthestPhase, furthestPhaseIndex, bossHpRemaining);
+    }
+
+    /// <summary>
+    /// Whether every main (non NONBLOCKING) target of a phase died. Null when the phase
+    /// lists no usable targets. Shared with RescanService.
+    /// </summary>
+    public static bool? IsPhaseCompleted(EIPhase phase, EliteInsightsLog log)
+    {
+        if (log.Targets == null || phase.Targets == null || phase.Targets.Count == 0) return null;
+
+        var mainIndexes = phase.TargetPriorities is { Count: > 0 } priorities
+            ? priorities
+                .Where(kv => !string.Equals(kv.Value, "NONBLOCKING", StringComparison.OrdinalIgnoreCase))
+                .Select(kv => int.TryParse(kv.Key, out var i) ? i : -1)
+                .ToList()
+            : phase.Targets;
+
+        var targets = mainIndexes
+            .Where(i => i >= 0 && i < log.Targets.Count)
+            .Select(i => log.Targets[i])
+            .Where(t => t.TotalHealth > 0)
+            .ToList();
+        if (targets.Count == 0) return null;
+
+        return targets.All(t => t.FinalHealth == 0 || t.HealthPercentBurned >= 99.9m);
     }
 
     /// <summary>

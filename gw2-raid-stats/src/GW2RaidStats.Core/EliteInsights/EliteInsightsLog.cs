@@ -338,6 +338,10 @@ public class EIPhase
     [JsonPropertyName("targets")]
     public List<int>? Targets { get; set; }
 
+    // Target index (as string) → "MAIN" / "BLOCKING" / "NONBLOCKING".
+    [JsonPropertyName("targetPriorities")]
+    public Dictionary<string, string>? TargetPriorities { get; set; }
+
     public int Duration => End - Start;
 }
 

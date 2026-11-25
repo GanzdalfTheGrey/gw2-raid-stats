@@ -588,6 +588,12 @@ else
         <MudTabPanel Text="Saltspray" Icon="@Icons.Material.Filled.Waves">
             @RenderPhaseBreakdown("Saltspray", _sessionDetail?.PhaseBreakdowns?.Saltspray, SaltspraySquadTarget)
         </MudTabPanel>
+        <MudTabPanel Text="Obliterator" Icon="@Icons.Material.Filled.LocalFireDepartment">
+            @RenderPhaseBreakdown("Obliterator", _sessionDetail?.PhaseBreakdowns?.Obliterator, null)
+        </MudTabPanel>
+        <MudTabPanel Text="Goliath" Icon="@Icons.Material.Filled.AcUnit">
+            @RenderPhaseBreakdown("Goliath", _sessionDetail?.PhaseBreakdowns?.Goliath, null)
+        </MudTabPanel>
 
         <!-- ============ TRENDS TAB ============ -->
         <MudTabPanel Text="Trends" Icon="@Icons.Material.Filled.TrendingUp">
@@ -1125,7 +1131,7 @@ else
         </MudSelect>
     };
 
-    private RenderFragment RenderPhaseBreakdown(string name, HtcmPhaseBreakdownDto? breakdown, int target) => __builder =>
+    private RenderFragment RenderPhaseBreakdown(string name, HtcmPhaseBreakdownDto? breakdown, int? target) => __builder =>
     {
         <MudPaper Class="pa-4 mb-4" Elevation="2">
             <MudStack Row="true" Wrap="Wrap.Wrap" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3" Spacing="2">
@@ -1239,7 +1245,7 @@ else
                                 <td style="text-align: right; border-right: 1px solid var(--mud-palette-table-lines);">
                                     @if (squadDps is { } sd)
                                     {
-                                        <MudText Inline="true" Color="@GetTargetColor(sd, target)"><strong>@FormatK(sd)</strong></MudText>
+                                        <MudText Inline="true" Color="@SquadColor(sd, target)"><strong>@FormatK(sd)</strong></MudText>
                                     }
                                     else
                                     {
@@ -1249,7 +1255,7 @@ else
                                 @foreach (var pull in breakdown.Pulls)
                                 {
                                     <td style="text-align: right; @(includedNumbers.Contains(pull.PullNumber) ? "" : dimmed)">
-                                        <MudText Inline="true" Color="@GetTargetColor(pull.SquadDps, target)"><strong>@FormatK(pull.SquadDps)</strong></MudText>
+                                        <MudText Inline="true" Color="@SquadColor(pull.SquadDps, target)"><strong>@FormatK(pull.SquadDps)</strong></MudText>
                                     </td>
                                 }
                             </tr>
@@ -1342,18 +1348,21 @@ else
     };
 
     // Colour key for the active metric, plus the squad row's target colours.
-    private RenderFragment RenderBreakdownLegend(int target) => __builder =>
+    private RenderFragment RenderBreakdownLegend(int? target) => __builder =>
     {
-        var targetK = $"{target / 1000.0:F0}k";
-        var targetLowK = $"{target * 0.9 / 1000.0:F0}k";
         <MudPaper Elevation="0" Class="pa-2 mb-3" Style="background-color: rgba(128, 128, 128, 0.08); border-radius: 6px;">
             <MudStack Spacing="1">
-                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="3">
-                    <MudText Typo="Typo.caption"><strong>Squad DPS</strong> vs @targetK target:</MudText>
-                    @LegendSwatch("success", $"at or above {targetK}")
-                    @LegendSwatch("warning", $"{targetLowK}–{targetK}")
-                    @LegendSwatch("error", $"below {targetLowK}")
-                </MudStack>
+                @if (target is { } t)
+                {
+                    var targetK = $"{t / 1000.0:F0}k";
+                    var targetLowK = $"{t * 0.9 / 1000.0:F0}k";
+                    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="3">
+                        <MudText Typo="Typo.caption"><strong>Squad DPS</strong> vs @targetK target:</MudText>
+                        @LegendSwatch("success", $"at or above {targetK}")
+                        @LegendSwatch("warning", $"{targetLowK}–{targetK}")
+                        @LegendSwatch("error", $"below {targetLowK}")
+                    </MudStack>
+                }
                 @switch (_breakdownMetric)
                 {
                     case "debil":
@@ -1393,6 +1402,10 @@ else
             </MudStack>
         </MudPaper>
     };
+
+    // Squad DPS colour vs the window's target; uncoloured when the window has none.
+    private static Color SquadColor(int dps, int? target)
+        => target is { } t ? GetTargetColor(dps, t) : Color.Default;
 
     private static RenderFragment LegendSwatch(string paletteVar, string label) => __builder =>
     {
@@ -1458,7 +1471,7 @@ else
     {
         var b = _sessionDetail?.PhaseBreakdowns;
         if (b == null) return Enumerable.Empty<string>();
-        return new[] { b.Timecaster, b.Giants, b.Saltspray }
+        return new[] { b.Timecaster, b.Giants, b.Saltspray, b.Obliterator, b.Goliath }
             .Where(x => x != null)
             .SelectMany(x => x!.Players.Select(p => p.AccountName))
             .Distinct()
@@ -1591,7 +1604,9 @@ else
     public record HtcmPhaseBreakdownsDto(
         HtcmPhaseBreakdownDto? Timecaster,
         HtcmPhaseBreakdownDto? Giants,
-        HtcmPhaseBreakdownDto? Saltspray);
+        HtcmPhaseBreakdownDto? Saltspray,
+        HtcmPhaseBreakdownDto? Obliterator = null,
+        HtcmPhaseBreakdownDto? Goliath = null);
 
     public record HtcmPhaseBreakdownDto(
         List<HtcmPhaseBreakdownPullDto> Pulls,

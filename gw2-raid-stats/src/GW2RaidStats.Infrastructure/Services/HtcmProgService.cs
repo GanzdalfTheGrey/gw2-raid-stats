@@ -77,10 +77,13 @@ public class HtcmProgService
         { "Heart 3 Breakbar 3", 762 },
         { "Void Saltspray Dragon", 780 },
         { "Soo-Won 1", 800 },
+        // Champions: Void Obliterator during Soo-Won 1, Void Goliath during Soo-Won 2.
+        { "Void Obliterator", 820 },
         { "Void Amalgamate", 850 },
         { "Void Amalgamate Breakbar 1", 851 },
         { "Void Amalgamate Breakbar 2", 852 },
         { "Soo-Won 2", 900 },
+        { "Void Goliath", 920 },
 
         // Success/completion
         { "Success", 1000 }
@@ -142,10 +145,12 @@ public class HtcmProgService
     // Ordered most-progressed → least-progressed. First Contains-match wins.
     private static readonly (string Keyword, int Value)[] PhaseKeywordFallbacks =
     {
+        ("goliath",   920),
         ("soo-won 2", 900),
         ("soo won 2", 900),
         ("soowon 2",  900),
         ("amalgamate", 850),
+        ("obliterator", 820),
         ("soo-won",   800),
         ("soo won",   800),
         ("soowon",    800),
@@ -172,6 +177,8 @@ public class HtcmProgService
     public static readonly string[] TimecasterPhases = { "Void Time Caster" };
     public static readonly string[] GiantsPhases = { "Giants", "Void Giant 1", "Void Giant 2", "Void Giant 3" };
     public static readonly string[] SaltsprayPhases = { "Void Saltspray Dragon" };
+    public static readonly string[] ObliteratorPhases = { "Void Obliterator" };
+    public static readonly string[] GoliathPhases = { "Void Goliath" };
 
     // Main dragon damage phases, collapsed into a single group for the Discord session
     // summary. Primordus is deliberately excluded: its arena heavily favours 1200-range
@@ -516,7 +523,9 @@ public class HtcmProgService
         var phaseBreakdowns = new HtcmPhaseBreakdowns(
             Timecaster: BuildPhaseBreakdown(TimecasterPhases, TimecasterDebilPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey),
             Giants: BuildPhaseBreakdown(GiantsPhases, GiantsDebilPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey),
-            Saltspray: BuildPhaseBreakdown(SaltsprayPhases, SaltsprayDebilPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey));
+            Saltspray: BuildPhaseBreakdown(SaltsprayPhases, SaltsprayDebilPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey),
+            Obliterator: BuildPhaseBreakdown(ObliteratorPhases, ObliteratorPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey),
+            Goliath: BuildPhaseBreakdown(GoliathPhases, GoliathPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey));
 
         // Build player mechanic breakdown
         var playerMechanics = mechanicCounts
@@ -572,7 +581,7 @@ public class HtcmProgService
         IReadOnlyList<Database.Entities.EncounterPhaseStatEntity> phaseStats,
         Dictionary<(Guid EncounterId, string PhaseName), int> phaseDurationByKey)
     {
-        // Any phase later than this in the canonical order means the window was cleared.
+        // Fallback finished check: any phase later than this in the canonical order.
         var windowEndIndex = debilPhases.Max(GetCanonicalPhaseIndex);
 
         var breakdownPulls = new List<HtcmPhaseBreakdownPull>();
@@ -587,8 +596,12 @@ public class HtcmProgService
             if (durationMs <= 0) continue;
 
             var squadDamage = rows.Where(r => MatchesAny(r.Stats.PhaseName, mainPhases)).Sum(r => r.Stats.Damage);
+            // Finished = the window's target(s) died. Rows imported before migration 036
+            // have no Completed flag, so fall back to "the pull reached a later phase".
             var finished = pull.Success
-                || pullPhaseStats.Any(ps => GetCanonicalPhaseIndex(ps.PhaseName) > windowEndIndex);
+                || (groupPhases.Any(ps => ps.Completed != null)
+                    ? groupPhases.Any(ps => ps.Completed == true)
+                    : pullPhaseStats.Any(ps => GetCanonicalPhaseIndex(ps.PhaseName) > windowEndIndex));
 
             breakdownPulls.Add(new HtcmPhaseBreakdownPull(
                 pull.PullNumber, pull.EncounterId, pull.Time, durationMs,
@@ -1151,14 +1164,16 @@ public record HtcmSessionDetail(
 public record HtcmPhaseBreakdowns(
     HtcmPhaseBreakdown? Timecaster,
     HtcmPhaseBreakdown? Giants,
-    HtcmPhaseBreakdown? Saltspray);
+    HtcmPhaseBreakdown? Saltspray,
+    HtcmPhaseBreakdown? Obliterator = null,
+    HtcmPhaseBreakdown? Goliath = null);
 
 // Session totals are computed on the page from whichever pulls are included.
 public record HtcmPhaseBreakdown(
     List<HtcmPhaseBreakdownPull> Pulls,
     List<HtcmPhaseBreakdownPlayer> Players);
 
-// Finished = the pull got past this window (or killed the boss). Unfinished pulls are
+// Finished = the window's target(s) died (or the boss was killed). Unfinished pulls are
 // excluded from the session numbers by default.
 public record HtcmPhaseBreakdownPull(
     int PullNumber,

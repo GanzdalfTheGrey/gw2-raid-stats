@@ -117,6 +117,29 @@ public class RescanService
         // encounter already has rows so a rescan on a fresh import is a cheap no-op.
         anyUpdated |= await BackfillHtcmPhaseStatsAsync(encounterId, log, ct);
 
+        // Backfill encounter_phase_stats.completed (migration 036) for HTCM.
+        anyUpdated |= await UpdateHtcmPhaseCompletedAsync(encounterId, log, ct);
+
+        return anyUpdated;
+    }
+
+    private async Task<bool> UpdateHtcmPhaseCompletedAsync(Guid encounterId, EliteInsightsLog log, CancellationToken ct)
+    {
+        if (log.TriggerId != 43488) return false;
+        if (log.Phases == null || log.Phases.Count == 0) return false;
+
+        var anyUpdated = false;
+        for (int phaseIndex = 0; phaseIndex < log.Phases.Count; phaseIndex++)
+        {
+            var completed = LogImportService.IsPhaseCompleted(log.Phases[phaseIndex], log);
+            if (completed == null) continue;
+            var rows = await _db.EncounterPhaseStats
+                .Where(ps => ps.EncounterId == encounterId && ps.PhaseIndex == phaseIndex
+                             && (ps.Completed == null || ps.Completed != completed))
+                .Set(ps => ps.Completed, completed)
+                .UpdateAsync(ct);
+            anyUpdated |= rows > 0;
+        }
         return anyUpdated;
     }
 
