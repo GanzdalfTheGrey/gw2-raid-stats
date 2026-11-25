@@ -117,9 +117,50 @@ public class RescanService
         // encounter already has rows so a rescan on a fresh import is a cheap no-op.
         anyUpdated |= await BackfillHtcmPhaseStatsAsync(encounterId, log, ct);
 
+        // Backfill player_encounter_phase_stats.target_damage (migration 037) for HTCM.
+        anyUpdated |= await UpdateHtcmPhaseTargetDamageAsync(encounterId, log, ct);
+
         // Backfill encounter_phase_stats.completed (migration 036) for HTCM.
         anyUpdated |= await UpdateHtcmPhaseCompletedAsync(encounterId, log, ct);
 
+        return anyUpdated;
+    }
+
+    private async Task<bool> UpdateHtcmPhaseTargetDamageAsync(Guid encounterId, EliteInsightsLog log, CancellationToken ct)
+    {
+        if (log.TriggerId != 43488) return false;
+        if (log.Phases == null || log.Phases.Count == 0) return false;
+
+        var missing = await _db.PlayerEncounterPhaseStats
+            .Where(p => p.EncounterId == encounterId && p.TargetDamage == null)
+            .Select(p => new { p.Id, p.PlayerId, p.PhaseIndex })
+            .ToListAsync(ct);
+        if (missing.Count == 0) return false;
+
+        var accountNames = log.Players
+            .Select(p => p.Account)
+            .Where(a => !string.IsNullOrEmpty(a))
+            .Distinct()
+            .ToList();
+        var playerIdsByAccount = (await _db.Players
+            .Where(p => accountNames.Contains(p.AccountName))
+            .ToListAsync(ct))
+            .ToDictionary(p => p.AccountName, p => p.Id);
+
+        var targetDamageByKey = LogImportService.BuildHtcmPhaseStatRows(encounterId, log, playerIdsByAccount)
+            .Where(r => r.TargetDamage != null)
+            .ToDictionary(r => (r.PlayerId, r.PhaseIndex), r => r.TargetDamage!.Value);
+
+        var anyUpdated = false;
+        foreach (var row in missing)
+        {
+            if (!targetDamageByKey.TryGetValue((row.PlayerId, row.PhaseIndex), out var damage)) continue;
+            await _db.PlayerEncounterPhaseStats
+                .Where(p => p.Id == row.Id)
+                .Set(p => p.TargetDamage, damage)
+                .UpdateAsync(ct);
+            anyUpdated = true;
+        }
         return anyUpdated;
     }
 

@@ -525,7 +525,8 @@ public class HtcmProgService
             Timecaster: BuildPhaseBreakdown(TimecasterPhases, TimecasterDebilPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey),
             Giants: BuildPhaseBreakdown(GiantsPhases, GiantsDebilPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey),
             Saltspray: BuildPhaseBreakdown(SaltsprayPhases, SaltsprayDebilPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey),
-            Champions: BuildPhaseBreakdown(ChampionPhases, ChampionPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey, overlappingPhases: true));
+            Champions: BuildPhaseBreakdown(ChampionPhases, ChampionPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey,
+                overlappingPhases: true, useTargetDamage: true));
 
         // Build player mechanic breakdown
         var playerMechanics = mechanicCounts
@@ -580,8 +581,15 @@ public class HtcmProgService
         Dictionary<Guid, List<PlayerPhaseRow>> playerPhaseByEncounter,
         IReadOnlyList<Database.Entities.EncounterPhaseStatEntity> phaseStats,
         Dictionary<(Guid EncounterId, string PhaseName), int> phaseDurationByKey,
-        bool overlappingPhases = false)
+        bool overlappingPhases = false,
+        bool useTargetDamage = false)
     {
+        // Champs uses damage to the champions only (EI's "Target" column); during them the
+        // squad also hits Soo-Won and adds, which the all-damage figure would include.
+        Func<PlayerPhaseRow, long> damageOf = useTargetDamage
+            ? r => r.Stats.TargetDamage ?? r.Stats.Damage
+            : r => r.Stats.Damage;
+
         // Fallback finished check: any phase later than this in the canonical order.
         var windowEndIndex = debilPhases.Max(GetCanonicalPhaseIndex);
 
@@ -606,7 +614,7 @@ public class HtcmProgService
             var durationMs = groupPhases.Where(ps => MatchesAny(ps.PhaseName, pullMainPhases)).Sum(ps => ps.DurationMs);
             if (durationMs <= 0) continue;
 
-            var squadDamage = rows.Where(r => MatchesAny(r.Stats.PhaseName, pullMainPhases)).Sum(r => r.Stats.Damage);
+            var squadDamage = rows.Where(r => MatchesAny(r.Stats.PhaseName, pullMainPhases)).Sum(damageOf);
             // Finished = the window's target(s) died (for the champions, both of them).
             // Rows imported before migration 036 have no Completed flag, so fall back to
             // "the pull reached a later phase".
@@ -627,7 +635,7 @@ public class HtcmProgService
                 if (!g.Any(r => MatchesAny(r.Stats.PhaseName, pullMainPhases))) continue;
                 if (!cellsByPlayer.TryGetValue(g.Key, out var cells))
                     cellsByPlayer[g.Key] = cells = new Dictionary<int, HtcmPhaseBreakdownCell>();
-                cells[pull.PullNumber] = BuildBreakdownCell(g, pullMainPhases, pullDebilPhases, phaseDurationByKey);
+                cells[pull.PullNumber] = BuildBreakdownCell(g, pullMainPhases, pullDebilPhases, phaseDurationByKey, damageOf);
             }
         }
 
@@ -645,14 +653,15 @@ public class HtcmProgService
         IEnumerable<PlayerPhaseRow> rows,
         string[] mainPhases,
         string[] debilPhases,
-        Dictionary<(Guid EncounterId, string PhaseName), int> phaseDurationByKey)
+        Dictionary<(Guid EncounterId, string PhaseName), int> phaseDurationByKey,
+        Func<PlayerPhaseRow, long> damageOf)
     {
         var rowList = rows.ToList();
         var mainRows = rowList.Where(r => MatchesAny(r.Stats.PhaseName, mainPhases)).ToList();
         var slice = ComputePlayerSlice(rowList, mainPhases, debilPhases, phaseDurationByKey);
 
         // Same per-player denominator as ComputeGroupBurst.
-        long damage = mainRows.Sum(r => r.Stats.Damage);
+        long damage = mainRows.Sum(damageOf);
         int durationMs = mainRows.Sum(r =>
             phaseDurationByKey.TryGetValue((r.Stats.EncounterId, r.Stats.PhaseName), out var d) ? d : 0);
         int dps = durationMs > 0 ? (int)(damage * 1000L / durationMs) : 0;

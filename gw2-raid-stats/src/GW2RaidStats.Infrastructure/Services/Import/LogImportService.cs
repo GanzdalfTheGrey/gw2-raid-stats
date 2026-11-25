@@ -436,6 +436,7 @@ public class LogImportService
                     PhaseName = phase.Name,
                     Dps = dpsStats?.Dps ?? 0,
                     Damage = dpsStats?.Damage ?? 0,
+                    TargetDamage = PhaseTargetDamage(eiPlayer, phase, phaseIndex),
                     DeadCount = defense?.DeadCount ?? 0,
                     DownCount = defense?.DownCount ?? 0,
                     // EI's deadDuration/downDuration are already milliseconds. Scaling them
@@ -457,6 +458,24 @@ public class LogImportService
                 };
             }
         }
+    }
+
+    // Player's damage to the phase's targets (all priorities, as EI's "Target" column
+    // sums them). Null when the log has no per-target data for this phase.
+    private static long? PhaseTargetDamage(EIPlayer player, EIPhase phase, int phaseIndex)
+    {
+        if (player.DpsTargets == null || phase.Targets == null || phase.Targets.Count == 0) return null;
+        long total = 0;
+        var any = false;
+        foreach (var t in phase.Targets)
+        {
+            if (t < 0 || t >= player.DpsTargets.Count) continue;
+            var byPhase = player.DpsTargets[t];
+            if (byPhase == null || phaseIndex >= byPhase.Count) continue;
+            total += byPhase[phaseIndex].Damage;
+            any = true;
+        }
+        return any ? total : null;
     }
 
     // Per-phase % uptime for a duration boon. Null (rather than 0) when the phase is

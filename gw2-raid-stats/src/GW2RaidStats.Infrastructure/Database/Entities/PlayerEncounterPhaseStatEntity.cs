@@ -12,6 +12,10 @@ public class PlayerEncounterPhaseStatEntity
     [Column("phase_name"), NotNull] public string PhaseName { get; set; } = "";
     [Column("dps"), NotNull] public int Dps { get; set; }
     [Column("damage"), NotNull] public long Damage { get; set; }
+    // Damage to the phase's own targets only (EI dpsTargets, the HTML report's "Target"
+    // column), vs Damage which is everything hit during the phase window. Null on rows
+    // imported before migration 037 until a rescan fills it in.
+    [Column("target_damage")] public long? TargetDamage { get; set; }
     [Column("dead_count"), NotNull] public int DeadCount { get; set; }
     [Column("down_count"), NotNull] public int DownCount { get; set; }
     [Column("dead_duration_ms"), NotNull] public int DeadDurationMs { get; set; }
