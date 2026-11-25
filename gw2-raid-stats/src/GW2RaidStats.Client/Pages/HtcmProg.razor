@@ -588,11 +588,8 @@ else
         <MudTabPanel Text="Saltspray" Icon="@Icons.Material.Filled.Waves">
             @RenderPhaseBreakdown("Saltspray", _sessionDetail?.PhaseBreakdowns?.Saltspray, SaltspraySquadTarget)
         </MudTabPanel>
-        <MudTabPanel Text="Obliterator" Icon="@Icons.Material.Filled.LocalFireDepartment">
-            @RenderPhaseBreakdown("Obliterator", _sessionDetail?.PhaseBreakdowns?.Obliterator, null)
-        </MudTabPanel>
-        <MudTabPanel Text="Goliath" Icon="@Icons.Material.Filled.AcUnit">
-            @RenderPhaseBreakdown("Goliath", _sessionDetail?.PhaseBreakdowns?.Goliath, null)
+        <MudTabPanel Text="Champs" Icon="@Icons.Material.Filled.Shield">
+            @RenderPhaseBreakdown("Champs", _sessionDetail?.PhaseBreakdowns?.Champions, null)
         </MudTabPanel>
 
         <!-- ============ TRENDS TAB ============ -->
@@ -1471,7 +1468,7 @@ else
     {
         var b = _sessionDetail?.PhaseBreakdowns;
         if (b == null) return Enumerable.Empty<string>();
-        return new[] { b.Timecaster, b.Giants, b.Saltspray, b.Obliterator, b.Goliath }
+        return new[] { b.Timecaster, b.Giants, b.Saltspray, b.Champions }
             .Where(x => x != null)
             .SelectMany(x => x!.Players.Select(p => p.AccountName))
             .Distinct()
@@ -1605,8 +1602,7 @@ else
         HtcmPhaseBreakdownDto? Timecaster,
         HtcmPhaseBreakdownDto? Giants,
         HtcmPhaseBreakdownDto? Saltspray,
-        HtcmPhaseBreakdownDto? Obliterator = null,
-        HtcmPhaseBreakdownDto? Goliath = null);
+        HtcmPhaseBreakdownDto? Champions = null);
 
     public record HtcmPhaseBreakdownDto(
         List<HtcmPhaseBreakdownPullDto> Pulls,

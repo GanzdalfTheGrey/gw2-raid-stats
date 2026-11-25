@@ -77,12 +77,12 @@ public class HtcmProgService
         { "Heart 3 Breakbar 3", 762 },
         { "Void Saltspray Dragon", 780 },
         { "Soo-Won 1", 800 },
-        // Champions: Void Obliterator during Soo-Won 1, Void Goliath during Soo-Won 2.
-        { "Void Obliterator", 820 },
         { "Void Amalgamate", 850 },
         { "Void Amalgamate Breakbar 1", 851 },
         { "Void Amalgamate Breakbar 2", 852 },
         { "Soo-Won 2", 900 },
+        // Champions (Void Obliterator + Void Goliath), fought together during Soo-Won 2.
+        { "Void Obliterator", 920 },
         { "Void Goliath", 920 },
 
         // Success/completion
@@ -146,11 +146,11 @@ public class HtcmProgService
     private static readonly (string Keyword, int Value)[] PhaseKeywordFallbacks =
     {
         ("goliath",   920),
+        ("obliterator", 920),
         ("soo-won 2", 900),
         ("soo won 2", 900),
         ("soowon 2",  900),
         ("amalgamate", 850),
-        ("obliterator", 820),
         ("soo-won",   800),
         ("soo won",   800),
         ("soowon",    800),
@@ -177,8 +177,9 @@ public class HtcmProgService
     public static readonly string[] TimecasterPhases = { "Void Time Caster" };
     public static readonly string[] GiantsPhases = { "Giants", "Void Giant 1", "Void Giant 2", "Void Giant 3" };
     public static readonly string[] SaltsprayPhases = { "Void Saltspray Dragon" };
-    public static readonly string[] ObliteratorPhases = { "Void Obliterator" };
-    public static readonly string[] GoliathPhases = { "Void Goliath" };
+    // The two Soo-Won champions are fought together, and EI gives each its own phase
+    // over the same stretch of the fight, so the Champs window uses one of them per pull.
+    public static readonly string[] ChampionPhases = { "Void Obliterator", "Void Goliath" };
 
     // Main dragon damage phases, collapsed into a single group for the Discord session
     // summary. Primordus is deliberately excluded: its arena heavily favours 1200-range
@@ -524,8 +525,7 @@ public class HtcmProgService
             Timecaster: BuildPhaseBreakdown(TimecasterPhases, TimecasterDebilPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey),
             Giants: BuildPhaseBreakdown(GiantsPhases, GiantsDebilPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey),
             Saltspray: BuildPhaseBreakdown(SaltsprayPhases, SaltsprayDebilPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey),
-            Obliterator: BuildPhaseBreakdown(ObliteratorPhases, ObliteratorPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey),
-            Goliath: BuildPhaseBreakdown(GoliathPhases, GoliathPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey));
+            Champions: BuildPhaseBreakdown(ChampionPhases, ChampionPhases, pulls, playerPhaseByEncounter, phaseStats, phaseDurationByKey, overlappingPhases: true));
 
         // Build player mechanic breakdown
         var playerMechanics = mechanicCounts
@@ -579,7 +579,8 @@ public class HtcmProgService
         IReadOnlyList<HtcmPull> pulls,
         Dictionary<Guid, List<PlayerPhaseRow>> playerPhaseByEncounter,
         IReadOnlyList<Database.Entities.EncounterPhaseStatEntity> phaseStats,
-        Dictionary<(Guid EncounterId, string PhaseName), int> phaseDurationByKey)
+        Dictionary<(Guid EncounterId, string PhaseName), int> phaseDurationByKey,
+        bool overlappingPhases = false)
     {
         // Fallback finished check: any phase later than this in the canonical order.
         var windowEndIndex = debilPhases.Max(GetCanonicalPhaseIndex);
@@ -592,15 +593,28 @@ public class HtcmProgService
             if (!playerPhaseByEncounter.TryGetValue(pull.EncounterId, out var rows)) continue;
             var pullPhaseStats = phaseStats.Where(ps => ps.EncounterId == pull.EncounterId).ToList();
             var groupPhases = pullPhaseStats.Where(ps => MatchesAny(ps.PhaseName, mainPhases)).ToList();
-            var durationMs = groupPhases.Sum(ps => ps.DurationMs);
+
+            // Overlapping phases (the champions) cover the same time, so summing them would
+            // double-count damage, time, deaths and downs. Use the longest one instead.
+            var pullMainPhases = mainPhases;
+            var pullDebilPhases = debilPhases;
+            if (overlappingPhases && groupPhases.Count > 1)
+            {
+                pullMainPhases = pullDebilPhases = new[] { groupPhases.MaxBy(ps => ps.DurationMs)!.PhaseName };
+            }
+
+            var durationMs = groupPhases.Where(ps => MatchesAny(ps.PhaseName, pullMainPhases)).Sum(ps => ps.DurationMs);
             if (durationMs <= 0) continue;
 
-            var squadDamage = rows.Where(r => MatchesAny(r.Stats.PhaseName, mainPhases)).Sum(r => r.Stats.Damage);
-            // Finished = the window's target(s) died. Rows imported before migration 036
-            // have no Completed flag, so fall back to "the pull reached a later phase".
+            var squadDamage = rows.Where(r => MatchesAny(r.Stats.PhaseName, pullMainPhases)).Sum(r => r.Stats.Damage);
+            // Finished = the window's target(s) died (for the champions, both of them).
+            // Rows imported before migration 036 have no Completed flag, so fall back to
+            // "the pull reached a later phase".
             var finished = pull.Success
                 || (groupPhases.Any(ps => ps.Completed != null)
-                    ? groupPhases.Any(ps => ps.Completed == true)
+                    ? (overlappingPhases
+                        ? groupPhases.All(ps => ps.Completed == true)
+                        : groupPhases.Any(ps => ps.Completed == true))
                     : pullPhaseStats.Any(ps => GetCanonicalPhaseIndex(ps.PhaseName) > windowEndIndex));
 
             breakdownPulls.Add(new HtcmPhaseBreakdownPull(
@@ -610,10 +624,10 @@ public class HtcmProgService
 
             foreach (var g in rows.GroupBy(r => r.AccountName))
             {
-                if (!g.Any(r => MatchesAny(r.Stats.PhaseName, mainPhases))) continue;
+                if (!g.Any(r => MatchesAny(r.Stats.PhaseName, pullMainPhases))) continue;
                 if (!cellsByPlayer.TryGetValue(g.Key, out var cells))
                     cellsByPlayer[g.Key] = cells = new Dictionary<int, HtcmPhaseBreakdownCell>();
-                cells[pull.PullNumber] = BuildBreakdownCell(g, mainPhases, debilPhases, phaseDurationByKey);
+                cells[pull.PullNumber] = BuildBreakdownCell(g, pullMainPhases, pullDebilPhases, phaseDurationByKey);
             }
         }
 
@@ -1165,8 +1179,7 @@ public record HtcmPhaseBreakdowns(
     HtcmPhaseBreakdown? Timecaster,
     HtcmPhaseBreakdown? Giants,
     HtcmPhaseBreakdown? Saltspray,
-    HtcmPhaseBreakdown? Obliterator = null,
-    HtcmPhaseBreakdown? Goliath = null);
+    HtcmPhaseBreakdown? Champions = null);
 
 // Session totals are computed on the page from whichever pulls are included.
 public record HtcmPhaseBreakdown(
